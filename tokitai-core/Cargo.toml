@@ -1,0 +1,21 @@
+[package]
+name = "tokitai-core"
+version = "0.2.0"
+edition = "2021"
+authors = ["silverenternal <3147264070@qq.com>"]
+license = "MIT"
+description = "Tokitai core types - Compile-time tool definitions with zero runtime dependencies"
+documentation = "https://docs.rs/tokitai-core"
+repository = "https://github.com/silverenternal/tokitai"
+homepage = "https://github.com/silverenternal/tokitai"
+keywords = ["ai", "mcp", "automation", "tool"]
+categories = ["development-tools"]
+rust-version = "1.70"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"], optional = true }
+serde_json = { version = "1.0", optional = true }
+
+[features]
+default = ["serde"]
+serde = ["dep:serde", "dep:serde_json"]

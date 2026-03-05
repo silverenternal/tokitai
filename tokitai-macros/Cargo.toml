@@ -1,0 +1,29 @@
+[package]
+name = "tokitai-macros"
+version = "0.2.0"
+edition = "2021"
+authors = ["silverenternal <3147264070@qq.com>"]
+license = "MIT"
+description = "Procedural macros for Tokitai - Zero-dependency macro for AI tool integration"
+documentation = "https://docs.rs/tokitai-macros"
+repository = "https://github.com/silverenternal/tokitai"
+homepage = "https://github.com/silverenternal/tokitai"
+keywords = ["ai", "mcp", "macro", "automation", "tool"]
+categories = ["development-tools::procedural-macro-helpers"]
+rust-version = "1.70"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1.0"
+quote = "1.0"
+syn = { version = "2.0", features = ["full"] }
+
+[dev-dependencies]
+tokitai = { path = "../tokitai" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+trybuild = "1.0"
+tokio = { version = "1.0", features = ["full"] }
