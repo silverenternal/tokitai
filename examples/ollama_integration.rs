@@ -30,6 +30,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokitai::tool;
 use tokitai::ToolProvider;
+use sha2::{Sha256, Digest};
 
 // ==================== 环境变量配置 ====================
 
@@ -89,6 +90,33 @@ impl Calculator {
     /// 计算平方根（取整）
     pub fn sqrt(&self, n: i32) -> i32 {
         (n as f64).sqrt() as i32
+    }
+}
+
+/// SHA256 哈希计算工具
+pub struct HashCalculator;
+
+#[tool]
+impl HashCalculator {
+    /// 计算字符串的 SHA256 哈希值（返回 64 位十六进制）
+    pub fn sha256(&self, input: String) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(input.as_bytes());
+        let result = hasher.finalize();
+        hex::encode(result)
+    }
+
+    /// 计算文件的 SHA256 哈希值
+    pub fn sha256_file(&self, path: String) -> String {
+        match std::fs::read(&path) {
+            Ok(contents) => {
+                let mut hasher = Sha256::new();
+                hasher.update(&contents);
+                let result = hasher.finalize();
+                hex::encode(result)
+            }
+            Err(e) => format!("读取文件失败：{}", e),
+        }
     }
 }
 
@@ -274,6 +302,7 @@ impl OllamaClient {
 
 struct AiAssistant {
     calculator: Calculator,
+    hash_calculator: HashCalculator,
     weather: WeatherService,
     time_service: TimeService,
 }
@@ -282,6 +311,7 @@ impl AiAssistant {
     fn new() -> Self {
         Self {
             calculator: Calculator,
+            hash_calculator: HashCalculator,
             weather: WeatherService,
             time_service: TimeService,
         }
@@ -299,6 +329,8 @@ impl AiAssistant {
         let result = match name {
             "add" | "multiply" | "sqrt" => self.calculator.call_tool(name, args)
                 .map_err(|e| format!("计算器工具错误：{:?}", e))?,
+            "sha256" | "sha256_file" => self.hash_calculator.call_tool(name, args)
+                .map_err(|e| format!("哈希工具错误：{:?}", e))?,
             "get_weather" => self.weather.call_tool(name, args)
                 .map_err(|e| format!("天气工具错误：{:?}", e))?,
             "get_current_time" | "days_between" => self.time_service.call_tool(name, args)
@@ -374,6 +406,7 @@ async fn main() -> Result<(), String> {
     // 收集所有工具定义
     let mut all_tools = Vec::new();
     all_tools.extend(Calculator::TOOL_DEFINITIONS.iter().map(convert_tool_def));
+    all_tools.extend(HashCalculator::TOOL_DEFINITIONS.iter().map(convert_tool_def));
     all_tools.extend(WeatherService::TOOL_DEFINITIONS.iter().map(convert_tool_def));
     all_tools.extend(TimeService::TOOL_DEFINITIONS.iter().map(convert_tool_def));
 
@@ -383,14 +416,14 @@ async fn main() -> Result<(), String> {
     }
     println!();
 
-    // 模拟对话
+    // 模拟对话 - 测试 SHA256 计算（AI 无法精确计算哈希值）
     let mut messages = vec![Message {
         role: "user".to_string(),
-        content: "北京今天的天气怎么样？".to_string(),
+        content: "请计算字符串 'hello world' 的 SHA256 哈希值".to_string(),
         tool_calls: None,
     }];
 
-    println!("[用户] 北京今天的天气怎么样？\n");
+    println!("[用户] 请计算字符串 'hello world' 的 SHA256 哈希值\n");
 
     // 第一轮对话
     let response = ollama
@@ -443,6 +476,14 @@ async fn run_offline_demo() -> Result<(), Box<dyn std::error::Error>> {
             tool.name, tool.description, tool.input_schema
         );
     }
+    
+    let hash_tools = HashCalculator::TOOL_DEFINITIONS;
+    for tool in hash_tools {
+        println!(
+            "   {{ \"name\": \"{}\", \"description\": \"{}\", \"input_schema\": {} }}",
+            tool.name, tool.description, tool.input_schema
+        );
+    }
     println!();
 
     // 模拟 AI 对话流程
@@ -455,7 +496,17 @@ async fn run_offline_demo() -> Result<(), Box<dyn std::error::Error>> {
     println!("   [工具执行] {}", result);
     println!("   [AI] 结果是 {}\n", result);
 
-    println!("3. 天气查询示例");
+    // SHA256 计算示例（AI 无法精确计算）
+    println!("3. SHA256 哈希计算（AI 无法精确计算）");
+    println!("   [用户] 计算 'hello world' 的 SHA256");
+    println!("   [AI] 我来使用工具计算...");
+
+    let result = assistant
+        .handle_tool_call("sha256", &json!({"input": "hello world"}))?;
+    println!("   [工具执行] {}", result);
+    println!("   [AI] SHA256 哈希值是：{}\n", result);
+
+    println!("4. 天气查询示例");
     println!("   [用户] 北京天气怎么样？");
     let result = assistant
         .handle_tool_call("get_weather", &json!({"city": "北京"}))?;
