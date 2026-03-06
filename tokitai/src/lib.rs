@@ -1,10 +1,31 @@
-//! Tokitai - AI 工具集成系统
+//! # Tokitai
 //!
-//! # 🎯 编译期工具定义，零运行时侵入
+//! **AI Tool Integration System with Compile-time Tool Definitions**
 //!
-//! 只需在 impl 块上贴 `#[tool]`，宏自动生成所有工具定义和调用逻辑。
+//! Tokitai is a zero-runtime-dependency procedural macro library that transforms your Rust methods
+//! into AI-callable tools with a single `#[tool]` attribute. All tool definitions are generated at
+//! compile time, ensuring type errors are caught before runtime.
 //!
-//! ## 快速开始
+//! ## 🎯 Key Features
+//!
+//! - **Zero Runtime Intrusion** - The macro itself has no runtime dependencies
+//! - **Compile-time Type Safety** - Tool definitions generated at compile time, parameter type errors exposed during compilation
+//! - **Single Attribute** - Just `#[tool]`, no need for multiple tags
+//! - **Optional Runtime** - Control dependencies via features, supports async-free environments
+//! - **Vendor Neutral** - Works with any AI/LLM provider (Ollama, OpenAI, Anthropic, etc.)
+//!
+//! ## 🚀 Quick Start
+//!
+//! ### 1. Add Dependencies
+//!
+//! ```toml
+//! [dependencies]
+//! tokitai = "0.3"
+//! serde = { version = "1.0", features = ["derive"] }
+//! serde_json = "1.0"
+//! ```
+//!
+//! ### 2. Define Your Tools
 //!
 //! ```rust,ignore
 //! use tokitai::tool;
@@ -13,80 +34,204 @@
 //!
 //! #[tool]
 //! impl Calculator {
-//!     /// 两个数相加
+//!     /// Add two numbers together
 //!     pub fn add(&self, a: i32, b: i32) -> i32 {
 //!         a + b
 //!     }
 //!
-//!     /// 两个数相乘
-//!     pub fn multiply(&self, a: i32, b: i32) -> i32 {
-//!         a * b
+//!     /// Calculate SHA256 hash of a string
+//!     pub fn sha256(&self, input: String) -> String {
+//!         // Your implementation...
+//!         format!("hash of {}", input)
 //!     }
 //! }
-//!
-//! // 使用
-//! let calc = Calculator;
-//!
-//! // 获取工具列表（编译期生成）
-//! let tools = Calculator::TOOL_DEFINITIONS;
-//! println!("工具数量：{}", tools.len());
-//!
-//! // 调用工具
-//! let result = calc.call_tool("add", &serde_json::json!({"a": 10, "b": 20})).unwrap();
-//! println!("结果：{}", result);  // 30
 //! ```
 //!
-//! ## 特性
+//! ### 3. Get Tool Definitions (Send to AI)
 //!
-//! - ✅ **零运行时侵入** - 宏本身零依赖，不强制绑定任何运行时
-//! - ✅ **编译期类型安全** - 工具定义在编译期生成，参数类型错误编译时暴露
-//! - ✅ **单一宏** - 只需 `#[tool]`，无需同时贴多个标签
-//! - ✅ **可选运行时** - 通过 features 控制依赖，支持无异步环境
+//! ```rust,ignore
+//! // Compile-time generated tool definitions
+//! let tools = Calculator::TOOL_DEFINITIONS;
 //!
-//! ## Features
+//! // Convert to JSON and send to AI
+//! let tools_json = serde_json::to_string_pretty(tools)?;
+//! println!("{}", tools_json);
+//! ```
 //!
-//! | Feature | 描述 |
-//! |---------|------|
-//! | `default` | 启用完整运行时 |
-//! | `runtime` | 基础运行时支持（异步、错误处理） |
-//! | `mcp` | MCP 协议支持 |
+//! Output:
 //!
-//! ## 最小化依赖（仅编译期）
+//! ```json
+//! [
+//!   {
+//!     "name": "add",
+//!     "description": "Add two numbers together",
+//!     "input_schema": "{\"type\":\"object\",\"properties\":{\"a\":{\"type\":\"integer\"},\"b\":{\"type\":\"integer\"}},\"required\":[\"a\",\"b\"]}"
+//!   },
+//!   {
+//!     "name": "sha256",
+//!     "description": "Calculate SHA256 hash of a string",
+//!     "input_schema": "{\"type\":\"object\",\"properties\":{\"input\":{\"type\":\"string\"}},\"required\":[\"input\"]}"
+//!   }
+//! ]
+//! ```
+//!
+//! ### 4. Handle AI Calls
+//!
+//! ```rust,ignore
+//! use serde_json::json;
+//!
+//! let calc = Calculator;
+//!
+//! // AI decides to call a tool
+//! let call_request = json!({
+//!     "name": "add",
+//!     "arguments": {"a": 10, "b": 20}
+//! });
+//!
+//! // Execute the tool
+//! let result = calc.call_tool(
+//!     call_request["name"].as_str().unwrap(),
+//!     &call_request["arguments"]
+//! )?;
+//!
+//! println!("Result: {}", result);  // 30
+//! ```
+//!
+//! ## 📦 Crate Structure
+//!
+//! Tokitai is organized as a workspace with three crates:
+//!
+//! | Crate | Description |
+//! |-------|-------------|
+//! | [`tokitai`](https://crates.io/crates/tokitai) | Main crate with runtime support (this crate) |
+//! | [`tokitai-core`](https://crates.io/crates/tokitai-core) | Core types and traits (zero dependencies) |
+//! | [`tokitai-macros`](https://crates.io/crates/tokitai-macros) | Procedural macros (compile-time code generation) |
+//!
+//! ## 🔧 How It Works
+//!
+//! ```text
+//! +---------------+    Tool Definitions    +---------------+
+//! |  Your Code    | ----------------------> |  AI Service   |
+//! |  #[tool]      |                         |  (Ollama,     |
+//! +---------------+                         |   OpenAI,     |
+//!       ^                                   |   etc.)       |
+//!       | Execution Result                  +---------------+
+//!       |                                         |
+//!       |                                         | Call Request
+//!       |                                         v
+//! +---------------+                         +---------------+
+//! |  Rust Method  | <------ call_tool ------ |  JSON Call    |
+//! |  (Local)      |                         | {"name":..}   |
+//! +---------------+                         +---------------+
+//! ```
+//!
+//! 1. **Define Rust methods** → Implement your business logic
+//! 2. **Send to AI** → AI knows what tools are available
+//! 3. **Receive call request** → AI returns "I want to call a tool"
+//! 4. **Execute and return** → Run Rust code locally
+//!
+//! ## 🛠️ Features
+//!
+//! | Feature | Description |
+//! |---------|-------------|
+//! | `default` | Enables full runtime support |
+//! | `runtime` | Basic runtime support (async, error handling) |
+//! | `mcp` | MCP protocol support (requires `runtime`) |
+//!
+//! ### Minimal Dependencies (Compile-time Only)
+//!
+//! If you only need compile-time tool definitions without runtime support:
 //!
 //! ```toml
 //! [dependencies]
-//! tokitai = { version = "0.2", default-features = false }
+//! tokitai = { version = "0.3", default-features = false }
 //! serde = { version = "1.0", features = ["derive"] }
 //! serde_json = "1.0"
 //! ```
 //!
-//! ## 完整示例
+//! ## 📚 API Overview
 //!
-//! 查看 [examples](https://github.com/silverenternal/tokitai/tree/main/examples) 目录获取更多使用示例：
+//! ### Re-exported Core Types
 //!
-//! - `basic_usage.rs` - 基础使用示例
-//! - `ollama_integration.rs` - Ollama AI 集成示例
-//! - `multi_tool_chat.rs` - 多工具协作聊天机器人
+//! - [`ToolDefinition`] - Tool definition with name, description, and input schema
+//! - [`ToolError`] - Tool invocation error type
+//! - [`ToolErrorKind`] - Error classification
+//! - [`ParamType`] - JSON Schema type enumeration
+//! - [`ToolProvider`] - Trait for tool providers (auto-implemented by `#[tool]`)
+//!
+//! ### Runtime Types (with `runtime` feature)
+//!
+//! - [`AiToolError`] - Enhanced error type for runtime
+//!
+//! ### Macro
+//!
+//! - [`tool`] - Attribute macro for marking tool implementations
+//!
+//! ## 📋 Type Mapping
+//!
+//! Rust types are automatically mapped to JSON Schema types:
+//!
+//! | Rust Type | JSON Schema Type |
+//! |-----------|------------------|
+//! | `String`, `&str` | `string` |
+//! | `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64` | `integer` |
+//! | `f32`, `f64` | `number` |
+//! | `bool` | `boolean` |
+//! | `Vec<T>` | `array` |
+//! | Custom structs | `object` |
+//!
+//! ## 📖 Examples
+//!
+//! See the [examples directory](https://github.com/silverenternal/tokitai/tree/main/examples) for more:
+//!
+//! - `basic_usage.rs` - Basic usage example
+//! - `ollama_integration.rs` - Ollama AI integration with SHA256 tool
+//! - `multi_tool_chat.rs` - Multi-tool协作 chatbot
+//!
+//! ## ⚙️ Requirements
+//!
+//! - **Rust Version**: 1.70+
+//! - **Edition**: 2021
+//!
+//! ## 📄 License
+//!
+//! Licensed under either of:
+//!
+//! - Apache License, Version 2.0 ([LICENSE-APACHE](https://github.com/silverenternal/tokitai/blob/main/LICENSE))
+//! - MIT License ([LICENSE-MIT](https://github.com/silverenternal/tokitai/blob/main/LICENSE))
+//!
+//! at your option.
+//!
+//! ## 🤝 Contributing
+//!
+//! Unless you explicitly state otherwise, any contribution intentionally submitted
+//! for inclusion in this crate by you, as defined in the Apache-2.0 license, shall be
+//! dual licensed as above, without any additional terms or conditions.
+//!
+//! ## See Also
+//!
+//! - [`tokitai-core`](https://crates.io/crates/tokitai-core) - Core types and traits
+//! - [`tokitai-macros`](https://crates.io/crates/tokitai-macros) - Procedural macros
 
-// 核心类型重新导出（总是可用）
+// Re-export core types (always available)
 pub use tokitai_core::{ToolDefinition, ToolError, ToolErrorKind, ParamType, ToolProvider};
 
-// 运行时模块（可选）
+// Runtime module (optional)
 #[cfg(feature = "runtime")]
 pub mod error;
 
 #[cfg(feature = "mcp")]
 pub mod mcp;
 
-// 条件导出运行时类型
+// Conditionally export runtime types
 #[cfg(feature = "runtime")]
 pub use error::AiToolError;
 
 #[cfg(feature = "mcp")]
 pub use mcp::*;
 
-// 重新导出宏
+// Re-export macros
 pub use tokitai_macros::tool;
 
-/// 库版本
+/// Library version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

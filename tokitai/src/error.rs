@@ -1,24 +1,42 @@
-//! 运行时错误类型
+//! Runtime error types
 
 use thiserror::Error;
 
-/// AI 工具调用错误
+/// AI tool invocation error
+///
+/// This error type wraps various failures that can occur during tool execution.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// use tokitai::AiToolError;
+///
+/// // Validation error
+/// let err = AiToolError::ValidationError {
+///     message: "Missing required parameter 'city'".to_string(),
+/// };
+///
+/// // Tool not found
+/// let err = AiToolError::NotFound {
+///     name: "unknown_tool".to_string(),
+/// };
+/// ```
 #[derive(Error, Debug)]
 pub enum AiToolError {
-    /// 参数验证错误
-    #[error("验证错误：{message}")]
+    /// Parameter validation error
+    #[error("Validation error: {message}")]
     ValidationError { message: String },
 
-    /// 工具未找到
-    #[error("工具未找到：{name}")]
+    /// Tool not found
+    #[error("Tool not found: {name}")]
     NotFound { name: String },
 
-    /// 序列化错误
-    #[error("序列化错误：{0}")]
+    /// Serialization error
+    #[error("Serialization error: {0}")]
     SerializationError(#[from] serde_json::Error),
 
-    /// 内部错误
-    #[error("内部错误：{message}")]
+    /// Internal error
+    #[error("Internal error: {message}")]
     InternalError { message: String },
 }
 
