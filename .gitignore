@@ -19,3 +19,7 @@ tests/ui/*.stdout
 
 # Build
 **/*.pdb
+
+# Environment variables (contains API keys)
+**/.env
+!.env.example

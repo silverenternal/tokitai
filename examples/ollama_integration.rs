@@ -8,9 +8,20 @@
 //! 2. 拉取模型：`ollama pull llama2` 或 `ollama pull mistral`
 //! 3. 启动 Ollama 服务：`ollama serve`
 //!
+//! # 配置
+//!
+//! 复制 `examples/.env.example` 到 `examples/.env` 并配置：
+//! ```text
+//! OLLAMA_BASE_URL=http://localhost:11434
+//! OLLAMA_MODEL=llama2
+//! OLLAMA_ENABLED=true
+//! ```
+//!
 //! # 运行示例
 //!
 //! ```bash
+//! # 从 examples 目录运行
+//! cd examples
 //! cargo run --example ollama_integration
 //! ```
 
@@ -19,6 +30,36 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokitai::tool;
 use tokitai::ToolProvider;
+
+// ==================== 环境变量配置 ====================
+
+/// 从环境变量或默认值加载配置
+struct Config {
+    base_url: String,
+    model: String,
+    enabled: bool,
+}
+
+impl Config {
+    fn from_env() -> Self {
+        // 加载 .env 文件（如果存在）
+        dotenv::dotenv().ok();
+
+        let base_url = std::env::var("OLLAMA_BASE_URL")
+            .unwrap_or_else(|_| "http://localhost:11434".to_string());
+        let model = std::env::var("OLLAMA_MODEL")
+            .unwrap_or_else(|_| "llama2".to_string());
+        let enabled = std::env::var("OLLAMA_ENABLED")
+            .unwrap_or_else(|_| "false".to_string())
+            .to_lowercase() == "true";
+
+        Self {
+            base_url,
+            model,
+            enabled,
+        }
+    }
+}
 
 // ==================== 工具定义 ====================
 
@@ -139,11 +180,11 @@ struct OllamaClient {
 }
 
 impl OllamaClient {
-    fn new(model: String) -> Self {
+    fn new(config: &Config) -> Self {
         Self {
             client: Client::new(),
-            base_url: "http://localhost:11434".to_string(),
-            model,
+            base_url: config.base_url.clone(),
+            model: config.model.clone(),
         }
     }
 
@@ -240,10 +281,24 @@ impl AiAssistant {
 async fn main() -> Result<(), String> {
     println!("=== Tokitai x Ollama AI 集成示例 ===\n");
 
+    // 加载配置
+    let config = Config::from_env();
+
+    // 检查是否启用 Ollama 集成
+    if !config.enabled {
+        println!("ℹ️ OLLAMA_ENABLED=false，使用离线演示模式\n");
+        println!("提示：要启用 Ollama 集成，请：");
+        println!("  1. 复制 examples/.env.example 到 examples/.env");
+        println!("  2. 设置 OLLAMA_ENABLED=true");
+        println!("  3. 确保 Ollama 服务正在运行\n");
+        run_offline_demo().await.map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+
     // 检查 Ollama 服务是否可用
-    println!("正在检查 Ollama 服务...");
+    println!("正在检查 Ollama 服务 ({})...", config.base_url);
     let client = reqwest::Client::new();
-    match client.get("http://localhost:11434/api/tags").send().await {
+    match client.get(format!("{}/api/tags", config.base_url)).send().await {
         Ok(resp) => {
             if resp.status().is_success() {
                 println!("✓ Ollama 服务正常运行\n");
@@ -260,7 +315,7 @@ async fn main() -> Result<(), String> {
 
     // 创建助手和 Ollama 客户端
     let assistant = AiAssistant::new();
-    let ollama = OllamaClient::new("llama2".to_string());
+    let ollama = OllamaClient::new(&config);
 
     // 收集所有工具定义
     let mut all_tools = Vec::new();
