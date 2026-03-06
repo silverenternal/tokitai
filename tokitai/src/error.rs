@@ -26,16 +26,16 @@ impl From<AiToolError> for tokitai_core::ToolError {
     fn from(err: AiToolError) -> Self {
         match err {
             AiToolError::ValidationError { message } => {
-                tokitai_core::ToolError::validation_error(Box::leak(message.into_boxed_str()) as &'static str)
+                tokitai_core::ToolError::validation_error(message)
             }
             AiToolError::NotFound { name } => {
-                tokitai_core::ToolError::not_found(Box::leak(name.into_boxed_str()) as &'static str)
+                tokitai_core::ToolError::not_found(name)
             }
             AiToolError::SerializationError(e) => {
-                tokitai_core::ToolError::internal_error(Box::leak(e.to_string().into_boxed_str()) as &'static str)
+                tokitai_core::ToolError::internal_error(e.to_string())
             }
             AiToolError::InternalError { message } => {
-                tokitai_core::ToolError::internal_error(Box::leak(message.into_boxed_str()) as &'static str)
+                tokitai_core::ToolError::internal_error(message)
             }
         }
     }

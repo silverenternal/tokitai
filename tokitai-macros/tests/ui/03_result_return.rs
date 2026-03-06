@@ -23,19 +23,18 @@ impl MathService {
     }
 }
 
-#[tokio::main]
-async fn main() {
+fn main() {
     let math = MathService;
-    
+
     // 验证 TOOL_DEFINITIONS 生成
     let tools = MathService::TOOL_DEFINITIONS;
     assert_eq!(tools.len(), 1);
-    
+
     // 成功情况
-    let result = math.call_tool("divide", &serde_json::json!({"a": 10.0, "b": 2.0})).await.unwrap();
+    let result = math.call_tool("divide", &serde_json::json!({"a": 10.0, "b": 2.0})).unwrap();
     assert_eq!(result, 5.0);
-    
+
     // 错误情况（会返回 Err）
-    let err = math.call_tool("divide", &serde_json::json!({"a": 10.0, "b": 0.0})).await;
+    let err = math.call_tool("divide", &serde_json::json!({"a": 10.0, "b": 0.0}));
     assert!(err.is_err());
 }

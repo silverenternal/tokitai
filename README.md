@@ -113,6 +113,33 @@ impl Calculator {
 let mcp_tools = mcp::to_mcp_tools(Calculator::TOOL_DEFINITIONS);
 ```
 
+## 示例代码
+
+查看 [`examples/`](examples) 目录获取完整的使用示例：
+
+- **基础使用**: [`examples/basic_usage.rs`](examples/basic_usage.rs)
+- **Ollama 集成**: [`examples/ollama_integration.rs`](examples/ollama_integration.rs)
+- **多工具协作**: [`examples/multi_tool_chat.rs`](examples/multi_tool_chat.rs)
+
+运行示例：
+
+```bash
+# 运行基础使用示例
+cargo run --example basic_usage
+
+# 运行 Ollama 集成示例（需要先启动 Ollama 服务）
+cargo run --example ollama_integration
+
+# 运行多工具协作示例
+cargo run --example multi_tool_chat
+```
+
+## 文档
+
+- [使用指南](docs/USAGE.md) - 详细的使用文档
+- [AI 集成指南](docs/AI_INTEGRATION.md) - 与 Ollama 等 AI 平台集成的完整指南
+- [API 文档](https://docs.rs/tokitai) - Rust API 参考文档
+
 ## 宏生成内容
 
 `#[tool]` 宏自动为 impl 块生成：

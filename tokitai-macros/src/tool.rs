@@ -18,6 +18,12 @@ use syn::{
 
 /// `#[tool]` 宏入口
 pub fn tool(attr: TokenStream, item: TokenStream) -> TokenStream {
+    // 如果 attr 不为空，说明是方法级别的 #[tool(...)] 属性
+    // 直接保留原样，由 impl 块级别的 #[tool] 处理
+    if !attr.is_empty() {
+        return item;
+    }
+    
     let attr_args = parse_macro_input!(attr as ToolAttributes);
 
     // 尝试解析为 impl 块
@@ -68,10 +74,30 @@ impl Parse for ToolAttributes {
 struct MethodToolAttrs {
     name: Option<String>,
     desc: Option<String>,
+    skip: bool,
 }
 
 impl Parse for MethodToolAttrs {
     fn parse(input: ParseStream) -> syn::Result<Self> {
+        // 检查第一个 token 是否是 skip
+        if input.peek(Ident) {
+            let key: Ident = input.fork().parse()?;
+            if key == "skip" {
+                // 消耗掉 skip
+                input.parse::<Ident>()?;
+                // 处理后面可能跟的逗号
+                if input.peek(token::Comma) {
+                    input.parse::<token::Comma>()?;
+                }
+                return Ok(MethodToolAttrs {
+                    name: None,
+                    desc: None,
+                    skip: true,
+                });
+            }
+        }
+
+        // 否则解析 name = "..." desc = "..."
         let mut name = None;
         let mut desc = None;
 
@@ -91,7 +117,7 @@ impl Parse for MethodToolAttrs {
             }
         }
 
-        Ok(MethodToolAttrs { name, desc })
+        Ok(MethodToolAttrs { name, desc, skip: false })
     }
 }
 
@@ -112,8 +138,8 @@ fn generate_for_impl(mut impl_item: ItemImpl, _attrs: ToolAttributes) -> TokenSt
     // 生成所有工具定义的数组
     let all_tool_defs = generate_all_tool_defs_array(&tool_methods);
 
-    // 生成 call_tool 分发方法
-    let call_tool_method = generate_call_tool_method(&tool_methods);
+    // 生成 call_tool 分发方法（可能是多个：异步 + 同步）
+    let call_tool_methods = generate_call_tool_method(&tool_methods);
 
     // 生成参数解析辅助方法
     let helper_methods = generate_helper_methods(&tool_methods);
@@ -133,8 +159,10 @@ fn generate_for_impl(mut impl_item: ItemImpl, _attrs: ToolAttributes) -> TokenSt
         pub const TOOL_DEFINITIONS: &'static [::tokitai::ToolDefinition] = &[#(#all_tool_defs_tokens),*];
     });
 
-    // 添加 call_tool 方法
-    new_items.push(parse_quote! { #call_tool_method });
+    // 添加 call_tool 方法（可能多个）
+    for method in call_tool_methods {
+        new_items.push(parse_quote! { #method });
+    }
 
     // 添加辅助方法
     for helper in helper_methods {
@@ -178,21 +206,43 @@ fn extract_tool_info(fn_item: &ImplItemFn) -> Option<ToolMethodInfo> {
         return None;
     }
 
+    // 检查是否有泛型参数（不支持）
+    if !fn_item.sig.generics.params.is_empty() {
+        return Some(ToolMethodInfo {
+            name: method_name.clone(),
+            tool_name: method_name.clone(),
+            description: String::new(),
+            params: vec![],
+            is_async: false,
+            is_result: false,
+            is_generic: true,
+            return_type: fn_item.sig.output.clone(),
+            doc: None,
+        });
+    }
+
     // 检查是否有 #[tool(...)] 属性
     let mut custom_name = None;
     let mut custom_desc = None;
+    let mut should_skip = false;
 
     for attr in &fn_item.attrs {
         if attr.path().is_ident("tool") {
+            // 解析 #[tool(name = "...", desc = "...")] 或 #[tool(skip)]
             if let Ok(args) = attr.parse_args::<MethodToolAttrs>() {
+                if args.skip {
+                    should_skip = true;
+                    break;
+                }
                 custom_name = args.name;
                 custom_desc = args.desc;
             }
         }
     }
-
-    // 如果没有 #[tool] 属性，但方法是 pub 的，也自动包含（使用默认设置）
-    // 这里我们选择：所有 pub 方法都自动成为工具，除非明确标记为 #[tool(skip)]
+    
+    if should_skip {
+        return None;
+    }
 
     let tool_name = custom_name.unwrap_or_else(|| method_name.clone());
 
@@ -211,7 +261,9 @@ fn extract_tool_info(fn_item: &ImplItemFn) -> Option<ToolMethodInfo> {
         params,
         is_async,
         is_result,
+        is_generic: false,
         return_type: fn_item.sig.output.clone(),
+        doc: None,
     })
 }
 
@@ -223,8 +275,11 @@ struct ToolMethodInfo {
     params: Vec<ParamInfo>,
     is_async: bool,
     is_result: bool,
+    is_generic: bool,
     #[allow(dead_code)]
     return_type: ReturnType,
+    #[allow(dead_code)]
+    doc: Option<String>,
 }
 
 /// 参数信息
@@ -240,6 +295,18 @@ fn generate_tool_def_consts(tools: &[ToolMethodInfo]) -> Vec<TokenStream2> {
     tools
         .iter()
         .map(|tool| {
+            // 检查泛型方法
+            if tool.is_generic {
+                let name = &tool.name;
+                return quote! {
+                    compile_error!(concat!(
+                        "工具方法 `",
+                        #name,
+                        "` 不支持泛型参数。请使用具体类型或 serde_json::Value 代替泛型参数"
+                    ));
+                };
+            }
+
             let const_name = format_ident!("__TOOL_DEF_{}", tool.name.to_uppercase());
             let tool_name = &tool.tool_name;
             let description = &tool.description;
@@ -269,45 +336,129 @@ fn generate_all_tool_defs_array(tools: &[ToolMethodInfo]) -> Vec<TokenStream2> {
         .collect()
 }
 
-/// 生成 call_tool 分发方法
-fn generate_call_tool_method(tools: &[ToolMethodInfo]) -> TokenStream2 {
-    let match_arms = tools.iter().map(|tool| {
-        let tool_name = &tool.tool_name;
-        let method_name = Ident::new(&tool.name, Span::call_site());
-        let wrapper_name = format_ident!("__call_{}", method_name);
+/// 生成 call_tool 分发方法（同步和异步双版本）
+fn generate_call_tool_method(tools: &[ToolMethodInfo]) -> Vec<TokenStream2> {
+    let mut methods = Vec::new();
 
-        quote! {
-            #tool_name => {
-                self.#wrapper_name(args).await
-            }
-        }
-    });
+    // 检查是否有异步方法
+    let has_async = tools.iter().any(|t| t.is_async);
 
-    quote! {
-        /// 根据工具名称调用工具
-        pub async fn call_tool(
-            &self,
-            name: &str,
-            args: &serde_json::Value,
-        ) -> Result<serde_json::Value, ::tokitai::ToolError> {
-            match name {
-                #(#match_arms)*
-                _ => Err(::tokitai::ToolError::not_found("未知工具")),
+    // 生成异步版本（如果有异步方法，或者用户明确需要异步）
+    if has_async {
+        let match_arms = tools.iter().map(|tool| {
+            let tool_name = &tool.tool_name;
+            let method_name = Ident::new(&tool.name, Span::call_site());
+            let wrapper_name = format_ident!("__call_{}", method_name);
+
+            quote! {
+                #tool_name => {
+                    self.#wrapper_name(args).await
+                }
             }
-        }
+        });
+
+        methods.push(quote! {
+            /// 根据工具名称调用工具（异步版本）
+            pub async fn call_tool(
+                &self,
+                name: &str,
+                args: &serde_json::Value,
+            ) -> Result<serde_json::Value, ::tokitai::ToolError> {
+                match name {
+                    #(#match_arms)*
+                    _ => Err(::tokitai::ToolError::not_found("未知工具")),
+                }
+            }
+        });
+    } else {
+        // 全是同步方法，生成同步版本
+        let match_arms = tools.iter().map(|tool| {
+            let tool_name = &tool.tool_name;
+            let method_name = Ident::new(&tool.name, Span::call_site());
+            let wrapper_name = format_ident!("__call_{}", method_name);
+
+            quote! {
+                #tool_name => {
+                    self.#wrapper_name(args)
+                }
+            }
+        });
+
+        methods.push(quote! {
+            /// 根据工具名称调用工具（同步版本）
+            pub fn call_tool(
+                &self,
+                name: &str,
+                args: &serde_json::Value,
+            ) -> Result<serde_json::Value, ::tokitai::ToolError> {
+                match name {
+                    #(#match_arms)*
+                    _ => Err(::tokitai::ToolError::not_found("未知工具")),
+                }
+            }
+        });
     }
+
+    // 如果包含异步方法，额外生成一个同步包装版本（用于不支持异步的场景）
+    if has_async {
+        let match_arms = tools.iter().map(|tool| {
+            let tool_name = &tool.tool_name;
+            let method_name = Ident::new(&tool.name, Span::call_site());
+            let wrapper_name_sync = format_ident!("__call_{}_sync", method_name);
+
+            quote! {
+                #tool_name => {
+                    self.#wrapper_name_sync(args)
+                }
+            }
+        });
+
+        methods.push(quote! {
+            /// 根据工具名称调用工具（同步阻塞版本，不推荐用于异步方法）
+            pub fn call_tool_sync(
+                &self,
+                name: &str,
+                args: &serde_json::Value,
+            ) -> Result<serde_json::Value, ::tokitai::ToolError> {
+                match name {
+                    #(#match_arms)*
+                    _ => Err(::tokitai::ToolError::not_found("未知工具")),
+                }
+            }
+        });
+    }
+
+    methods
 }
 
 /// 生成参数解析辅助方法
 fn generate_helper_methods(tools: &[ToolMethodInfo]) -> Vec<TokenStream2> {
-    tools
-        .iter()
-        .map(|tool| generate_wrapper_method(tool))
-        .collect()
+    let mut methods = Vec::new();
+    
+    // 检查是否有异步方法
+    let has_async = tools.iter().any(|t| t.is_async);
+    
+    for tool in tools {
+        if has_async {
+            // 如果有异步方法，生成异步包装方法和同步包装方法
+            methods.push(generate_wrapper_method(tool, true));
+            if tool.is_async {
+                methods.push(generate_wrapper_method(tool, false));
+            } else {
+                // 同步方法也可以有同步包装版本
+                methods.push(generate_wrapper_method_sync(tool));
+            }
+        } else {
+            // 全是同步方法，只生成同步包装方法
+            methods.push(generate_wrapper_method_sync(tool));
+        }
+    }
+    
+    methods
 }
 
-/// 生成单个方法的包装函数
-fn generate_wrapper_method(tool: &ToolMethodInfo) -> TokenStream2 {
+/// 生成同步包装方法
+fn generate_wrapper_method_sync(tool: &ToolMethodInfo) -> TokenStream2 {
     let method_name = Ident::new(&tool.name, Span::call_site());
     let wrapper_name = format_ident!("__call_{}", method_name);
     let params = &tool.params;
@@ -338,14 +489,12 @@ fn generate_wrapper_method(tool: &ToolMethodInfo) -> TokenStream2 {
 
     let param_names: Vec<&Ident> = params.iter().map(|p| &p.name).collect();
 
-    let await_keyword = if tool.is_async { Some(quote! { .await }) } else { None };
-
     // 处理返回值
     let result_handling = if tool.is_result {
         quote! {
             match result {
                 Ok(v) => Ok(serde_json::to_value(v).unwrap()),
-                Err(e) => Err(::tokitai::ToolError::internal_error("方法执行失败")),
+                Err(_e) => Err(::tokitai::ToolError::internal_error("方法执行失败")),
             }
         }
     } else {
@@ -355,15 +504,97 @@ fn generate_wrapper_method(tool: &ToolMethodInfo) -> TokenStream2 {
     };
 
     quote! {
-        async fn #wrapper_name(
-            &self,
-            args: &serde_json::Value,
-        ) -> Result<serde_json::Value, ::tokitai::ToolError> {
+        #[allow(clippy::all)]
+        fn #wrapper_name(&self, args: &serde_json::Value) -> Result<serde_json::Value, ::tokitai::ToolError> {
             use serde_json::Value;
 
             #(#param_parsing)*
 
-            let result = self.#method_name(#(#param_names),*) #await_keyword;
+            let result = self.#method_name(#(#param_names),*);
+            #result_handling
+        }
+    }
+}
+
+/// 生成单个方法的包装函数（异步版本）
+fn generate_wrapper_method(tool: &ToolMethodInfo, is_async: bool) -> TokenStream2 {
+    let method_name = Ident::new(&tool.name, Span::call_site());
+    let wrapper_name = if is_async {
+        format_ident!("__call_{}", method_name)
+    } else {
+        format_ident!("__call_{}_sync", method_name)
+    };
+    let params = &tool.params;
+
+    // 生成参数解析代码
+    let param_parsing = params.iter().map(|p| {
+        let param_name = &p.name;
+        let param_name_str = param_name.to_string();
+
+        if p.is_option {
+            quote! {
+                let #param_name = args.get(#param_name_str)
+                    .and_then(|v| v.as_null().map(|_| None))
+                    .unwrap_or_else(|| {
+                        args.get(#param_name_str).map(|v| serde_json::from_value(v.clone()).ok())
+                    })
+                    .flatten();
+            }
+        } else {
+            quote! {
+                let #param_name = args.get(#param_name_str)
+                    .ok_or_else(|| ::tokitai::ToolError::validation_error(concat!("缺少必需参数：", #param_name_str)))?;
+                let #param_name: _ = serde_json::from_value(#param_name.clone())
+                    .map_err(|e| ::tokitai::ToolError::validation_error(concat!("参数类型错误：", #param_name_str)))?;
+            }
+        }
+    });
+
+    let param_names: Vec<&Ident> = params.iter().map(|p| &p.name).collect();
+
+    // 处理返回值
+    let result_handling = if tool.is_result {
+        quote! {
+            match result {
+                Ok(v) => Ok(serde_json::to_value(v).unwrap()),
+                Err(_e) => Err(::tokitai::ToolError::internal_error("方法执行失败")),
+            }
+        }
+    } else {
+        quote! {
+            Ok(serde_json::to_value(result).unwrap())
+        }
+    };
+
+    let fn_sig = if is_async {
+        quote! { async fn #wrapper_name(&self, args: &serde_json::Value) -> Result<serde_json::Value, ::tokitai::ToolError> }
+    } else {
+        quote! { fn #wrapper_name(&self, args: &serde_json::Value) -> Result<serde_json::Value, ::tokitai::ToolError> }
+    };
+
+    let method_call = if tool.is_async && !is_async {
+        // 同步调用异步方法，使用 block_on
+        // 使用 try_current() 避免在没有运行时的线程上 panic
+        quote! {
+            match tokio::runtime::Handle::try_current() {
+                Ok(handle) => handle.block_on(async { self.#method_name(#(#param_names),*).await }),
+                Err(_) => return Err(::tokitai::ToolError::internal_error(
+                    "无法在同步上下文中调用异步工具：当前线程没有 tokio 运行时。请确保在 tokio 运行时中调用，或将工具方法改为同步"
+                )),
+            }
+        }
+    } else {
+        quote! { self.#method_name(#(#param_names),*) }
+    };
+
+    quote! {
+        #[allow(clippy::all)]
+        #fn_sig {
+            use serde_json::Value;
+
+            #(#param_parsing)*
+
+            let result = #method_call;
             #result_handling
         }
     }
@@ -420,7 +651,17 @@ fn get_json_type(ty: &Type) -> &'static str {
                 "f32" | "f64" => "number",
                 "bool" => "boolean",
                 "Vec" => "array",
-                "Option" => "string",
+                "Option" => {
+                    // 对于 Option<T>，递归获取 T 的类型
+                    if let Some(last_segment) = path.path.segments.last() {
+                        if let syn::PathArguments::AngleBracketed(args) = &last_segment.arguments {
+                            if let Some(syn::GenericArgument::Type(inner_ty)) = args.args.first() {
+                                return get_json_type(inner_ty);
+                            }
+                        }
+                    }
+                    "object" // 默认类型
+                }
                 _ => "object",
             }
         }

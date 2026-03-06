@@ -15,6 +15,9 @@
 extern crate serde;
 
 #[cfg(feature = "serde")]
+extern crate alloc;
+
+#[cfg(feature = "serde")]
 pub use serde_types::*;
 
 /// 工具定义 - 描述一个 AI 可调用的工具
@@ -143,9 +146,23 @@ pub struct ToolError {
     /// 错误类型
     pub kind: ToolErrorKind,
     /// 错误消息
+    #[cfg(feature = "serde")]
+    pub message: crate::serde_types::String,
+    #[cfg(not(feature = "serde"))]
     pub message: &'static str,
 }
 
+#[cfg(feature = "serde")]
+impl std::error::Error for ToolError {}
+
+#[cfg(feature = "serde")]
+impl std::fmt::Display for ToolError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ToolError: {:?} - {}", self.kind, self.message)
+    }
+}
+
+#[cfg(not(feature = "serde"))]
 impl ToolError {
     pub fn new(kind: ToolErrorKind, message: &'static str) -> Self {
         Self { kind, message }
@@ -169,6 +186,34 @@ impl ToolError {
         Self {
             kind: ToolErrorKind::InternalError,
             message,
+        }
+    }
+}
+
+#[cfg(feature = "serde")]
+impl ToolError {
+    pub fn new(kind: ToolErrorKind, message: impl Into<crate::serde_types::String>) -> Self {
+        Self { kind, message: message.into() }
+    }
+
+    pub fn validation_error(message: impl Into<crate::serde_types::String>) -> Self {
+        Self {
+            kind: ToolErrorKind::ValidationError,
+            message: message.into(),
+        }
+    }
+
+    pub fn not_found(message: impl Into<crate::serde_types::String>) -> Self {
+        Self {
+            kind: ToolErrorKind::NotFound,
+            message: message.into(),
+        }
+    }
+
+    pub fn internal_error(message: impl Into<crate::serde_types::String>) -> Self {
+        Self {
+            kind: ToolErrorKind::InternalError,
+            message: message.into(),
         }
     }
 }
@@ -211,6 +256,7 @@ pub trait ToolProvider {
 #[cfg(feature = "serde")]
 pub mod serde_types {
     pub use serde_json::Value;
+    pub use alloc::string::String;
 }
 
 /// 生成 JSON Schema 的辅助宏（编译期）

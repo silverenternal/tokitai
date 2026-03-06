@@ -23,3 +23,9 @@ fn test_custom_tool_attrs() {
     let t = trybuild::TestCases::new();
     t.pass("tests/ui/04_custom_attrs.rs");
 }
+
+#[test]
+fn test_tool_skip() {
+    let t = trybuild::TestCases::new();
+    t.pass("tests/ui/05_skip_method.rs");
+}

@@ -33,10 +33,19 @@ pub struct McpTool {
 pub fn to_mcp_tools(tools: &[ToolDefinition]) -> Vec<McpTool> {
     tools
         .iter()
-        .map(|t| McpTool {
-            name: t.name.to_string(),
-            description: t.description.to_string(),
-            input_schema: serde_json::from_str(t.input_schema).unwrap_or_default(),
+        .filter_map(|t| {
+            match serde_json::from_str(t.input_schema) {
+                Ok(schema) => Some(McpTool {
+                    name: t.name.to_string(),
+                    description: t.description.to_string(),
+                    input_schema: schema,
+                }),
+                Err(e) => {
+                    // 使用 log crate 记录警告而不是静默失败
+                    log::warn!("工具 '{}' 的 schema 解析失败：{}", t.name, e);
+                    None
+                }
+            }
         })
         .collect()
 }

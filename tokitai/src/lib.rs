@@ -59,6 +59,14 @@
 //! serde = { version = "1.0", features = ["derive"] }
 //! serde_json = "1.0"
 //! ```
+//!
+//! ## 完整示例
+//!
+//! 查看 [examples](https://github.com/silverenternal/tokitai/tree/main/examples) 目录获取更多使用示例：
+//!
+//! - `basic_usage.rs` - 基础使用示例
+//! - `ollama_integration.rs` - Ollama AI 集成示例
+//! - `multi_tool_chat.rs` - 多工具协作聊天机器人
 
 // 核心类型重新导出（总是可用）
 pub use tokitai_core::{ToolDefinition, ToolError, ToolErrorKind, ParamType, ToolProvider};

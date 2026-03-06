@@ -17,15 +17,14 @@ impl Calculator {
     }
 }
 
-#[tokio::main]
-async fn main() {
+fn main() {
     let calc = Calculator;
-    
+
     // 验证 TOOL_DEFINITIONS 生成
     let tools = Calculator::TOOL_DEFINITIONS;
     assert_eq!(tools.len(), 2);
-    
+
     // 验证 call_tool 生成
-    let result = calc.call_tool("add", &serde_json::json!({"a": 10, "b": 20})).await.unwrap();
+    let result = calc.call_tool("add", &serde_json::json!({"a": 10, "b": 20})).unwrap();
     assert_eq!(result, 30);
 }
