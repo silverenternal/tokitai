@@ -1,15 +1,15 @@
 [package]
 name = "tokitai-core"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2021"
 authors = ["silverenternal <3147264070@qq.com>"]
-license = "MIT"
+license = "MIT OR Apache-2.0"
 description = "Tokitai core types - Compile-time tool definitions with zero runtime dependencies"
 documentation = "https://docs.rs/tokitai-core"
 repository = "https://github.com/silverenternal/tokitai"
 homepage = "https://github.com/silverenternal/tokitai"
-keywords = ["ai", "mcp", "automation", "tool"]
-categories = ["development-tools"]
+keywords = ["ai", "llm", "tool-calling", "function-calling", "proc-macro"]
+categories = ["development-tools", "asynchronous"]
 rust-version = "1.70"
 
 [dependencies]

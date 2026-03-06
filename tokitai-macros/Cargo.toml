@@ -1,14 +1,14 @@
 [package]
 name = "tokitai-macros"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2021"
 authors = ["silverenternal <3147264070@qq.com>"]
-license = "MIT"
+license = "MIT OR Apache-2.0"
 description = "Procedural macros for Tokitai - Zero-dependency macro for AI tool integration"
 documentation = "https://docs.rs/tokitai-macros"
 repository = "https://github.com/silverenternal/tokitai"
 homepage = "https://github.com/silverenternal/tokitai"
-keywords = ["ai", "mcp", "macro", "automation", "tool"]
+keywords = ["ai", "llm", "tool-calling", "function-calling", "proc-macro"]
 categories = ["development-tools::procedural-macro-helpers"]
 rust-version = "1.70"
 

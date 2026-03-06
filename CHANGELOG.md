@@ -7,7 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.3.1] - 2026-03-06
+## [0.3.2] - 2026-03-06
+
+### Added
+- `HashCalculator` tool with SHA256 hashing support
+  - `sha256()` method for computing string hashes
+  - `sha256_file()` method for computing file hashes
+- New example demonstrating AI calling SHA256 computation tool
+- Dependencies: `sha2` and `hex` crates for cryptographic hashing
+
+### Removed
+- HeWeather (和风天气) real API integration due to API host authentication issues
+- Weather preloading and caching logic
+- `WEATHER_API_KEY` and `WEATHER_USE_REAL_API` environment variables
+- `reqwest` blocking feature (now only requires `json` feature)
+
+### Changed
+- `WeatherService` now uses mock data for all cities
+- Simplified `ollama_integration.rs` example to focus on core functionality
+
+## [0.3.1] - 2026-03-05
 
 ### Added
 - `Display` trait implementation for `ToolDefinition` for easier debugging

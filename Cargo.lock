@@ -1225,7 +1225,7 @@ dependencies = [
 
 [[package]]
 name = "tokitai"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "log",
  "serde",
@@ -1238,7 +1238,7 @@ dependencies = [
 
 [[package]]
 name = "tokitai-core"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -1263,7 +1263,7 @@ dependencies = [
 
 [[package]]
 name = "tokitai-macros"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "proc-macro2",
  "quote",

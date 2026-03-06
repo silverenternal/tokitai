@@ -7,6 +7,32 @@
 //! - [`ToolDefinition`] - 工具定义，包含名称、描述和输入 schema
 //! - [`ToolParameter`] - 工具参数定义
 //! - [`ToolError`] - 工具调用错误类型
+//! - [`ToolProvider`] - 工具提供者 trait（由 `#[tool]` 宏自动实现）
+//!
+//! # 使用示例
+//!
+//! ```rust
+//! use tokitai_core::ToolDefinition;
+//!
+//! // 创建工具定义
+//! let tool = ToolDefinition::new(
+//!     "add",
+//!     "两个数相加",
+//!     "{\"type\":\"object\",\"properties\":{\"a\":{\"type\":\"integer\"},\"b\":{\"type\":\"integer\"}},\"required\":[\"a\",\"b\"]}"
+//! );
+//!
+//! assert_eq!(tool.name, "add");
+//! assert_eq!(tool.description, "两个数相加");
+//! ```
+//!
+//! # 无标准库支持
+//!
+//! 本 crate 支持 `no_std` 环境（禁用 `serde` 特性时）：
+//!
+//! ```toml
+//! [dependencies]
+//! tokitai-core = { version = "0.3", default-features = false }
+//! ```
 
 #![cfg_attr(not(feature = "serde"), no_std)]
 #![allow(dead_code)]
@@ -21,6 +47,23 @@ extern crate alloc;
 pub use serde_types::*;
 
 /// 工具定义 - 描述一个 AI 可调用的工具
+///
+/// 此结构体通常由 `#[tool]` 宏自动生成，无需手动创建。
+///
+/// # 字段
+///
+/// * `name` - 工具名称，用于 AI 调用时识别
+/// * `description` - 工具描述，帮助 AI 理解工具用途
+/// * `input_schema` - 输入参数的 JSON Schema，用于验证参数格式
+///
+/// # 示例
+///
+/// ```rust
+/// use tokitai_core::ToolDefinition;
+///
+/// let tool = ToolDefinition::new("add", "Add two numbers", "{\"type\":\"object\"}");
+/// assert_eq!(tool.name, "add");
+/// ```
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ToolDefinition {
@@ -34,6 +77,24 @@ pub struct ToolDefinition {
 
 impl ToolDefinition {
     /// 创建新的工具定义
+    ///
+    /// # 参数
+    ///
+    /// * `name` - 工具名称
+    /// * `description` - 工具描述
+    /// * `input_schema` - JSON Schema 字符串
+    ///
+    /// # 示例
+    ///
+    /// ```rust
+    /// use tokitai_core::ToolDefinition;
+    ///
+    /// let tool = ToolDefinition::new(
+    ///     "get_weather",
+    ///     "获取指定城市的天气",
+    ///     "{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"]}"
+    /// );
+    /// ```
     pub fn new(
         name: &'static str,
         description: &'static str,
@@ -66,20 +127,47 @@ impl std::fmt::Display for ToolDefinition {
 }
 
 /// 参数类型
+///
+/// 用于描述工具参数的 JSON Schema 类型。
+///
+/// # 示例
+///
+/// ```rust
+/// use tokitai_core::ParamType;
+///
+/// assert_eq!(ParamType::from_rust_type("String"), Some(ParamType::String));
+/// assert_eq!(ParamType::from_rust_type("i32"), Some(ParamType::Integer));
+/// assert_eq!(ParamType::Integer.as_str(), "integer");
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(u8)]
 pub enum ParamType {
+    /// 字符串类型
     String = 0,
+    /// 整数类型
     Integer = 1,
+    /// 数字类型（浮点数）
     Number = 2,
+    /// 布尔类型
     Boolean = 3,
+    /// 数组类型
     Array = 4,
+    /// 对象类型
     Object = 5,
 }
 
 impl ParamType {
     /// 获取 JSON Schema 类型字符串
+    ///
+    /// # 示例
+    ///
+    /// ```rust
+    /// use tokitai_core::ParamType;
+    ///
+    /// assert_eq!(ParamType::String.as_str(), "string");
+    /// assert_eq!(ParamType::Integer.as_str(), "integer");
+    /// ```
     pub fn as_str(&self) -> &'static str {
         match self {
             ParamType::String => "string",
@@ -92,6 +180,22 @@ impl ParamType {
     }
 
     /// 从 Rust 类型名推断参数类型
+    ///
+    /// # 参数
+    ///
+    /// * `type_name` - Rust 类型名称（如 `"String"`, `"i32"`, `"Vec<i32>"`）
+    ///
+    /// # 示例
+    ///
+    /// ```rust
+    /// use tokitai_core::ParamType;
+    ///
+    /// assert_eq!(ParamType::from_rust_type("String"), Some(ParamType::String));
+    /// assert_eq!(ParamType::from_rust_type("i32"), Some(ParamType::Integer));
+    /// assert_eq!(ParamType::from_rust_type("f64"), Some(ParamType::Number));
+    /// assert_eq!(ParamType::from_rust_type("bool"), Some(ParamType::Boolean));
+    /// assert_eq!(ParamType::from_rust_type("Vec<i32>"), Some(ParamType::Array));
+    /// ```
     pub fn from_rust_type(type_name: &str) -> Option<Self> {
         match type_name {
             "String" | "str" => Some(ParamType::String),
@@ -114,6 +218,21 @@ impl ParamType {
 }
 
 /// 工具参数定义
+///
+/// 用于描述工具的单个参数。
+///
+/// # 示例
+///
+/// ```rust
+/// use tokitai_core::{ToolParameter, ParamType};
+///
+/// let param = ToolParameter::new(
+///     "city",
+///     ParamType::String,
+///     "城市名称",
+///     true, // 必需参数
+/// );
+/// ```
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ToolParameter {
@@ -130,6 +249,21 @@ pub struct ToolParameter {
 
 impl ToolParameter {
     /// 创建新的参数定义
+    ///
+    /// # 参数
+    ///
+    /// * `name` - 参数名称
+    /// * `param_type` - 参数类型
+    /// * `description` - 参数描述
+    /// * `required` - 是否必需
+    ///
+    /// # 示例
+    ///
+    /// ```rust
+    /// use tokitai_core::{ToolParameter, ParamType};
+    ///
+    /// let param = ToolParameter::new("limit", ParamType::Integer, "返回结果数量", false);
+    /// ```
     pub fn new(
         name: &'static str,
         param_type: ParamType,
@@ -146,6 +280,17 @@ impl ToolParameter {
 }
 
 /// 工具调用错误
+///
+/// 表示工具调用过程中可能发生的错误。
+///
+/// # 示例
+///
+/// ```rust
+/// use tokitai_core::{ToolError, ToolErrorKind};
+///
+/// let error = ToolError::validation_error("缺少必需参数 'city'");
+/// assert_eq!(error.kind, ToolErrorKind::ValidationError);
+/// ```
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ToolError {
@@ -170,10 +315,12 @@ impl std::fmt::Display for ToolError {
 
 #[cfg(not(feature = "serde"))]
 impl ToolError {
+    /// 创建新的错误
     pub fn new(kind: ToolErrorKind, message: &'static str) -> Self {
         Self { kind, message }
     }
 
+    /// 创建验证错误
     pub fn validation_error(message: &'static str) -> Self {
         Self {
             kind: ToolErrorKind::ValidationError,
@@ -181,6 +328,7 @@ impl ToolError {
         }
     }
 
+    /// 创建未找到错误
     pub fn not_found(message: &'static str) -> Self {
         Self {
             kind: ToolErrorKind::NotFound,
@@ -188,6 +336,7 @@ impl ToolError {
         }
     }
 
+    /// 创建内部错误
     pub fn internal_error(message: &'static str) -> Self {
         Self {
             kind: ToolErrorKind::InternalError,
@@ -198,10 +347,12 @@ impl ToolError {
 
 #[cfg(feature = "serde")]
 impl ToolError {
+    /// 创建新的错误
     pub fn new(kind: ToolErrorKind, message: impl Into<crate::serde_types::String>) -> Self {
         Self { kind, message: message.into() }
     }
 
+    /// 创建验证错误
     pub fn validation_error(message: impl Into<crate::serde_types::String>) -> Self {
         Self {
             kind: ToolErrorKind::ValidationError,
@@ -209,6 +360,7 @@ impl ToolError {
         }
     }
 
+    /// 创建未找到错误
     pub fn not_found(message: impl Into<crate::serde_types::String>) -> Self {
         Self {
             kind: ToolErrorKind::NotFound,
@@ -216,6 +368,7 @@ impl ToolError {
         }
     }
 
+    /// 创建内部错误
     pub fn internal_error(message: impl Into<crate::serde_types::String>) -> Self {
         Self {
             kind: ToolErrorKind::InternalError,
@@ -229,19 +382,38 @@ impl ToolError {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(u8)]
 pub enum ToolErrorKind {
-    /// 验证错误
+    /// 验证错误 - 参数验证失败
     ValidationError = 0,
-    /// 工具未找到
+    /// 工具未找到 - 请求的工具不存在
     NotFound = 1,
-    /// 内部错误
+    /// 内部错误 - 工具执行失败
     InternalError = 2,
-    /// 类型错误
+    /// 类型错误 - 参数类型不匹配
     TypeError = 3,
 }
 
 /// 编译期工具注册表 trait
 ///
-/// 由 `#[tool]` 宏自动实现
+/// 由 `#[tool]` 宏自动实现，用于提供工具定义和调用接口。
+///
+/// # 示例
+///
+/// ```rust
+/// use tokitai_core::ToolProvider;
+///
+/// // 假设有一个使用了 #[tool] 宏的类型
+/// // struct Calculator;
+/// // #[tool] impl Calculator { ... }
+///
+/// // 获取所有工具定义
+/// // let tools = Calculator::TOOL_DEFINITIONS;
+///
+/// // 获取工具数量
+/// // let count = Calculator::tool_count();
+///
+/// // 查找特定工具
+/// // let tool = Calculator::find_tool("add");
+/// ```
 pub trait ToolProvider {
     /// 获取所有工具定义
     fn tool_definitions() -> &'static [ToolDefinition];
@@ -261,11 +433,32 @@ pub trait ToolProvider {
 
 #[cfg(feature = "serde")]
 pub mod serde_types {
+    //! serde 相关类型别名
+    //!
+    //! 此模块在使用 `serde` 特性时可用。
+
     pub use serde_json::Value;
     pub use alloc::string::String;
 }
 
 /// 生成 JSON Schema 的辅助宏（编译期）
+///
+/// 此宏用于在编译期生成 JSON Schema 字符串，避免运行时开销。
+///
+/// # 示例
+///
+/// ```rust,ignore
+/// // 注意：此宏需要在编译期生成字符串，语法较为特殊
+/// use tokitai_core::json_schema;
+///
+/// const SCHEMA: &str = json_schema!({
+///     "city": {
+///         type: String,
+///         description: "城市名称",
+///         required: true,
+///     }
+/// });
+/// ```
 #[macro_export]
 macro_rules! json_schema {
     (

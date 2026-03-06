@@ -1,10 +1,49 @@
 # Tokitai
 
+[![Crates.io](https://img.shields.io/crates/v/tokitai.svg)](https://crates.io/crates/tokitai)
+[![Documentation](https://docs.rs/tokitai/badge.svg)](https://docs.rs/tokitai)
+[![License](https://img.shields.io/crates/l/tokitai)](LICENSE)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/silverenternal/tokitai/ci.yml)](https://github.com/silverenternal/tokitai/actions)
+
 **编译期 AI 工具定义 · 零运行时侵入 · 魔法贴纸式集成**
 
-只需一个 `#[tool]` 标签，让你的 Rust 方法立即可以被 AI 调用。
+Tokitai 是一个零运行时依赖的过程宏库，只需一个 `#[tool]` 属性，即可将你的 Rust 方法自动转换为 AI 可调用的工具。所有工具定义在编译期生成，类型错误在编译时暴露。
+
+## 为什么选择 Tokitai？
+
+LLM 无法精确执行某些任务（如数学计算、文件操作、API 调用）。Tokitai 让你能够：
+
+1. **定义 Rust 方法** → 实现你的业务逻辑
+2. **发送给 AI** → AI 知道有哪些工具可用
+3. **接收调用请求** → AI 返回"我想调用某个工具"
+4. **执行并返回结果** → 本地执行 Rust 代码
+
+```
+┌─────────────┐    工具定义    ┌─────────────┐
+│   你的代码   │ ────────────→ │   AI 服务    │
+│  #[tool]    │               │ (Ollama 等)  │
+└─────────────┘               └─────────────┘
+       ↑                             │
+       │ 执行结果                    │ 调用请求
+       │                             ↓
+┌─────────────┐               ┌─────────────┐
+│  Rust 方法   │ ←──────────── │  JSON 调用  │
+│  本地执行   │   call_tool   │  {"name":..}│
+└─────────────┘               └─────────────┘
+```
 
 ## 快速开始
+
+### 1. 添加依赖
+
+```toml
+[dependencies]
+tokitai = "0.3"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+```
+
+### 2. 定义工具
 
 ```rust
 use tokitai::tool;
@@ -18,239 +57,212 @@ impl Calculator {
         a + b
     }
 
-    /// 解析 DXF 文件
-    pub fn parse_dxf(&self, path: String) -> Result<DxfData, ParseError> {
-        // 你的业务逻辑...
+    /// 计算字符串的 SHA256 哈希值
+    pub fn sha256(&self, input: String) -> String {
+        // 你的实现...
+        format!("hash of {}", input)
     }
 }
+```
 
-// 使用
-let calc = Calculator;
+### 3. 获取工具定义（发送给 AI）
 
-// 获取工具列表（发送给 AI）
+```rust
+// 编译期生成的工具定义
 let tools = Calculator::TOOL_DEFINITIONS;
 
-// 调用工具（接收 AI 的请求）
-let result = calc.call_tool("add", &serde_json::json!({"a": 10, "b": 20}))?;
+// 转换为 JSON 发送给 AI
+let tools_json = serde_json::to_string_pretty(tools)?;
+println!("{}", tools_json);
 ```
 
-## 特性
-
-- 🏷️ **魔法贴纸** - 只需 `#[tool]`，无需学习复杂 API
-- 🔒 **编译期生成** - 工具定义在编译期生成，类型错误编译时暴露
-- 🪶 **零运行时依赖** - `default-features = false` 仅依赖 `serde`
-- 🔌 **不绑定 AI 供应商** - 生成的工具定义可发给任何 AI（Claude、GPT 等）
-- 📦 **MCP 兼容** - 可选 MCP 协议支持
-- 🚫 **灵活排除** - 使用 `#[tool(skip)]` 排除内部方法不暴露给 AI
-
----
-
-## 5 分钟快速上手
-
-### 1. 安装（30 秒）
-
-```toml
-[dependencies]
-tokitai = "0.3"
-serde_json = "1.0"
+输出：
+```json
+[
+  {
+    "name": "add",
+    "description": "两个数相加",
+    "input_schema": "{\"type\":\"object\",\"properties\":{\"a\":{\"type\":\"integer\"},\"b\":{\"type\":\"integer\"}},\"required\":[\"a\",\"b\"]}"
+  },
+  {
+    "name": "sha256",
+    "description": "计算字符串的 SHA256 哈希值",
+    "input_schema": "{\"type\":\"object\",\"properties\":{\"input\":{\"type\":\"string\"}},\"required\":[\"input\"]}"
+  }
+]
 ```
 
-### 2. 定义工具（2 分钟）
-
-```rust
-use tokitai::tool;
-
-pub struct MyTools;
-
-#[tool]
-impl MyTools {
-    /// 查询指定城市的天气
-    pub fn get_weather(&self, city: String) -> String {
-        // 你的业务逻辑
-        format!("{} 晴朗，25°C", city)
-    }
-
-    /// 添加待办事项
-    pub fn add_todo(&self, title: String, priority: Option<String>) -> String {
-        let prio = priority.unwrap_or_else(|| "medium".to_string());
-        format!("已添加待办：{}（优先级：{}）", title, prio)
-    }
-
-    // 内部方法，不暴露给 AI
-    #[tool(skip)]
-    fn internal_helper(&self) -> String {
-        "这个方法不会被 AI 看到".to_string()
-    }
-}
-```
-
-### 3. 获取工具定义（1 分钟）
-
-```rust
-let tools = MyTools::TOOL_DEFINITIONS;
-
-// 打印工具信息
-for tool in tools {
-    println!("工具：{} - {}", tool.name, tool.description);
-}
-
-// 发送给 AI（JSON 格式）
-let tools_json = serde_json::to_string_pretty(tools).unwrap();
-```
-
-### 4. 处理 AI 调用（2 分钟）
+### 4. 处理 AI 调用
 
 ```rust
 use serde_json::json;
 
-let my_tools = MyTools;
+let calc = Calculator;
 
-// AI 请求调用 get_weather 工具
-let result = my_tools.call_tool("get_weather", &json!({"city": "北京"}))?;
-println!("结果：{}", result);  // "北京 晴朗，25°C"
+// AI 请求调用 add 工具
+let ai_request = json!({"name": "add", "arguments": {"a": 10, "b": 20}});
 
-// 调用带可选参数的工具
-let result = my_tools.call_tool("add_todo", &json!({
-    "title": "学习 Tokitai",
-    "priority": "high"
-}))?;
+// 执行工具调用
+let result = calc.call_tool("add", &json!({"a": 10, "b": 20}))?;
+assert_eq!(result.as_i64().unwrap(), 30);
 ```
 
-### 下一步
+## 核心特性
 
-- 📖 [完整使用指南](docs/USAGE.md) - 详细 API 和高级功能
-- 🤖 [AI 集成示例](docs/AI_INTEGRATION.md) - 与 Ollama 等 AI 平台集成
-- 📝 [Skill 文件模板](docs/SKILL_TEMPLATE.md) - 如何编写工具说明文档
+| 特性 | 描述 |
+|------|------|
+| 🏷️ **零学习成本** | 只需 `#[tool]`，无需学习复杂 API |
+| 🔒 **编译期生成** | 工具定义在编译期生成，类型安全 |
+| 🪶 **零运行时依赖** | `default-features = false` 仅依赖 `serde` |
+| 🔌 **供应商中立** | 生成的工具定义兼容任何支持 Function Calling 的 AI |
+| 📦 **MCP 兼容** | 可选 Model Context Protocol 支持 |
+| 🚫 **灵活排除** | `#[tool(skip)]` 排除内部方法 |
+| ⚡ **异步支持** | 完整支持 `async fn` |
 
-## 安装
-
-```toml
-[dependencies]
-tokitai = "0.3"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-```
-
-### 最小化依赖
-
-```toml
-[dependencies]
-tokitai = { version = "0.3", default-features = false }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-```
-
-## 使用场景
-
-### 1. 暴露现有方法给 AI
+## 完整示例
 
 ```rust
 use tokitai::tool;
+use serde::{Deserialize, Serialize};
 
-pub struct DxfParser { /* ... */ }
+#[derive(Debug, Deserialize, Serialize)]
+pub struct WeatherData {
+    pub temperature: f64,
+    pub condition: String,
+}
+
+pub struct WeatherService;
 
 #[tool]
-impl DxfParser {
-    /// 解析 DXF 文件，提取几何信息
-    pub fn parse(&self, file_path: String) -> Result<ParsedData, ParseError> {
-        // 原有业务逻辑...
+impl WeatherService {
+    /// 获取指定城市的实时天气
+    pub fn get_weather(&self, city: String) -> Result<WeatherData, String> {
+        // 你的业务逻辑或 API 调用
+        Ok(WeatherData {
+            temperature: 25.0,
+            condition: "晴朗".to_string(),
+        })
+    }
+
+    /// 获取未来 N 天的天气预报
+    pub fn get_forecast(&self, city: String, days: Option<i32>) -> Vec<String> {
+        let days = days.unwrap_or(3);
+        (0..days).map(|i| format!("第 {} 天：晴朗", i + 1)).collect()
+    }
+
+    // 内部方法，不暴露给 AI
+    #[tool(skip)]
+    fn fetch_from_api(&self, endpoint: &str) -> Result<String, String> {
+        // 内部实现细节
+        Ok("API response".to_string())
     }
 }
-```
 
-### 2. 与 AI SDK 配合
+// 使用
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let service = WeatherService;
 
-```rust
-// 1. 获取工具定义，发送给 AI
-let tools = Calculator::TOOL_DEFINITIONS;
-let ai_request = build_ai_request(tools, user_message);
+    // 1. 获取工具定义
+    println!("可用工具：");
+    for tool in WeatherService::TOOL_DEFINITIONS {
+        println!("  - {}: {}", tool.name, tool.description);
+    }
 
-// 2. AI 返回工具调用
-let ai_response = call_ai_api(ai_request).await?;
+    // 2. 处理 AI 调用
+    use serde_json::json;
+    
+    let result = service.call_tool("get_weather", &json!({"city": "北京"}))?;
+    println!("天气数据：{}", result);
 
-// 3. 执行工具调用
-let result = calc.call_tool(&ai_response.tool_name, &ai_response.args)?;
-
-// 4. 返回结果给 AI
-let final_response = build_ai_response(result);
-```
-
-### 3. MCP 协议支持
-
-```toml
-tokitai = { version = "0.2", features = ["mcp"] }
-```
-
-```rust
-use tokitai::{tool, mcp};
-
-#[tool]
-impl Calculator {
-    pub fn add(&self, a: i32, b: i32) -> i32 { ... }
+    Ok(())
 }
-
-// 转换为 MCP 格式
-let mcp_tools = mcp::to_mcp_tools(Calculator::TOOL_DEFINITIONS);
 ```
-
-## 示例代码
-
-查看 [`examples/`](examples) 目录获取完整的使用示例：
-
-- **基础使用**: [`examples/basic_usage.rs`](examples/basic_usage.rs)
-- **Ollama 集成**: [`examples/ollama_integration.rs`](examples/ollama_integration.rs)
-- **多工具协作**: [`examples/multi_tool_chat.rs`](examples/multi_tool_chat.rs)
-
-运行示例：
-
-```bash
-# 运行基础使用示例
-cargo run --example basic_usage
-
-# 运行 Ollama 集成示例（需要先启动 Ollama 服务）
-cargo run --example ollama_integration
-
-# 运行多工具协作示例
-cargo run --example multi_tool_chat
-```
-
-## 文档
-
-- [使用指南](docs/USAGE.md) - 详细的使用文档
-- [AI 集成指南](docs/AI_INTEGRATION.md) - 与 Ollama 等 AI 平台集成的完整指南
-- [API 文档](https://docs.rs/tokitai) - Rust API 参考文档
-
-## 宏生成内容
-
-`#[tool]` 宏自动为 impl 块生成：
-
-1. `const TOOL_DEFINITIONS: &'static [ToolDefinition]` - 编译期工具定义数组
-2. `fn call_tool(&self, name: &str, args: &Value) -> Result<Value, ToolError>` - 工具调用分发
-3. 每个工具的包装函数，用于 JSON 参数解析
 
 ## 支持的参数类型
 
-| Rust 类型 | JSON Schema 类型 |
-|-----------|-----------------|
-| `String`, `&str` | `string` |
-| `i32`, `i64`, `u32` 等 | `integer` |
-| `f32`, `f64` | `number` |
-| `bool` | `boolean` |
-| `Vec<T>` | `array` |
-| `Option<T>` | 可选参数 |
-| 其他 `serde::Deserialize` 类型 | `object` |
+| Rust 类型 | JSON Schema | 示例 |
+|-----------|-------------|------|
+| `String`, `&str` | `string` | `"hello"` |
+| `i8`..=`i128`, `u8`..=`u128` | `integer` | `42` |
+| `f32`, `f64` | `number` | `3.14` |
+| `bool` | `boolean` | `true` |
+| `Vec<T>` | `array` | `[1, 2, 3]` |
+| `Option<T>` | 可选参数 | `null` 或值 |
+| 自定义类型 | `object` | `{"field": "value"}` |
 
-## 自定义工具属性
+## 高级用法
+
+### 自定义工具名称和描述
 
 ```rust
 #[tool]
 impl Calculator {
-    #[tool(name = "add_numbers", desc = "将两个数字相加")]
+    #[tool(name = "add_numbers", desc = "将两个数字相加并返回结果")]
     pub fn add(&self, a: i32, b: i32) -> i32 {
         a + b
     }
 }
 ```
+
+### 异步方法
+
+```rust
+#[tool]
+impl Database {
+    pub async fn query(&self, sql: String) -> Result<Vec<Row>, DbError> {
+        // 异步数据库查询
+    }
+}
+```
+
+### 复杂参数类型
+
+```rust
+#[derive(Debug, Deserialize)]
+pub struct Location {
+    pub latitude: f64,
+    pub longitude: f64,
+}
+
+#[tool]
+impl MapService {
+    pub fn get_weather_at(&self, location: Location) -> String {
+        format!("位置 ({}, {}) 的天气", location.latitude, location.longitude)
+    }
+}
+```
+
+## 与 AI 平台集成
+
+### Ollama
+
+```rust
+// 1. 发送工具定义给 Ollama
+let tools = Calculator::TOOL_DEFINITIONS;
+let request = serde_json::json!({
+    "model": "qwen3.5:397b",
+    "messages": [{"role": "user", "content": "计算 100 + 250"}],
+    "tools": tools
+});
+
+// 2. 调用 Ollama API
+let response = reqwest::Client::new()
+    .post("http://localhost:11434/api/chat")
+    .json(&request)
+    .send()
+    .await?;
+
+// 3. AI 返回工具调用请求
+// {"message": {"tool_calls": [{"function": {"name": "add", "arguments": {"a": 100, "b": 250}}}]}}
+
+// 4. 执行工具调用
+let calc = Calculator;
+let result = calc.call_tool("add", &json!({"a": 100, "b": 250}))?;
+
+// 5. 返回结果给 AI，获取最终回复
+```
+
+完整示例请查看 [`examples/ollama_integration.rs`](examples/ollama_integration.rs)
 
 ## 项目结构
 
@@ -258,22 +270,66 @@ impl Calculator {
 tokitai/
 ├── tokitai-core/     # 核心类型定义（零依赖）
 ├── tokitai-macros/   # 过程宏（编译期代码生成）
-└── tokitai/          # 运行时库（可选）
+├── tokitai/          # 运行时库（可选）
+├── examples/         # 使用示例
+│   ├── basic_usage.rs
+│   └── ollama_integration.rs
+└── docs/             # 详细文档
+    ├── USAGE.md
+    ├── AI_INTEGRATION.md
+    └── ARCHITECTURE.md
+```
+
+## 文档
+
+| 文档 | 描述 |
+|------|------|
+| [📖 使用指南](docs/USAGE.md) | 详细 API 和高级功能 |
+| [🤖 AI 集成指南](docs/AI_INTEGRATION.md) | 与 Ollama 等平台集成 |
+| [🏛️ 架构设计](docs/ARCHITECTURE.md) | 内部设计和宏展开说明 |
+| [📝 API 参考](https://docs.rs/tokitai) | Rust API 文档 |
+
+## 运行示例
+
+```bash
+# 基础使用示例
+cargo run --example basic_usage
+
+# Ollama 集成示例
+cargo run --example ollama_integration
+
+# 运行测试
+cargo test --workspace
+
+# 查看宏展开代码
+cargo expand --example basic_usage
 ```
 
 ## 许可证
 
-MIT
+本项目采用双许可：
 
-## 作者
-
-silverenternal <3147264070@qq.com>
+- [MIT License](LICENSE-MIT)
+- [Apache License 2.0](LICENSE-APACHE)
 
 ## 贡献
 
-欢迎提交 Issue 和 PR！
+欢迎提交 Issue 和 Pull Request！详情请查看 [贡献指南](CONTRIBUTING.md)。
 
-## 链接
+## 版本历史
 
-- GitHub: https://github.com/silverenternal/tokitai
-- 文档：https://docs.rs/tokitai
+查看 [CHANGELOG.md](CHANGELOG.md) 了解完整版本历史。
+
+## 相关链接
+
+- **GitHub**: https://github.com/silverenternal/tokitai
+- **Crates.io**: https://crates.io/crates/tokitai
+- **docs.rs**: https://docs.rs/tokitai
+
+---
+
+<div align="center">
+
+**Tokitai** · 让 AI 调用你的 Rust 代码从未如此简单
+
+</div>
