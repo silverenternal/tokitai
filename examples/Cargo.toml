@@ -26,3 +26,7 @@ path = "ollama_integration.rs"
 [[example]]
 name = "multi_tool_chat"
 path = "multi_tool_chat.rs"
+
+[[example]]
+name = "openai_integration"
+path = "openai_integration.rs"

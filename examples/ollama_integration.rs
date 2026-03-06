@@ -37,18 +37,25 @@ use tokitai::ToolProvider;
 struct Config {
     base_url: String,
     model: String,
+    api_key: Option<String>,
     enabled: bool,
 }
 
 impl Config {
     fn from_env() -> Self {
-        // 加载 .env 文件（如果存在）
+        // 尝试从项目根目录加载 examples/.env
+        let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string());
+        let env_path = std::path::Path::new(&manifest_dir).join("examples").join(".env");
+        dotenv::from_path(env_path).ok();
+        
+        // 也尝试当前目录的 .env（兼容）
         dotenv::dotenv().ok();
 
         let base_url = std::env::var("OLLAMA_BASE_URL")
-            .unwrap_or_else(|_| "http://localhost:11434".to_string());
+            .unwrap_or_else(|_| "https://ollama.com".to_string());
         let model = std::env::var("OLLAMA_MODEL")
-            .unwrap_or_else(|_| "llama2".to_string());
+            .unwrap_or_else(|_| "qwen3.5:cloud".to_string());
+        let api_key = std::env::var("OLLAMA_API_KEY").ok();
         let enabled = std::env::var("OLLAMA_ENABLED")
             .unwrap_or_else(|_| "false".to_string())
             .to_lowercase() == "true";
@@ -56,6 +63,7 @@ impl Config {
         Self {
             base_url,
             model,
+            api_key,
             enabled,
         }
     }
@@ -177,6 +185,7 @@ struct OllamaClient {
     client: Client,
     base_url: String,
     model: String,
+    api_key: Option<String>,
 }
 
 impl OllamaClient {
@@ -185,6 +194,7 @@ impl OllamaClient {
             client: Client::new(),
             base_url: config.base_url.clone(),
             model: config.model.clone(),
+            api_key: config.api_key.clone(),
         }
     }
 
@@ -226,14 +236,30 @@ impl OllamaClient {
             stream: false,
         };
 
+        // Ollama 云 API 路径是 /api/chat
         let url = format!("{}/api/chat", self.base_url);
-        let response = self.client.post(&url).json(&request).send().await
-            .map_err(|e| format!("请求失败：{}", e))?
-            .json::<OllamaResponse>()
-            .await
+        
+        let mut req = self.client.post(&url).json(&request);
+        
+        // 如果有 API key，添加认证头（Ollama 云需要）
+        if let Some(ref api_key) = self.api_key {
+            req = req.header("Authorization", format!("Bearer {}", api_key));
+        }
+        
+        let response = req.send().await
+            .map_err(|e| format!("请求失败：{}", e))?;
+        
+        // 检查响应状态
+        let status = response.status();
+        if !status.is_success() {
+            let error_text = response.text().await.unwrap_or_else(|_| "未知错误".to_string());
+            return Err(format!("API 返回错误 ({}): {}", status, error_text));
+        }
+        
+        let result = response.json::<OllamaResponse>().await
             .map_err(|e| format!("解析响应失败：{}", e))?;
 
-        Ok(response.message)
+        Ok(result.message)
     }
 }
 
@@ -294,27 +320,43 @@ async fn main() -> Result<(), String> {
         println!("  4. 复制 examples/.env.example 到 examples/.env");
         println!("  5. 设置 OLLAMA_ENABLED=true");
         println!("\n或者使用云端 AI 服务：");
-        println!("  - 编辑 examples/.env，配置 OPENAI_API_KEY 等");
+        println!("  - 编辑 examples/.env，配置 OLLAMA_API_KEY 等");
         println!("  - 参考 docs/AI_INTEGRATION.md 了解如何集成其他 AI 服务\n");
         run_offline_demo().await.map_err(|e| e.to_string())?;
         return Ok(());
     }
 
-    // 检查 Ollama 服务是否可用
-    println!("正在检查 Ollama 服务 ({})...", config.base_url);
-    let client = reqwest::Client::new();
-    match client.get(format!("{}/api/tags", config.base_url)).send().await {
-        Ok(resp) => {
-            if resp.status().is_success() {
-                println!("✓ Ollama 服务正常运行\n");
-            } else {
-                println!("⚠ Ollama 服务响应异常，继续示例演示...\n");
-            }
+    // 检查是否为在线服务（有 API key 或非 localhost 地址）
+    let is_cloud = config.api_key.is_some() && !config.api_key.as_ref().unwrap().is_empty() || 
+                   (!config.base_url.contains("localhost") && 
+                    !config.base_url.contains("127.0.0.1"));
+    
+    if is_cloud {
+        println!("✓ 使用 Ollama 云服务");
+        println!("  服务地址：{}", config.base_url);
+        println!("  模型：{}", config.model);
+        if config.api_key.is_some() && !config.api_key.as_ref().unwrap().is_empty() {
+            println!("  API Key: 已配置\n");
+        } else {
+            println!("  API Key: 未配置（可能需要）\n");
         }
-        Err(_) => {
-            println!("⚠ Ollama 服务未运行，将展示离线演示模式\n");
-            run_offline_demo().await.map_err(|e| e.to_string())?;
-            return Ok(());
+    } else {
+        // 本地服务检查
+        println!("正在检查 Ollama 本地服务 ({})...", config.base_url);
+        let client = reqwest::Client::new();
+        match client.get(format!("{}/api/tags", config.base_url)).send().await {
+            Ok(resp) => {
+                if resp.status().is_success() {
+                    println!("✓ Ollama 本地服务正常运行\n");
+                } else {
+                    println!("⚠ Ollama 本地服务响应异常，继续示例演示...\n");
+                }
+            }
+            Err(_) => {
+                println!("⚠ Ollama 本地服务未运行，将展示离线演示模式\n");
+                run_offline_demo().await.map_err(|e| e.to_string())?;
+                return Ok(());
+            }
         }
     }
 
