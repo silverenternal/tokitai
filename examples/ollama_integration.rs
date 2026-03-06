@@ -93,138 +93,26 @@ impl Calculator {
 }
 
 /// 天气查询工具
-pub struct WeatherService {
-    // 天气缓存：城市 -> 天气数据
-    cache: std::sync::Mutex<std::collections::HashMap<String, String>>,
-}
-
-impl WeatherService {
-    fn new() -> Self {
-        Self {
-            cache: std::sync::Mutex::new(std::collections::HashMap::new()),
-        }
-    }
-
-    /// 预加载城市天气数据（异步）
-    async fn preload_weather(&self, city: &str) {
-        let weather = get_weather_async(city).await;
-        let mut cache = self.cache.lock().unwrap();
-        cache.insert(city.to_lowercase(), weather);
-    }
-
-    /// 获取缓存的天气数据
-    fn get_cached_weather(&self, city: &str) -> String {
-        let cache = self.cache.lock().unwrap();
-        cache.get(&city.to_lowercase())
-            .cloned()
-            .unwrap_or_else(|| format!("{}：数据加载中", city))
-    }
-}
+pub struct WeatherService;
 
 #[tool]
 impl WeatherService {
     /// 获取指定城市的天气信息
     pub fn get_weather(&self, city: String) -> String {
-        self.get_cached_weather(&city)
-    }
-}
-/// 可以从 https://devapi.qweather.com/v2/city/lookup?location=城市名&key=YOUR_KEY 获取
-fn get_city_id(city: &str) -> Option<&'static str> {
-    match city.to_lowercase().as_str() {
-        "北京" | "beijing" => Some("101010100"),
-        "上海" | "shanghai" => Some("101020100"),
-        "广州" | "guangzhou" => Some("101280101"),
-        "深圳" | "shenzhen" => Some("101280601"),
-        "杭州" | "hangzhou" => Some("101210101"),
-        "成都" | "chengdu" => Some("101270101"),
-        "重庆" | "chongqing" => Some("101040100"),
-        "武汉" | "wuhan" => Some("101200101"),
-        "西安" | "xian" => Some("101110101"),
-        "南京" | "nanjing" => Some("101190101"),
-        _ => None,
-    }
-}
-
-/// 从和风天气 API 获取实时天气（异步版本，使用 API Key 认证）
-async fn fetch_real_weather_async(api_key: &str, city_id: &str) -> Result<String, String> {
-    // 使用 API Key 直接请求（和风天气标准认证方式）
-    let url = format!(
-        "https://devapi.qweather.com/v7/weather/now?location={}&key={}",
-        city_id, api_key
-    );
-
-    let response = reqwest::Client::new()
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| format!("请求天气 API 失败：{}", e))?;
-
-    if !response.status().is_success() {
-        return Err(format!("天气 API 返回错误：{} ({})", response.status(), response.text().await.unwrap_or_default()));
-    }
-
-    let json: serde_json::Value = response.json()
-        .await
-        .map_err(|e| format!("解析天气数据失败：{}", e))?;
-
-    // 解析返回数据
-    let code = json.get("code").and_then(|v| v.as_str()).unwrap_or("500");
-    if code != "200" {
-        let msg = json.get("msg").and_then(|v| v.as_str()).unwrap_or("未知错误");
-        return Err(format!("天气 API 错误 ({}): {}", code, msg));
-    }
-
-    let now = json.get("now").ok_or("天气数据为空")?;
-    let temp = now.get("temp").and_then(|v| v.as_str()).unwrap_or("?");
-    let feels_like = now.get("feelsLike").and_then(|v| v.as_str()).unwrap_or("?");
-    let text = now.get("text").and_then(|v| v.as_str()).unwrap_or("未知");
-    let wind_dir = now.get("windDir").and_then(|v| v.as_str()).unwrap_or("");
-    let wind_scale = now.get("windLevel").and_then(|v| v.as_str()).unwrap_or("");
-    let humidity = now.get("humidity").and_then(|v| v.as_str()).unwrap_or("");
-
-    Ok(format!(
-        "天气：{}，温度：{}°C，体感温度：{}°C，风向：{}，风力：{} 级，湿度：{}%",
-        text, temp, feels_like, wind_dir, wind_scale, humidity
-    ))
-}
-
-/// 获取天气（支持异步）
-async fn get_weather_async(city: &str) -> String {
-    // 尝试从环境变量获取 API Key
-    let api_key = std::env::var("WEATHER_API_KEY").ok();
-    
-    // 检查是否启用真实 API
-    let use_real_api = std::env::var("WEATHER_USE_REAL_API")
-        .map(|v| v.to_lowercase() == "true")
-        .unwrap_or(false);
-
-    // 如果有 API Key 且启用真实 API
-    if use_real_api {
-        if let Some(key) = api_key {
-            if let Some(city_id) = get_city_id(city) {
-                match fetch_real_weather_async(&key, city_id).await {
-                    Ok(weather) => return format!("{}：{}", city, weather),
-                    Err(e) => return format!("{}：天气查询失败 ({})", city, e),
-                }
-            } else {
-                return format!("{}：未知城市（请先配置城市 ID）", city);
-            }
+        // 模拟天气数据
+        match city.to_lowercase().as_str() {
+            "北京" | "beijing" => "北京：晴朗，温度 25°C，湿度 40%".to_string(),
+            "上海" | "shanghai" => "上海：多云，温度 22°C，湿度 60%".to_string(),
+            "广州" | "guangzhou" => "广州：小雨，温度 28°C，湿度 80%".to_string(),
+            "深圳" | "shenzhen" => "深圳：晴朗，温度 30°C，湿度 70%".to_string(),
+            "杭州" | "hangzhou" => "杭州：多云，温度 24°C，湿度 65%".to_string(),
+            "成都" | "chengdu" => "成都：阴天，温度 20°C，湿度 75%".to_string(),
+            "重庆" | "chongqing" => "重庆：小雨，温度 26°C，湿度 85%".to_string(),
+            "武汉" | "wuhan" => "武汉：晴朗，温度 27°C，湿度 55%".to_string(),
+            "西安" | "xian" => "西安：多云，温度 23°C，湿度 50%".to_string(),
+            "南京" | "nanjing" => "南京：晴朗，温度 25°C，湿度 60%".to_string(),
+            _ => format!("{}：数据不可用", city),
         }
-    }
-
-    // 模拟天气数据（备用）
-    match city.to_lowercase().as_str() {
-        "北京" | "beijing" => "北京：晴朗，温度 25°C，湿度 40%".to_string(),
-        "上海" | "shanghai" => "上海：多云，温度 22°C，湿度 60%".to_string(),
-        "广州" | "guangzhou" => "广州：小雨，温度 28°C，湿度 80%".to_string(),
-        "深圳" | "shenzhen" => "深圳：晴朗，温度 30°C，湿度 70%".to_string(),
-        "杭州" | "hangzhou" => "杭州：多云，温度 24°C，湿度 65%".to_string(),
-        "成都" | "chengdu" => "成都：阴天，温度 20°C，湿度 75%".to_string(),
-        "重庆" | "chongqing" => "重庆：小雨，温度 26°C，湿度 85%".to_string(),
-        "武汉" | "wuhan" => "武汉：晴朗，温度 27°C，湿度 55%".to_string(),
-        "西安" | "xian" => "西安：多云，温度 23°C，湿度 50%".to_string(),
-        "南京" | "nanjing" => "南京：晴朗，温度 25°C，湿度 60%".to_string(),
-        _ => format!("{}：数据不可用（模拟模式）", city),
     }
 }
 
@@ -394,14 +282,9 @@ impl AiAssistant {
     fn new() -> Self {
         Self {
             calculator: Calculator,
-            weather: WeatherService::new(),
+            weather: WeatherService,
             time_service: TimeService,
         }
-    }
-
-    /// 预加载天气数据
-    async fn preload_weather(&self, city: &str) {
-        self.weather.preload_weather(city).await;
     }
 
     /// 处理工具调用
@@ -416,14 +299,8 @@ impl AiAssistant {
         let result = match name {
             "add" | "multiply" | "sqrt" => self.calculator.call_tool(name, args)
                 .map_err(|e| format!("计算器工具错误：{:?}", e))?,
-            "get_weather" => {
-                // 从缓存获取天气数据
-                let city = args.get("city")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("北京");
-                let weather = self.weather.get_cached_weather(city);
-                serde_json::to_value(weather).unwrap()
-            },
+            "get_weather" => self.weather.call_tool(name, args)
+                .map_err(|e| format!("天气工具错误：{:?}", e))?,
             "get_current_time" | "days_between" => self.time_service.call_tool(name, args)
                 .map_err(|e| format!("时间工具错误：{:?}", e))?,
             _ => return Err(format!("未知工具：{}", name)),
@@ -493,16 +370,6 @@ async fn main() -> Result<(), String> {
     // 创建助手和 Ollama 客户端
     let assistant = AiAssistant::new();
     let ollama = OllamaClient::new(&config);
-
-    // 预加载天气数据（如果启用真实 API）
-    let use_real_weather = std::env::var("WEATHER_USE_REAL_API")
-        .map(|v| v.to_lowercase() == "true")
-        .unwrap_or(false);
-    if use_real_weather {
-        println!("正在加载真实天气数据...");
-        assistant.preload_weather("北京").await;
-        println!("✓ 天气数据已加载\n");
-    }
 
     // 收集所有工具定义
     let mut all_tools = Vec::new();
