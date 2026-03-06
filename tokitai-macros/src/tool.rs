@@ -300,9 +300,17 @@ fn generate_tool_def_consts(tools: &[ToolMethodInfo]) -> Vec<TokenStream2> {
                 let name = &tool.name;
                 return quote! {
                     compile_error!(concat!(
-                        "工具方法 `",
+                        "🔧 工具方法 `",
                         #name,
-                        "` 不支持泛型参数。请使用具体类型或 serde_json::Value 代替泛型参数"
+                        "` 使用了泛型参数，这不被支持。\n",
+                        "💡 解决方案：\n",
+                        "   1. 使用具体类型：fn ",
+                        #name,
+                        "(data: MyType) -> String\n",
+                        "   2. 使用 serde_json::Value: fn ",
+                        #name,
+                        "(data: Value) -> String\n",
+                        "   3. 在方法内部手动反序列化"
                     ));
                 };
             }
@@ -414,7 +422,15 @@ fn generate_call_tool_method(tools: &[ToolMethodInfo]) -> Vec<TokenStream2> {
         });
 
         methods.push(quote! {
-            /// 根据工具名称调用工具（同步阻塞版本，不推荐用于异步方法）
+            /// 根据工具名称调用工具（同步阻塞版本）
+            ///
+            /// # ⚠️ 注意
+            ///
+            /// 此方法在同步上下文中调用异步工具时会阻塞当前线程。
+            ///
+            /// - 如果当前线程没有 tokio 运行时，调用异步工具会导致错误
+            /// - 推荐始终使用 `call_tool().await` 异步调用
+            /// - 仅在确定所有工具都是同步的情况下使用此方法
             pub fn call_tool_sync(
                 &self,
                 name: &str,
@@ -494,7 +510,7 @@ fn generate_wrapper_method_sync(tool: &ToolMethodInfo) -> TokenStream2 {
         quote! {
             match result {
                 Ok(v) => Ok(serde_json::to_value(v).unwrap()),
-                Err(_e) => Err(::tokitai::ToolError::internal_error("方法执行失败")),
+                Err(e) => Err(::tokitai::ToolError::internal_error(format!("{}", e))),
             }
         }
     } else {
@@ -557,7 +573,7 @@ fn generate_wrapper_method(tool: &ToolMethodInfo, is_async: bool) -> TokenStream
         quote! {
             match result {
                 Ok(v) => Ok(serde_json::to_value(v).unwrap()),
-                Err(_e) => Err(::tokitai::ToolError::internal_error("方法执行失败")),
+                Err(e) => Err(::tokitai::ToolError::internal_error(format!("{}", e))),
             }
         }
     } else {

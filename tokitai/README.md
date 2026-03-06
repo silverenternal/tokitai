@@ -54,7 +54,7 @@ async fn main() {
 
 ```toml
 [dependencies]
-tokitai = "0.2"
+tokitai = "0.3"
 serde_json = "1.0"
 tokio = { version = "1.0", features = ["full"] }
 ```
@@ -65,8 +65,8 @@ tokio = { version = "1.0", features = ["full"] }
 
 ```toml
 [dependencies]
-tokitai = { version = "0.2", default-features = false }
-tokitai-core = "0.2"
+tokitai = { version = "0.3", default-features = false }
+tokitai-core = "0.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 ```

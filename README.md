@@ -41,12 +41,92 @@ let result = calc.call_tool("add", &serde_json::json!({"a": 10, "b": 20}))?;
 - 🪶 **零运行时依赖** - `default-features = false` 仅依赖 `serde`
 - 🔌 **不绑定 AI 供应商** - 生成的工具定义可发给任何 AI（Claude、GPT 等）
 - 📦 **MCP 兼容** - 可选 MCP 协议支持
+- 🚫 **灵活排除** - 使用 `#[tool(skip)]` 排除内部方法不暴露给 AI
+
+---
+
+## 5 分钟快速上手
+
+### 1. 安装（30 秒）
+
+```toml
+[dependencies]
+tokitai = "0.3"
+serde_json = "1.0"
+```
+
+### 2. 定义工具（2 分钟）
+
+```rust
+use tokitai::tool;
+
+pub struct MyTools;
+
+#[tool]
+impl MyTools {
+    /// 查询指定城市的天气
+    pub fn get_weather(&self, city: String) -> String {
+        // 你的业务逻辑
+        format!("{} 晴朗，25°C", city)
+    }
+
+    /// 添加待办事项
+    pub fn add_todo(&self, title: String, priority: Option<String>) -> String {
+        let prio = priority.unwrap_or_else(|| "medium".to_string());
+        format!("已添加待办：{}（优先级：{}）", title, prio)
+    }
+
+    // 内部方法，不暴露给 AI
+    #[tool(skip)]
+    fn internal_helper(&self) -> String {
+        "这个方法不会被 AI 看到".to_string()
+    }
+}
+```
+
+### 3. 获取工具定义（1 分钟）
+
+```rust
+let tools = MyTools::TOOL_DEFINITIONS;
+
+// 打印工具信息
+for tool in tools {
+    println!("工具：{} - {}", tool.name, tool.description);
+}
+
+// 发送给 AI（JSON 格式）
+let tools_json = serde_json::to_string_pretty(tools).unwrap();
+```
+
+### 4. 处理 AI 调用（2 分钟）
+
+```rust
+use serde_json::json;
+
+let my_tools = MyTools;
+
+// AI 请求调用 get_weather 工具
+let result = my_tools.call_tool("get_weather", &json!({"city": "北京"}))?;
+println!("结果：{}", result);  // "北京 晴朗，25°C"
+
+// 调用带可选参数的工具
+let result = my_tools.call_tool("add_todo", &json!({
+    "title": "学习 Tokitai",
+    "priority": "high"
+}))?;
+```
+
+### 下一步
+
+- 📖 [完整使用指南](docs/USAGE.md) - 详细 API 和高级功能
+- 🤖 [AI 集成示例](docs/AI_INTEGRATION.md) - 与 Ollama 等 AI 平台集成
+- 📝 [Skill 文件模板](docs/SKILL_TEMPLATE.md) - 如何编写工具说明文档
 
 ## 安装
 
 ```toml
 [dependencies]
-tokitai = "0.2"
+tokitai = "0.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 ```
@@ -55,7 +135,7 @@ serde_json = "1.0"
 
 ```toml
 [dependencies]
-tokitai = { version = "0.2", default-features = false }
+tokitai = { version = "0.3", default-features = false }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 ```

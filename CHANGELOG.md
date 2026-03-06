@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-03-06
+
+### Added
+- `Display` trait implementation for `ToolDefinition` for easier debugging
+- Comprehensive `starter_project` example template with complete project structure
+- `SKILL_TEMPLATE.md` documentation with ready-to-use templates
+- Enhanced error messages for generic method violations with actionable suggestions
+- Documentation warnings for `call_tool_sync` blocking behavior
+
+### Fixed
+- User custom error messages now preserved instead of being replaced with generic "方法执行失败"
+- Removed unnecessary `#[allow(dead_code)]` attributes in example code
+- Doc comment formatting in starter project examples
+
+### Changed
+- README.md now includes "5 分钟快速上手" quick start guide
+- README.md now mentions `#[tool(skip)]` feature in features section
+- Improved panic error message when calling async tools without runtime
+- Starter project now properly organized with modular tool definitions
+
 ## [0.3.0] - 2026-03-06
 
 ### Added

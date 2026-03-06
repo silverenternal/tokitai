@@ -16,7 +16,7 @@
 
 ```toml
 [dependencies]
-tokitai = "0.2"
+tokitai = "0.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 ```
@@ -62,7 +62,7 @@ let result = calc.call_tool("add", &serde_json::json!({"a": 10, "b": 20})).await
 
 ```toml
 [dependencies]
-tokitai = "0.2"
+tokitai = "0.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 ```
