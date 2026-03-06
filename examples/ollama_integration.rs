@@ -145,20 +145,22 @@ fn get_city_id(city: &str) -> Option<&'static str> {
     }
 }
 
-/// 从和风天气 API 获取实时天气（异步版本）
+/// 从和风天气 API 获取实时天气（异步版本，使用 API Key 认证）
 async fn fetch_real_weather_async(api_key: &str, city_id: &str) -> Result<String, String> {
+    // 使用 API Key 直接请求（和风天气标准认证方式）
     let url = format!(
         "https://devapi.qweather.com/v7/weather/now?location={}&key={}",
         city_id, api_key
     );
 
-    let client = reqwest::Client::new();
-    let response = client.get(&url).send()
+    let response = reqwest::Client::new()
+        .get(&url)
+        .send()
         .await
-        .map_err(|e| format!("请求和风天气 API 失败：{}", e))?;
+        .map_err(|e| format!("请求天气 API 失败：{}", e))?;
 
     if !response.status().is_success() {
-        return Err(format!("和风天气 API 返回错误：{}", response.status()));
+        return Err(format!("天气 API 返回错误：{} ({})", response.status(), response.text().await.unwrap_or_default()));
     }
 
     let json: serde_json::Value = response.json()
@@ -169,7 +171,7 @@ async fn fetch_real_weather_async(api_key: &str, city_id: &str) -> Result<String
     let code = json.get("code").and_then(|v| v.as_str()).unwrap_or("500");
     if code != "200" {
         let msg = json.get("msg").and_then(|v| v.as_str()).unwrap_or("未知错误");
-        return Err(format!("和风天气 API 错误 ({}): {}", code, msg));
+        return Err(format!("天气 API 错误 ({}): {}", code, msg));
     }
 
     let now = json.get("now").ok_or("天气数据为空")?;
