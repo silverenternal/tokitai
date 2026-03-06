@@ -12,6 +12,7 @@
 //!
 //! 复制 `examples/.env.example` 到 `examples/.env` 并配置：
 //! ```text
+//! # 本地 Ollama 服务（默认）
 //! OLLAMA_BASE_URL=http://localhost:11434
 //! OLLAMA_MODEL=llama2
 //! OLLAMA_ENABLED=true
@@ -20,8 +21,7 @@
 //! # 运行示例
 //!
 //! ```bash
-//! # 从 examples 目录运行
-//! cd examples
+//! # 从项目根目录运行
 //! cargo run --example ollama_integration
 //! ```
 
@@ -288,9 +288,14 @@ async fn main() -> Result<(), String> {
     if !config.enabled {
         println!("ℹ️ OLLAMA_ENABLED=false，使用离线演示模式\n");
         println!("提示：要启用 Ollama 集成，请：");
-        println!("  1. 复制 examples/.env.example 到 examples/.env");
-        println!("  2. 设置 OLLAMA_ENABLED=true");
-        println!("  3. 确保 Ollama 服务正在运行\n");
+        println!("  1. 安装 Ollama: https://ollama.ai");
+        println!("  2. 拉取模型：ollama pull llama2");
+        println!("  3. 启动服务：ollama serve");
+        println!("  4. 复制 examples/.env.example 到 examples/.env");
+        println!("  5. 设置 OLLAMA_ENABLED=true");
+        println!("\n或者使用云端 AI 服务：");
+        println!("  - 编辑 examples/.env，配置 OPENAI_API_KEY 等");
+        println!("  - 参考 docs/AI_INTEGRATION.md 了解如何集成其他 AI 服务\n");
         run_offline_demo().await.map_err(|e| e.to_string())?;
         return Ok(());
     }
