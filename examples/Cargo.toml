@@ -17,6 +17,9 @@ dotenv = "0.15"
 sha2 = "0.10"
 hex = "0.4"
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.52", features = ["Win32_System_Console"] }
+
 [[example]]
 name = "basic_usage"
 path = "basic_usage.rs"
@@ -28,3 +31,55 @@ path = "ollama_integration.rs"
 [[example]]
 name = "multi_tool_chat"
 path = "multi_tool_chat.rs"
+
+[[example]]
+name = "advanced_types"
+path = "advanced_types.rs"
+
+[[example]]
+name = "custom_types"
+path = "custom_types.rs"
+
+[[example]]
+name = "param_attrs"
+path = "param_attrs.rs"
+
+[[example]]
+name = "full_demo"
+path = "full_demo.rs"
+
+[[example]]
+name = "required_param"
+path = "required_param.rs"
+
+[[example]]
+name = "validate_transform_alias"
+path = "validate_transform_alias.rs"
+
+[[example]]
+name = "new_features_demo"
+path = "new_features_demo.rs"
+
+[[example]]
+name = "test_examples_field"
+path = "test_examples_field.rs"
+
+[[example]]
+name = "test_validate"
+path = "test_validate.rs"
+
+[[example]]
+name = "test_json_schema_validation"
+path = "test_json_schema_validation.rs"
+
+[[example]]
+name = "debug_tools"
+path = "debug_tools.rs"
+
+[[example]]
+name = "version_management"
+path = "version_management.rs"
+
+[[example]]
+name = "quick_chat"
+path = "quick_chat.rs"

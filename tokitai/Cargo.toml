@@ -1,6 +1,6 @@
 [package]
 name = "tokitai"
-version = "0.3.2"
+version = "0.3.3"
 edition = "2021"
 authors = ["silverenternal <3147264070@qq.com>"]
 license = "MIT OR Apache-2.0"
@@ -14,28 +14,26 @@ rust-version = "1.70"
 
 [dependencies]
 # 核心类型（零依赖）
-tokitai-core = { path = "../tokitai-core", version = "0.3.2", features = ["serde"] }
+tokitai-core = { path = "../tokitai-core", version = "0.3.3", features = ["serde"] }
 
 # 宏
-tokitai-macros = { path = "../tokitai-macros", version = "0.3.2" }
+tokitai-macros = { path = "../tokitai-macros", version = "0.3.3" }
 
-# 序列化（runtime 必需）
-serde = { version = "1.0", features = ["derive"], optional = true }
-serde_json = { version = "1.0", optional = true }
+# 序列化（runtime 必需）- 用户无需关心，默认包含
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 
-# 错误处理（runtime 可选）
-thiserror = { version = "1.0", optional = true }
+# 错误处理（runtime 必需）
+thiserror = "1.0"
 
 # 日志
 log = { version = "0.4", optional = true }
 
 [features]
-default = ["runtime"]
-# 基础运行时支持
-runtime = ["serde", "serde_json", "thiserror", "log"]
-# MCP 协议支持（需要 runtime）
-mcp = ["runtime"]
+default = []
+# MCP 协议支持（需要默认依赖）
+mcp = ["log"]
 
 [dev-dependencies]
-tokitai-core = { path = "../tokitai-core", version = "0.3.2", default-features = false }
+tokitai-core = { path = "../tokitai-core", version = "0.3.3", default-features = false }
 trybuild = "1.0"

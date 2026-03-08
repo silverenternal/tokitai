@@ -51,7 +51,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! tokitai-core = { version = "0.3", default-features = false }
+//! tokitai-core = { version = "0.3.3", default-features = false }
 //! ```
 //!
 //! ## Type Mapping
@@ -205,6 +205,18 @@ pub struct ToolDefinition {
     pub description: &'static str,
     /// Input parameter JSON Schema (compile-time generated string)
     pub input_schema: &'static str,
+    /// Tool version (optional)
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    pub version: Option<&'static str>,
+    /// Version since when the tool is deprecated (optional)
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    pub deprecated_since: Option<&'static str>,
+    /// Version when the tool will be removed (optional)
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    pub remove_in: Option<&'static str>,
+    /// Tool that replaces this deprecated tool (optional)
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    pub replaced_by: Option<&'static str>,
 }
 
 impl ToolDefinition {
@@ -227,7 +239,7 @@ impl ToolDefinition {
     ///     r#"{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}"#
     /// );
     /// ```
-    pub fn new(
+    pub const fn new(
         name: &'static str,
         description: &'static str,
         input_schema: &'static str,
@@ -236,7 +248,30 @@ impl ToolDefinition {
             name,
             description,
             input_schema,
+            version: None,
+            deprecated_since: None,
+            remove_in: None,
+            replaced_by: None,
         }
+    }
+
+    /// Set the tool version
+    pub const fn with_version(mut self, version: &'static str) -> Self {
+        self.version = Some(version);
+        self
+    }
+
+    /// Set deprecation information
+    pub const fn with_deprecated(
+        mut self,
+        deprecated_since: &'static str,
+        remove_in: &'static str,
+        replaced_by: &'static str,
+    ) -> Self {
+        self.deprecated_since = Some(deprecated_since);
+        self.remove_in = Some(remove_in);
+        self.replaced_by = Some(replaced_by);
+        self
     }
 
     /// Convert to JSON string (requires `serde` feature)
@@ -249,6 +284,19 @@ impl ToolDefinition {
     #[cfg(feature = "serde")]
     pub fn to_value(&self) -> Result<serde_json::Value, serde_json::Error> {
         serde_json::to_value(self)
+    }
+
+    /// Get input schema as pretty-printed JSON string (requires `serde` feature)
+    #[cfg(feature = "serde")]
+    pub fn input_schema_pretty(&self) -> Result<String, serde_json::Error> {
+        let value: serde_json::Value = serde_json::from_str(self.input_schema)?;
+        serde_json::to_string_pretty(&value)
+    }
+
+    /// Get input schema as JSON Value (requires `serde` feature)
+    #[cfg(feature = "serde")]
+    pub fn input_schema_value(&self) -> Result<serde_json::Value, serde_json::Error> {
+        serde_json::from_str(self.input_schema)
     }
 }
 
@@ -640,11 +688,7 @@ mod tests {
 
     #[test]
     fn test_tool_definition_const() {
-        let tool = ToolDefinition {
-            name: "test",
-            description: "A test tool",
-            input_schema: "{}",
-        };
+        let tool = ToolDefinition::new("test", "A test tool", "{}");
         assert_eq!(tool.name, "test");
         assert_eq!(tool.description, "A test tool");
     }

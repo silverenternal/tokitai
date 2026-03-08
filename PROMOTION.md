@@ -104,7 +104,7 @@ I'm excited to announce **tokitai** v0.2.0, a new crate for exposing Rust method
 
 ```toml
 [dependencies]
-tokitai = "0.3"
+tokitai = "0.3.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 ```
@@ -281,7 +281,7 @@ tokitai 使用 `syn` 和 `quote` 在编译期：
 
 ```toml
 [dependencies]
-tokitai = "0.3"
+tokitai = "0.3.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 ```

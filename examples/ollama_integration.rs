@@ -25,12 +25,14 @@
 //! cargo run --example ollama_integration
 //! ```
 
+mod utils;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokitai::tool;
 use tokitai::ToolProvider;
 use sha2::{Sha256, Digest};
+use utils::init_console;
 
 // ==================== 环境变量配置 ====================
 
@@ -344,6 +346,7 @@ impl AiAssistant {
 
 #[tokio::main]
 async fn main() -> Result<(), String> {
+    init_console();
     println!("=== Tokitai x Ollama AI 集成示例 ===\n");
 
     // 加载配置

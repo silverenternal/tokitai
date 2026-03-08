@@ -20,10 +20,10 @@
 //!
 //! ```toml
 //! [dependencies]
-//! tokitai = "0.3"
-//! serde = { version = "1.0", features = ["derive"] }
-//! serde_json = "1.0"
+//! tokitai = "0.3.3"
 //! ```
+//!
+//! That's it! All required dependencies (serde, serde_json, thiserror) are included automatically.
 //!
 //! ### 2. Define Your Tools
 //!
@@ -78,7 +78,7 @@
 //! ### 4. Handle AI Calls
 //!
 //! ```rust,ignore
-//! use serde_json::json;
+//! use tokitai::json;
 //!
 //! let calc = Calculator;
 //!
@@ -145,9 +145,9 @@
 //! ```toml
 //! [dependencies]
 //! tokitai = { version = "0.3", default-features = false }
-//! serde = { version = "1.0", features = ["derive"] }
-//! serde_json = "1.0"
 //! ```
+//!
+//! Note: Runtime features (call_tool, etc.) require serde/serde_json which are included by default.
 //!
 //! ## 📚 API Overview
 //!
@@ -158,8 +158,10 @@
 //! - [`ToolErrorKind`] - Error classification
 //! - [`ParamType`] - JSON Schema type enumeration
 //! - [`ToolProvider`] - Trait for tool providers (auto-implemented by `#[tool]`)
+//! - [`json!`] - Macro for creating JSON values (from serde_json)
+//! - [`Value`], [`Map`] - JSON value types (from serde_json)
 //!
-//! ### Runtime Types (with `runtime` feature)
+//! ### Runtime Types
 //!
 //! - [`AiToolError`] - Enhanced error type for runtime
 //!
@@ -216,22 +218,23 @@
 // Re-export core types (always available)
 pub use tokitai_core::{ToolDefinition, ToolError, ToolErrorKind, ParamType, ToolProvider};
 
-// Runtime module (optional)
-#[cfg(feature = "runtime")]
+// Re-export serde_json for convenience (users don't need to add extra dependency)
+pub use serde_json::{json, Value, Map};
+
+// Runtime module (always available)
 pub mod error;
 
 #[cfg(feature = "mcp")]
 pub mod mcp;
 
-// Conditionally export runtime types
-#[cfg(feature = "runtime")]
+// Export runtime types
 pub use error::AiToolError;
 
 #[cfg(feature = "mcp")]
 pub use mcp::*;
 
 // Re-export macros
-pub use tokitai_macros::tool;
+pub use tokitai_macros::{tool, tool_type, tool_validate, tool_transform, tool_desc, tool_example, tool_default, tool_required, param_tool};
 
 /// Library version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

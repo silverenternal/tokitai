@@ -21,7 +21,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! tokitai = "0.3"
+//! tokitai = "0.3.3"
 //! ```
 //!
 //! Then use the `#[tool]` macro:
@@ -118,16 +118,42 @@
 //!
 //! ## Type Mapping
 //!
-//! Rust types are automatically mapped to JSON Schema types:
+//! Rust types are automatically mapped to JSON Schema types with full recursive support:
+//!
+//! ### Basic Types
 //!
 //! | Rust Type | JSON Schema Type |
 //! |-----------|------------------|
 //! | `String`, `str` | `string` |
-//! | `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64` | `integer` |
+//! | `i8`, `i16`, `i32`, `i64`, `i128`, `u8`, `u16`, `u32`, `u64`, `u128`, `usize`, `isize` | `integer` |
 //! | `f32`, `f64` | `number` |
 //! | `bool` | `boolean` |
-//! | `Vec<T>` | `array` |
-//! | Custom structs | `object` |
+//!
+//! ### Compound Types
+//!
+//! | Rust Type | JSON Schema Type |
+//! |-----------|------------------|
+//! | `Vec<T>` | `array` with `items` schema |
+//! | `[T; N]` | `array` with `items` schema |
+//! | `&[T]` | `array` with `items` schema |
+//! | `HashMap<K, V>` | `object` with `additionalProperties` |
+//! | `Option<T>` | `anyOf` with inner type and `null` |
+//! | `(T, U, ...)` | `array` (tuple representation) |
+//!
+//! ### Third-party Types
+//!
+//! | Rust Type | JSON Schema Type |
+//! |-----------|------------------|
+//! | `chrono::DateTime<Utc>` | `string` with `format: date-time` |
+//! | `chrono::NaiveDateTime` | `string` with `format: date-time` |
+//! | `uuid::Uuid` | `string` with `format: uuid` |
+//! | `url::Url` | `string` with `format: uri` |
+//! | `PathBuf`, `Path` | `string` with `format: file-path` |
+//!
+//! ### Custom Types
+//!
+//! Custom structs are represented as `object` types. For full field-level schema generation,
+//! ensure your struct derives `serde::Deserialize` and the macro will handle it at runtime.
 //!
 //! ## Requirements
 //!
@@ -197,6 +223,23 @@ use proc_macro::TokenStream;
 /// }
 /// ```
 ///
+/// ### 3. Mark individual parameters
+///
+/// Use `#[tool_attr(...)]` on specific parameters to customize parameter properties:
+///
+/// ```rust,ignore
+/// #[tool]
+/// impl Calculator {
+///     pub async fn add(
+///         &self,
+///         #[tool_attr(required)] a: Option<i32>,  // Option but required
+///         #[tool_attr(default = "0")] b: Option<i32>,  // Has default value
+///     ) -> i32 {
+///         a.unwrap_or(0) + b.unwrap_or(0)
+///     }
+/// }
+/// ```
+///
 /// ## Generated Code
 ///
 /// The macro generates:
@@ -212,7 +255,171 @@ use proc_macro::TokenStream;
 /// - ✅ Automatic description extraction from doc comments
 /// - ✅ Custom tool names and descriptions support
 /// - ✅ Type-safe parameter parsing
+/// - ✅ Recursive type resolution for complex types
+/// - ✅ JSON Schema generation with proper formatting
 #[proc_macro_attribute]
 pub fn tool(attr: TokenStream, item: TokenStream) -> TokenStream {
     tool::tool(attr, item)
 }
+
+/// # `#[tool_type]` Attribute Macro
+///
+/// Registers a custom type with a manually defined JSON schema.
+///
+/// Use this macro when you have custom struct types that the `#[tool]` macro cannot automatically parse.
+/// This allows you to provide explicit schema information for AI tool calling.
+///
+/// ## Usage
+///
+/// ```rust,ignore
+/// use tokitai::tool_type;
+///
+/// #[tool_type(
+///     name = "Location",
+///     properties = "latitude: number, longitude: number",
+///     required = "latitude, longitude"
+/// )]
+/// pub struct Location {
+///     pub latitude: f64,
+///     pub longitude: f64,
+/// }
+/// ```
+///
+/// ## Attributes
+///
+/// - `name`: The type name (required)
+/// - `properties`: Comma-separated list of `field_name: type` pairs
+///   - Supported types: `string`, `integer`, `number`, `boolean`, `array`, `object`
+/// - `required`: Comma-separated list of required field names
+///
+/// ## Generated Schema
+///
+/// The above example generates:
+///
+/// ```json
+/// {
+///   "type": "object",
+///   "properties": {
+///     "latitude": { "type": "number" },
+///     "longitude": { "type": "number" }
+///   },
+///   "required": ["latitude", "longitude"]
+/// }
+/// ```
+#[proc_macro_attribute]
+pub fn tool_type(attr: TokenStream, item: TokenStream) -> TokenStream {
+    tool::tool_type(attr, item)
+}
+
+/// Parameter validation attribute (used internally by #[tool] macro)
+///
+/// This attribute is automatically processed by the `#[tool]` macro.
+/// It should not be used directly by users - instead use the `#[tool(...)]` syntax on parameters.
+///
+/// ## Example (internal usage)
+///
+/// ```rust,ignore
+/// #[tool]
+/// impl MyTools {
+///     pub fn create_user(
+///         &self,
+///         #[tool_validate = "!value.is_empty()")]
+///         name: String,
+///     ) -> Result<String, Error> {
+///         // ...
+///     }
+/// }
+/// ```
+#[proc_macro_attribute]
+pub fn tool_validate(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    // This is a no-op attribute, processed by #[tool] macro
+    item
+}
+
+/// Parameter transformation attribute (used internally by #[tool] macro)
+///
+/// This attribute is automatically processed by the `#[tool]` macro.
+/// It should not be used directly by users - instead use the `#[tool(...)]` syntax on parameters.
+///
+/// ## Example (internal usage)
+///
+/// ```rust,ignore
+/// #[tool]
+/// impl MyTools {
+///     pub fn create_user(
+///         &self,
+///         #[tool_transform = "value.to_lowercase()")]
+///         email: String,
+///     ) -> Result<String, Error> {
+///         // ...
+///     }
+/// }
+/// ```
+#[proc_macro_attribute]
+pub fn tool_transform(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    // This is a no-op attribute, processed by #[tool] macro
+    item
+}
+
+/// Parameter description attribute (used internally by #[tool] macro)
+#[proc_macro_attribute]
+pub fn tool_desc(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    item
+}
+
+/// Parameter example attribute (used internally by #[tool] macro)
+#[proc_macro_attribute]
+pub fn tool_example(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    item
+}
+
+/// Parameter default attribute (used internally by #[tool] macro)
+#[proc_macro_attribute]
+pub fn tool_default(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    item
+}
+
+/// Parameter required attribute (used internally by #[tool] macro)
+#[proc_macro_attribute]
+pub fn tool_required(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    item
+}
+
+/// Parameter-level tool attributes (helper macro for #[tool])
+///
+/// This attribute is used to add validation, transformation, and other metadata
+/// to individual parameters. It is automatically processed by the `#[tool]` macro.
+///
+/// ## Usage
+///
+/// ```rust,ignore
+/// #[tool]
+/// impl MyTools {
+///     pub fn create_user(
+///         &self,
+///         #[param_tool(validate = "!value.is_empty()", desc = "Name cannot be empty")]
+///         name: String,
+///         #[param_tool(transform = "value.to_lowercase()")]
+///         email: String,
+///         #[param_tool(default = 10)]
+///         count: i32,
+///     ) -> Result<String, Error> {
+///         // ...
+///     }
+/// }
+/// ```
+///
+/// ## Supported Attributes
+///
+/// - `validate = "expression"` - Validation expression (use `value` to refer to the parameter)
+/// - `transform = "expression"` - Transformation expression (use `value` to refer to the parameter)
+/// - `desc = "description"` - Parameter description
+/// - `default = value` - Default value (supports literals: integers, floats, booleans, strings, arrays, objects)
+/// - `example = value` - Example value
+/// - `required` - Mark parameter as required (even if Option type)
+#[proc_macro_attribute]
+pub fn param_tool(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    // This is a no-op attribute, processed by #[tool] macro
+    item
+}
+

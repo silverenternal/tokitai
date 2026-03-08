@@ -2,7 +2,8 @@
 //!
 //! 展示如何组合多个工具提供者，构建一个完整的 AI 助手
 
-use serde_json::{json, Value};
+use serde_json::Value;
+use tokitai::json;
 use tokitai::tool;
 
 // ==================== 工具定义 ====================

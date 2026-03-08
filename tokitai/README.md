@@ -1,214 +1,170 @@
 # Tokitai
 
-**编译期 AI 工具定义，零运行时侵入**
+[![Crates.io](https://img.shields.io/crates/v/tokitai.svg)](https://crates.io/crates/tokitai)
+[![Documentation](https://docs.rs/tokitai/badge.svg)](https://docs.rs/tokitai)
+[![License](https://img.shields.io/crates/l/tokitai)](../LICENSE)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/silverenternal/tokitai/ci.yml)](https://github.com/silverenternal/tokitai/actions)
 
-Tokitai 是一个 Rust 库，让你只需一个 `#[tool]` 标签就能将 Rust 方法暴露给 AI 调用。
-
-## 快速开始
+## 🎯 一行贴纸，让 AI 调用你的 Rust 代码
 
 ```rust
 use tokitai::tool;
-use serde_json::json;
 
-pub struct Calculator;
+#[tool]  // ← 就这一行！
+impl MyTools {
+    pub fn add(&self, a: i32, b: i32) -> i32 {
+        a + b
+    }
+}
+```
+
+**编译期生成** · **零运行时侵入** · **类型安全**
+
+---
+
+**编译期 AI 工具定义 · 零运行时侵入 · 魔法贴纸式集成**
+
+Tokitai 是一个零运行时依赖的过程宏库，只需一个 `#[tool]` 属性，即可将你的 Rust 方法自动转换为 AI 可调用的工具。所有工具定义在编译期生成，类型错误在编译时暴露。
+
+## 🚀 5 分钟快速开始
+
+### 1. 添加依赖
+
+```toml
+[dependencies]
+tokitai = "0.3.3"
+```
+
+就这一行！所有必需的依赖（serde、serde_json、thiserror）都会自动包含。
+
+### 2. 定义工具
+
+```rust
+use tokitai::tool;
+
+#[tool]
+struct Calculator;
 
 #[tool]
 impl Calculator {
     /// 两个数相加
-    pub async fn add(&self, a: i32, b: i32) -> i32 {
+    pub fn add(&self, a: i32, b: i32) -> i32 {
         a + b
     }
-
-    /// 两个数相乘
-    pub async fn multiply(&self, a: i32, b: i32) -> i32 {
-        a * b
-    }
-}
-
-// 使用
-#[tokio::main]
-async fn main() {
-    let calc = Calculator;
-
-    // 获取工具列表（编译期生成）
-    let tools = Calculator::TOOL_DEFINITIONS;
-    
-    // 调用工具
-    let result = calc
-        .call_tool("add", &json!({"a": 10, "b": 20}))
-        .await
-        .unwrap();
-    
-    assert_eq!(result.as_i64().unwrap(), 30);
 }
 ```
 
-## 特性
-
-- ✅ **零运行时侵入** - 宏本身零依赖，不强制绑定任何运行时
-- ✅ **编译期类型安全** - 工具定义在编译期生成，参数类型错误编译时暴露
-- ✅ **单一宏** - 只需 `#[tool]`，无需同时贴多个标签
-- ✅ **可选运行时** - 通过 features 控制依赖，支持无异步环境
-
-## 安装
-
-```toml
-[dependencies]
-tokitai = "0.3"
-serde_json = "1.0"
-tokio = { version = "1.0", features = ["full"] }
-```
-
-### 最小化依赖
-
-如果只需要编译期工具定义：
-
-```toml
-[dependencies]
-tokitai = { version = "0.3", default-features = false }
-tokitai-core = "0.3"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-```
-
-## 使用指南
-
-### 1. 基础用法
-
-在 impl 块上添加 `#[tool]` 属性，所有 `pub async fn` 方法会自动注册为工具：
+### 3. 获取工具定义
 
 ```rust
-use tokitai::tool;
-
-#[tool]
-impl MyService {
-    /// 获取用户信息
-    pub async fn get_user(&self, user_id: String) -> User {
-        // ...
-    }
-}
+let tools = Calculator::TOOL_DEFINITIONS;
 ```
 
-### 2. 自定义工具属性
+### 4. 处理 AI 调用
 
-使用 `#[tool(name = "...", desc = "...")]` 自定义工具名称和描述：
+```rust
+use tokitai::json;
+
+let calc = Calculator;
+let result = calc.call_tool("add", &json!({"a": 10, "b": 20}))?;
+println!("{}", result);  // 30
+```
+
+## ✨ 核心特性
+
+| 特性 | 说明 |
+|------|------|
+| **零依赖侵入** | 用户只需添加 `tokitai = "0.3.3"` |
+| **编译期生成** | 工具定义在编译期生成，类型错误早发现 |
+| **单一属性** | 只需 `#[tool]`，无需多个标签 |
+| **类型安全** | Rust 类型自动映射到 JSON Schema |
+| **供应商中立** | 支持任何 AI/LLM 提供商 |
+
+## 📋 类型映射
+
+| Rust 类型 | JSON Schema |
+|-----------|-------------|
+| `String`, `&str` | `string` |
+| `i32`, `i64`, `u32` 等 | `integer` |
+| `f32`, `f64` | `number` |
+| `bool` | `boolean` |
+| `Vec<T>` | `array` |
+| 自定义 struct | `object` |
+
+## 🔧 常用属性
 
 ```rust
 #[tool]
-impl MyService {
-    #[tool(name = "fetch_user", desc = "从数据库获取用户信息")]
-    pub async fn get_user(&self, user_id: String) -> User {
-        // ...
-    }
-}
-```
+impl MyTools {
+    /// 自定义名称
+    #[tool(name = "custom_name")]
+    pub fn my_func(&self) {}
 
-### 3. 参数类型支持
+    /// 自定义描述
+    #[tool(desc = "自定义描述")]
+    pub fn another_func(&self) {}
 
-支持以下参数类型：
-
-- 基本类型：`String`, `i32/i64`, `f32/f64`, `bool`
-- 可选类型：`Option<T>`
-- 数组类型：`Vec<T>`
-
-```rust
-#[tool]
-impl MyService {
-    pub async fn process(
+    /// 参数级别属性
+    pub fn process(
         &self,
-        name: String,
-        count: i32,
-        ratio: f64,
-        enabled: Option<bool>,
-        tags: Vec<String>,
-    ) -> Result<(), String> {
-        // ...
-    }
+        #[tool(desc = "参数描述", default = "null")]
+        options: Option<String>
+    ) {}
 }
 ```
 
-### 4. 返回值类型
+## 📚 文档
 
-支持直接返回值或 `Result<T, E>`：
+- **[5 分钟快速开始](docs/quickstart.md)** - 详细入门教程
+- **[高级用法](docs/ADVANCED_USAGE.md)** - 高级功能和最佳实践
+- **[类型系统](docs/USAGE.md)** - Rust 类型到 JSON Schema 的映射
+- **[AI 集成](docs/AI_INTEGRATION.md)** - 与 AI 提供商集成的指南
+- **[架构说明](docs/ARCHITECTURE.md)** - 项目架构和设计
+- **[API 文档](https://docs.rs/tokitai)** - 完整的 API 参考
 
-```rust
-#[tool]
-impl MyService {
-    // 直接返回
-    pub async fn get_name(&self) -> String {
-        "Hello".to_string()
-    }
+## ⚙️ 要求
 
-    // 带错误处理
-    pub async fn parse_file(&self, path: String) -> Result<Json, String> {
-        // ...
-    }
-}
+- **Rust 版本**: 1.70+
+- **Edition**: 2021
+
+## 📄 许可证
+
+Licensed under either of:
+
+- Apache License, Version 2.0 ([LICENSE](../LICENSE))
+- MIT License ([LICENSE](../LICENSE))
+
+at your option.
+
+## 🤝 贡献
+
+除非你明确声明其他许可，否则你为本 crate 提交的所有贡献都将按上述两种方式之一授权，无需额外条款或条件。
+
+## 📦 子 crate
+
+Tokitai 由三个 crate 组成：
+
+| Crate | Crates.io | 说明 |
+|-------|-----------|------|
+| `tokitai` | [![crates.io](https://img.shields.io/crates/v/tokitai.svg)](https://crates.io/crates/tokitai) | 主 crate，包含运行时支持 |
+| `tokitai-core` | [![crates.io](https://img.shields.io/crates/v/tokitai-core.svg)](https://crates.io/crates/tokitai-core) | 核心类型和 trait（零依赖） |
+| `tokitai-macros` | [![crates.io](https://img.shields.io/crates/v/tokitai-macros.svg)](https://crates.io/crates/tokitai-macros) | 过程宏实现 |
+
+**99% 的用户只需要：**
+```toml
+[dependencies]
+tokitai = "0.3.3"
 ```
 
-### 5. 与 AI 集成
+## 📝 示例
 
-```rust
-use tokitai::adapter::{AnthropicAdapter, AiAdapter, ToolDefinition};
+更多示例见 [examples 目录](../examples/)：
 
-// 转换工具定义为 AI 格式
-let tools = Calculator::TOOL_DEFINITIONS
-    .iter()
-    .map(|t| ToolDefinition {
-        name: t.name.to_string(),
-        description: t.description.to_string(),
-        input_schema: serde_json::from_str(t.input_schema).unwrap(),
-    })
-    .collect::<Vec<_>>();
+- `basic_usage.rs` - 基础使用示例
+- `quick_chat.rs` - 交互式数学计算器
+- `version_management.rs` - 版本管理属性演示
+- `ollama_integration.rs` - Ollama AI 集成
 
-// 发送给 AI
-let adapter = AnthropicAdapter::new(api_key);
-let response = adapter.chat(messages, None, Some(tools)).await?;
+---
 
-// 处理 AI 的工具调用
-for tool_call in &response.tool_calls {
-    let result = calc
-        .call_tool(&tool_call.name, &tool_call.input)
-        .await?;
-    // ...
-}
-```
-
-## Features
-
-| Feature | 描述 | 依赖 |
-|---------|------|------|
-| `default` | 默认启用完整运行时 | 全部 |
-| `runtime` | 基础运行时支持 | serde, tokio, async-trait |
-| `mcp` | MCP 协议支持 | reqwest, uuid |
-
-## 架构
-
-```
-tokitai/
-├── tokitai-core/    # 核心类型定义（零依赖）
-├── tokitai-macros/  # 过程宏（零依赖）
-└── tokitai/         # 运行时库（可选依赖）
-```
-
-## 示例
-
-运行示例：
-
-```bash
-# 基础用法
-cargo run --example basic_usage
-
-# 零配置示例
-cargo run --example zero_config
-
-# 文件解析示例
-cargo run --example file_parser
-
-# AI 服务器示例（需要 ANTHROPIC_API_KEY）
-ANTHROPIC_API_KEY=your-key cargo run --example ai_server
-```
-
-## 许可证
-
-MIT License
+**Happy Coding!** 🦀
