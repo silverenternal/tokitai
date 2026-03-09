@@ -1,6 +1,6 @@
 # Tokitai 使用指南
 
-**版本**: 0.3 | **最后更新**: 2026-03-06
+**版本**: 0.3.4 | **最后更新**: 2026-03-08
 
 ## 目录
 
@@ -8,9 +8,10 @@
 2. [安装配置](#安装配置)
 3. [基础用法](#基础用法)
 4. [高级特性](#高级特性)
-5. [API 参考](#api-参考)
-6. [故障排除](#故障排除)
-7. [最佳实践](#最佳实践)
+5. [工具描述三种方式](#工具描述三种方式)
+6. [API 参考](#api-参考)
+7. [故障排除](#故障排除)
+8. [最佳实践](#最佳实践)
 
 ---
 
@@ -47,7 +48,7 @@ impl Calculator {
 let calc = Calculator;
 
 // 获取工具定义（发送给 AI）
-let tools = Calculator::TOOL_DEFINITIONS;
+let tools = Calculator::tool_definitions();
 
 // 调用工具（接收 AI 的请求）
 let result = calc.call_tool("add", &serde_json::json!({"a": 10, "b": 20}))?;
@@ -249,7 +250,7 @@ impl SearchEngine {
 use tokitai::ToolProvider;
 
 // 获取所有工具定义
-let tools = Calculator::TOOL_DEFINITIONS;
+let tools = Calculator::tool_definitions();
 
 // 获取工具数量
 let count = Calculator::tool_count();
@@ -400,6 +401,140 @@ impl MyStruct {
 
 ---
 
+## 工具描述三种方式
+
+Tokitai v0.3.4 支持三种灵活的工具描述方式：
+
+### 方式 1：文档注释（推荐）
+
+最简单的方式，使用 Rust 标准文档注释：
+
+```rust
+#[tool]
+impl MyService {
+    /// 获取用户信息
+    ///
+    /// # Parameters
+    /// - `id`: 用户 ID
+    /// - `include_profile`: 是否包含详细信息
+    pub fn get_user(
+        &self,
+        id: i32,
+        include_profile: Option<bool>,
+    ) -> User {
+        // ...
+    }
+}
+```
+
+**优点**:
+- ✅ 标准 Rust 风格
+- ✅ IDE 友好
+- ✅ 无需额外学习
+
+**缺点**:
+- ❌ 描述不能包含特殊字符（如引号）
+- ❌ 无法添加 tags 等元数据
+
+### 方式 2：`#[tool]` 属性覆盖
+
+更精确的控制：
+
+```rust
+#[tool]
+impl MyService {
+    #[tool(
+        desc = "从数据库获取用户详细信息",
+        tags = ["user", "read", "database"],
+        group = "user_service",
+        cache = "ttl=300"
+    )]
+    pub fn get_user_detail(&self, user_id: i32) -> User {
+        // ...
+    }
+
+    /// 更新用户资料
+    ///
+    /// @param id 用户 ID
+    /// @param nickname 用户昵称
+    #[tool(
+        example_id = "12345",
+        min_length_nickname = 2,
+        max_length_nickname = 20,
+        pattern_nickname = r"^[a-zA-Z\u4e00-\u9fa5]+$"
+    )]
+    pub fn update_profile(
+        &self,
+        id: i32,
+        nickname: String,
+    ) -> Result<(), Error> {
+        // ...
+    }
+}
+```
+
+**优点**:
+- ✅ 支持 tags、group 等元数据
+- ✅ 参数级精确控制
+- ✅ 支持验证规则
+
+**缺点**:
+- ❌ 代码稍显冗长
+
+### 方式 3：`tokitai!` 配置宏
+
+批量集中管理：
+
+```rust
+// 原有代码完全不变
+impl MyService {
+    /// 默认描述
+    pub fn get_user(&self, id: i32) -> User {
+        // ...原有业务逻辑
+    }
+}
+
+// 在入口处统一配置
+tokitai::config! {
+    MyService {
+        get_user: {
+            desc: "配置覆盖的描述",
+            tags = ["user", "read"],
+            params: {
+                id: {
+                    desc: "用户唯一标识",
+                    example: "1001"
+                }
+            }
+        }
+    }
+}
+```
+
+**优点**:
+- ✅ 原有代码 0 修改
+- ✅ 集中管理所有工具
+- ✅ 支持条件编译
+
+**缺点**:
+- ❌ 需要额外配置文件
+
+## 优先级
+
+三种方式可以混合使用，优先级如下：
+
+1. `#[tool(desc = "...")]` > 文档注释
+2. `tokitai!` 配置 > `#[tool]` 属性
+3. 参数级：`#[tool(xxx_param = "...")]` > 默认推断
+
+## 最佳实践
+
+- **简单场景**: 使用文档注释
+- **复杂参数**: 使用 `#[tool(...)]` 参数级属性
+- **批量管理**: 使用 `tokitai!` 配置宏
+
+---
+
 ## 故障排除
 
 ### 编译错误
@@ -485,7 +620,7 @@ Error: 工具未找到：unknown_tool
 
 ```rust
 // 打印所有可用工具
-for tool in MyTools::TOOL_DEFINITIONS {
+for tool in MyTools::tool_definitions() {
     println!("可用工具：{}", tool.name);
 }
 ```

@@ -175,6 +175,9 @@ extern crate alloc;
 #[cfg(feature = "serde")]
 pub use serde_types::*;
 
+#[cfg(feature = "serde")]
+pub use config::{ToolConfig, ToolConfigRegistry, GLOBAL_CONFIG_REGISTRY};
+
 /// # Tool Definition
 ///
 /// Represents a tool that can be called by an AI system.
@@ -200,23 +203,23 @@ pub use serde_types::*;
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ToolDefinition {
     /// Tool name used for identification during AI calls
-    pub name: &'static str,
+    pub name: String,
     /// Tool description helping AI understand its purpose
-    pub description: &'static str,
+    pub description: String,
     /// Input parameter JSON Schema (compile-time generated string)
-    pub input_schema: &'static str,
+    pub input_schema: String,
     /// Tool version (optional)
     #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
-    pub version: Option<&'static str>,
+    pub version: Option<String>,
     /// Version since when the tool is deprecated (optional)
     #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
-    pub deprecated_since: Option<&'static str>,
+    pub deprecated_since: Option<String>,
     /// Version when the tool will be removed (optional)
     #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
-    pub remove_in: Option<&'static str>,
+    pub remove_in: Option<String>,
     /// Tool that replaces this deprecated tool (optional)
     #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
-    pub replaced_by: Option<&'static str>,
+    pub replaced_by: Option<String>,
 }
 
 impl ToolDefinition {
@@ -239,15 +242,15 @@ impl ToolDefinition {
     ///     r#"{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}"#
     /// );
     /// ```
-    pub const fn new(
-        name: &'static str,
-        description: &'static str,
-        input_schema: &'static str,
+    pub fn new(
+        name: impl Into<String>,
+        description: impl Into<String>,
+        input_schema: impl Into<String>,
     ) -> Self {
         Self {
-            name,
-            description,
-            input_schema,
+            name: name.into(),
+            description: description.into(),
+            input_schema: input_schema.into(),
             version: None,
             deprecated_since: None,
             remove_in: None,
@@ -256,21 +259,21 @@ impl ToolDefinition {
     }
 
     /// Set the tool version
-    pub const fn with_version(mut self, version: &'static str) -> Self {
-        self.version = Some(version);
+    pub fn with_version(mut self, version: impl Into<String>) -> Self {
+        self.version = Some(version.into());
         self
     }
 
     /// Set deprecation information
-    pub const fn with_deprecated(
+    pub fn with_deprecated(
         mut self,
-        deprecated_since: &'static str,
-        remove_in: &'static str,
-        replaced_by: &'static str,
+        deprecated_since: impl Into<String>,
+        remove_in: impl Into<String>,
+        replaced_by: impl Into<String>,
     ) -> Self {
-        self.deprecated_since = Some(deprecated_since);
-        self.remove_in = Some(remove_in);
-        self.replaced_by = Some(replaced_by);
+        self.deprecated_since = Some(deprecated_since.into());
+        self.remove_in = Some(remove_in.into());
+        self.replaced_by = Some(replaced_by.into());
         self
     }
 
@@ -289,14 +292,190 @@ impl ToolDefinition {
     /// Get input schema as pretty-printed JSON string (requires `serde` feature)
     #[cfg(feature = "serde")]
     pub fn input_schema_pretty(&self) -> Result<String, serde_json::Error> {
-        let value: serde_json::Value = serde_json::from_str(self.input_schema)?;
+        let value: serde_json::Value = serde_json::from_str(&self.input_schema)?;
         serde_json::to_string_pretty(&value)
     }
 
     /// Get input schema as JSON Value (requires `serde` feature)
     #[cfg(feature = "serde")]
     pub fn input_schema_value(&self) -> Result<serde_json::Value, serde_json::Error> {
-        serde_json::from_str(self.input_schema)
+        serde_json::from_str(&self.input_schema)
+    }
+
+    /// Apply configurations to this tool definition.
+    ///
+    /// This method is used by the configuration system to apply runtime
+    /// configurations to tool definitions generated at compile time.
+    ///
+    /// # Parameters
+    ///
+    /// - `configs` - Slice of configuration items to apply
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::{ToolDefinition, ToolConfig};
+    ///
+    /// let mut tool = ToolDefinition::new("test", "Original description", "{}");
+    /// tool.apply_configs(&[
+    ///     ToolConfig::Desc("Overridden description".to_string()),
+    /// ]);
+    /// assert_eq!(tool.description, "Overridden description");
+    /// ```
+    #[cfg(feature = "serde")]
+    pub fn apply_configs(&mut self, configs: &[ToolConfig]) {
+        for config in configs {
+            match config {
+                ToolConfig::Desc(desc) => {
+                    self.description = desc.clone();
+                }
+                ToolConfig::Tags(tags) => {
+                    // Add tags to the schema
+                    if let Ok(mut schema) =
+                        serde_json::from_str::<serde_json::Value>(&self.input_schema)
+                    {
+                        if let Some(obj) = schema.as_object_mut() {
+                            obj.insert("tags".to_string(), serde_json::json!(tags));
+                        }
+                        self.input_schema = schema.to_string();
+                    }
+                }
+                ToolConfig::ParamDesc { name, desc } => {
+                    self.apply_param_desc(name, desc);
+                }
+                ToolConfig::ParamExample { name, example } => {
+                    self.apply_param_example(name, example);
+                }
+                ToolConfig::ParamDefault { name, default } => {
+                    self.apply_param_default(name, default);
+                }
+                ToolConfig::ParamRequired { name, required } => {
+                    self.apply_param_required(name, *required);
+                }
+                ToolConfig::ParamMin { name, min } => {
+                    self.apply_param_constraint(name, "minimum", serde_json::json!(min));
+                }
+                ToolConfig::ParamMax { name, max } => {
+                    self.apply_param_constraint(name, "maximum", serde_json::json!(max));
+                }
+                ToolConfig::ParamMinLength { name, min_length } => {
+                    self.apply_param_constraint(name, "minLength", serde_json::json!(min_length));
+                }
+                ToolConfig::ParamMaxLength { name, max_length } => {
+                    self.apply_param_constraint(name, "maxLength", serde_json::json!(max_length));
+                }
+                ToolConfig::ParamPattern { name, pattern } => {
+                    self.apply_param_constraint(name, "pattern", serde_json::json!(pattern));
+                }
+                ToolConfig::ParamMinItems { name, min_items } => {
+                    self.apply_param_constraint(name, "minItems", serde_json::json!(min_items));
+                }
+                ToolConfig::ParamMaxItems { name, max_items } => {
+                    self.apply_param_constraint(name, "maxItems", serde_json::json!(max_items));
+                }
+                ToolConfig::ParamMultipleOf { name, multiple_of } => {
+                    self.apply_param_constraint(name, "multipleOf", serde_json::json!(multiple_of));
+                }
+            }
+        }
+    }
+
+    /// Apply parameter description to the schema.
+    #[cfg(feature = "serde")]
+    fn apply_param_desc(&mut self, name: &str, desc: &str) {
+        if let Ok(mut schema) = serde_json::from_str::<serde_json::Value>(&self.input_schema) {
+            if let Some(obj) = schema.as_object_mut() {
+                if let Some(props) = obj.get_mut("properties").and_then(|v| v.as_object_mut()) {
+                    if let Some(param) = props.get_mut(name).and_then(|v| v.as_object_mut()) {
+                        param.insert("description".to_string(), serde_json::json!(desc));
+                    }
+                }
+            }
+            self.input_schema = schema.to_string();
+        }
+    }
+
+    /// Apply parameter example to the schema.
+    #[cfg(feature = "serde")]
+    fn apply_param_example(&mut self, name: &str, example: &serde_json::Value) {
+        if let Ok(mut schema) = serde_json::from_str::<serde_json::Value>(&self.input_schema) {
+            if let Some(obj) = schema.as_object_mut() {
+                if let Some(props) = obj.get_mut("properties").and_then(|v| v.as_object_mut()) {
+                    if let Some(param) = props.get_mut(name).and_then(|v| v.as_object_mut()) {
+                        param.insert("example".to_string(), example.clone());
+                    }
+                }
+            }
+            self.input_schema = schema.to_string();
+        }
+    }
+
+    /// Apply parameter default to the schema.
+    #[cfg(feature = "serde")]
+    fn apply_param_default(&mut self, name: &str, default: &serde_json::Value) {
+        if let Ok(mut schema) = serde_json::from_str::<serde_json::Value>(&self.input_schema) {
+            if let Some(obj) = schema.as_object_mut() {
+                if let Some(props) = obj.get_mut("properties").and_then(|v| v.as_object_mut()) {
+                    if let Some(param) = props.get_mut(name).and_then(|v| v.as_object_mut()) {
+                        param.insert("default".to_string(), default.clone());
+                    }
+                }
+            }
+            self.input_schema = schema.to_string();
+        }
+    }
+
+    /// Apply parameter required flag to the schema.
+    #[cfg(feature = "serde")]
+    fn apply_param_required(&mut self, name: &str, required: bool) {
+        if let Ok(mut schema) = serde_json::from_str::<serde_json::Value>(&self.input_schema) {
+            if let Some(obj) = schema.as_object_mut() {
+                // Update required array
+                let required_arr = obj
+                    .entry("required".to_string())
+                    .or_insert_with(|| serde_json::json!([]))
+                    .as_array_mut();
+
+                if let Some(req_arr) = required_arr {
+                    let name_json = serde_json::json!(name);
+                    if required && !req_arr.contains(&name_json) {
+                        req_arr.push(name_json);
+                    } else if !required {
+                        req_arr.retain(|v| v != &name_json);
+                    }
+                }
+
+                // Also update parameter schema
+                if let Some(props) = obj.get_mut("properties").and_then(|v| v.as_object_mut()) {
+                    if let Some(param) = props.get_mut(name).and_then(|v| v.as_object_mut()) {
+                        // Note: individual param "required" is not standard JSON Schema
+                        // but we can add it for documentation purposes
+                        param.insert("required".to_string(), serde_json::json!(required));
+                    }
+                }
+            }
+            self.input_schema = schema.to_string();
+        }
+    }
+
+    /// Apply a constraint to a parameter in the schema.
+    #[cfg(feature = "serde")]
+    fn apply_param_constraint(
+        &mut self,
+        name: &str,
+        constraint_key: &str,
+        value: serde_json::Value,
+    ) {
+        if let Ok(mut schema) = serde_json::from_str::<serde_json::Value>(&self.input_schema) {
+            if let Some(obj) = schema.as_object_mut() {
+                if let Some(props) = obj.get_mut("properties").and_then(|v| v.as_object_mut()) {
+                    if let Some(param) = props.get_mut(name).and_then(|v| v.as_object_mut()) {
+                        param.insert(constraint_key.to_string(), value);
+                    }
+                }
+            }
+            self.input_schema = schema.to_string();
+        }
     }
 }
 
@@ -379,9 +558,8 @@ impl ParamType {
     pub fn from_rust_type(type_name: &str) -> Option<Self> {
         match type_name {
             "String" | "str" => Some(ParamType::String),
-            "i8" | "i16" | "i32" | "i64" | "i128" | "u8" | "u16" | "u32" | "u64" | "u128" | "usize" | "isize" => {
-                Some(ParamType::Integer)
-            }
+            "i8" | "i16" | "i32" | "i64" | "i128" | "u8" | "u16" | "u32" | "u64" | "u128"
+            | "usize" | "isize" => Some(ParamType::Integer),
             "f32" | "f64" => Some(ParamType::Number),
             "bool" => Some(ParamType::Boolean),
             _ => {
@@ -529,7 +707,10 @@ impl ToolError {
 impl ToolError {
     /// Create a new error
     pub fn new(kind: ToolErrorKind, message: impl Into<crate::serde_types::String>) -> Self {
-        Self { kind, message: message.into() }
+        Self {
+            kind,
+            message: message.into(),
+        }
     }
 
     /// Create a validation error
@@ -608,11 +789,52 @@ pub trait ToolProvider {
 
     /// Find a tool definition by name
     fn find_tool(name: &str) -> Option<&'static ToolDefinition> {
-        Self::tool_definitions()
-            .iter()
-            .find(|t| t.name == name)
+        Self::tool_definitions().iter().find(|t| t.name == name)
     }
 }
+
+/// # Tool Caller Trait
+///
+/// Provides runtime tool invocation capability.
+/// Automatically implemented by the `#[tool]` macro for all tool types.
+///
+/// ## Example
+///
+/// ```rust,ignore
+/// use tokitai_core::{ToolProvider, ToolCaller};
+/// use serde_json::json;
+///
+/// // After using #[tool] macro on your type:
+/// // struct Calculator;
+/// // #[tool] impl Calculator { ... }
+///
+/// let calc = Calculator;
+/// let result = calc.call_tool("add", &json!({"a": 10, "b": 20})).unwrap();
+/// assert_eq!(result, json!(30));
+/// ```
+#[cfg(feature = "serde")]
+pub trait ToolCaller {
+    /// Call a tool by name with JSON arguments
+    ///
+    /// # Parameters
+    ///
+    /// - `name` - Tool name to call
+    /// - `args` - JSON arguments for the tool
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(Value)` - Tool execution result
+    /// - `Err(ToolError)` - Tool execution failed
+    fn call_tool(
+        &self,
+        name: &str,
+        args: &crate::serde_types::Value,
+    ) -> Result<crate::serde_types::Value, ToolError>;
+}
+
+/// Tool configuration types for runtime customization.
+#[cfg(feature = "serde")]
+pub mod config;
 
 #[cfg(feature = "serde")]
 pub mod serde_types {
@@ -620,8 +842,8 @@ pub mod serde_types {
     //!
     //! This module is available when the `serde` feature is enabled.
 
-    pub use serde_json::Value;
     pub use alloc::string::String;
+    pub use serde_json::Value;
 }
 
 /// # JSON Schema Macro (Compile-time)
@@ -683,7 +905,10 @@ mod tests {
         assert_eq!(ParamType::from_rust_type("i32"), Some(ParamType::Integer));
         assert_eq!(ParamType::from_rust_type("f64"), Some(ParamType::Number));
         assert_eq!(ParamType::from_rust_type("bool"), Some(ParamType::Boolean));
-        assert_eq!(ParamType::from_rust_type("Vec<i32>"), Some(ParamType::Array));
+        assert_eq!(
+            ParamType::from_rust_type("Vec<i32>"),
+            Some(ParamType::Array)
+        );
     }
 
     #[test]

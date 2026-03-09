@@ -332,8 +332,8 @@ impl PersonalAssistant {
     /// 获取所有工具定义（合并多个工具提供者）
     pub fn get_all_tools(&self) -> Vec<tokitai::ToolDefinition> {
         let mut tools = Vec::new();
-        tools.extend_from_slice(TodoManager::TOOL_DEFINITIONS);
-        tools.extend_from_slice(NoteManager::TOOL_DEFINITIONS);
+        tools.extend_from_slice(TodoManager::tool_definitions());
+        tools.extend_from_slice(NoteManager::tool_definitions());
         tools
     }
 
@@ -442,11 +442,11 @@ pub async fn heavy_computation(&self, n: i32) -> i32 {
 工具定义在编译期生成，不需要每次调用时重新创建：
 
 ```rust
-// ✅ 推荐：使用静态引用
-let tools = Calculator::TOOL_DEFINITIONS;
+// ✅ 推荐：使用方法调用
+let tools = Calculator::tool_definitions();
 
 // ❌ 不推荐：不必要的克隆
-let tools = Calculator::TOOL_DEFINITIONS.to_vec();
+let tools = Calculator::tool_definitions().to_vec();
 ```
 
 ---

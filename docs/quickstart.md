@@ -35,7 +35,7 @@ impl Calculator {
 
 ```rust
 // 编译期生成的工具定义
-let tools = Calculator::TOOL_DEFINITIONS;
+let tools = Calculator::tool_definitions();
 
 // 转换为 JSON 发送给 AI
 let json = tokitai::json!({

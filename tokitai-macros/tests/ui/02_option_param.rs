@@ -1,6 +1,7 @@
 //! 可选参数测试
 
 use tokitai::tool;
+use tokitai::ToolProvider;
 
 pub struct Greeter;
 
@@ -20,7 +21,7 @@ fn main() {
     let greeter = Greeter;
 
     // 验证 TOOL_DEFINITIONS 生成
-    let tools = Greeter::TOOL_DEFINITIONS;
+    let tools = Greeter::tool_definitions();
     assert_eq!(tools.len(), 1);
 
     // 不带可选参数

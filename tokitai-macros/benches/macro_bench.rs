@@ -2,6 +2,7 @@
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use tokitai::tool;
+use tokitai::ToolProvider;
 
 /// 简单工具 - 用于基准测试
 #[tool]
@@ -27,17 +28,8 @@ impl BenchTools {
     }
 
     /// 带验证的方法
-    #[tool(
-        min_length_name = 3,
-        max_length_name = 50,
-        min_age = 0,
-        max_age = 150
-    )]
-    pub fn validated_method(
-        &self,
-        name: String,
-        age: i32,
-    ) -> Result<String, tokitai::ToolError> {
+    #[tool(min_length_name = 3, max_length_name = 50, min_age = 0, max_age = 150)]
+    pub fn validated_method(&self, name: String, age: i32) -> Result<String, tokitai::ToolError> {
         Ok(format!("Validated: {} is {}", name, age))
     }
 }
@@ -46,7 +38,7 @@ impl BenchTools {
 fn bench_tool_definitions(c: &mut Criterion) {
     c.bench_function("tool_definitions_access", |b| {
         b.iter(|| {
-            let tools = black_box(BenchTools::TOOL_DEFINITIONS);
+            let tools = black_box(BenchTools::tool_definitions());
             black_box(tools.len());
         })
     });
@@ -56,7 +48,7 @@ fn bench_tool_definitions(c: &mut Criterion) {
 fn bench_tool_lookup(c: &mut Criterion) {
     c.bench_function("tool_lookup", |b| {
         b.iter(|| {
-            let tools = black_box(BenchTools::TOOL_DEFINITIONS);
+            let tools = black_box(BenchTools::tool_definitions());
             let _tool = tools.iter().find(|t| t.name == "simple_method");
         })
     });
@@ -66,7 +58,7 @@ fn bench_tool_lookup(c: &mut Criterion) {
 fn bench_schema_pretty(c: &mut Criterion) {
     c.bench_function("schema_pretty_print", |b| {
         b.iter(|| {
-            let tools = black_box(BenchTools::TOOL_DEFINITIONS);
+            let tools = black_box(BenchTools::tool_definitions());
             let tool = tools.iter().find(|t| t.name == "simple_method").unwrap();
             let _pretty = black_box(tool.input_schema_pretty().unwrap());
         })
@@ -78,10 +70,7 @@ fn bench_tool_call(c: &mut Criterion) {
     c.bench_function("tool_call_simple", |b| {
         b.iter(|| {
             let tools = black_box(BenchTools);
-            let _result = tools.call_tool(
-                "simple_method",
-                &serde_json::json!({"name": "test"}),
-            );
+            let _result = tools.call_tool("simple_method", &serde_json::json!({"name": "test"}));
         })
     });
 }

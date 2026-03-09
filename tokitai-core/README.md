@@ -11,7 +11,6 @@ Tokitai Core 提供了 Tokitai AI 工具集成系统的基础类型和 trait。�
 ## ✨ 核心特性
 
 - **零运行时依赖** - 核心类型依赖最小化
-- **`no_std` 支持** - 在禁用 `serde` 特性时支持嵌入式环境
 - **类型安全** - 编译期工具定义防止运行时错误
 - **Serde 集成** - 通过 `serde` 特性提供可选的序列化支持
 
@@ -151,18 +150,9 @@ const SCHEMA: &str = json_schema!({
 |---------|------|
 | `serde` (默认启用) | 启用 serde 序列化和 JSON 支持 |
 
-### 禁用默认特性
-
-如果需要在 `no_std` 环境中使用：
-
-```toml
-[dependencies]
-tokitai-core = { version = "0.3.3", default-features = false }
-```
-
 ## ⚙️ 要求
 
-- **Rust 版本**: 1.70+
+- **Rust 版本**: 1.80+
 - **Edition**: 2021
 
 ## 📄 许可证

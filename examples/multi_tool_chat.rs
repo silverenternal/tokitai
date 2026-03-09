@@ -5,6 +5,7 @@
 use serde_json::Value;
 use tokitai::json;
 use tokitai::tool;
+use tokitai::ToolProvider;
 
 // ==================== 工具定义 ====================
 
@@ -180,36 +181,33 @@ impl PersonalAssistant {
     /// 获取所有工具定义
     fn get_all_tools(&self) -> Vec<&tokitai::ToolDefinition> {
         let mut tools = Vec::new();
-        tools.extend(TodoManager::TOOL_DEFINITIONS.iter());
-        tools.extend(NoteManager::TOOL_DEFINITIONS.iter());
-        tools.extend(ReminderService::TOOL_DEFINITIONS.iter());
+        tools.extend(TodoManager::tool_definitions().iter());
+        tools.extend(NoteManager::tool_definitions().iter());
+        tools.extend(ReminderService::tool_definitions().iter());
         tools
     }
 
     /// 处理工具调用
-    fn handle_tool_call(
-        &self,
-        name: &str,
-        args: &Value,
-    ) -> Result<Value, String> {
+    fn handle_tool_call(&self, name: &str, args: &Value) -> Result<Value, String> {
         println!("   [执行工具] {}({:?})", name, args);
 
         let result = match name {
             // TodoManager 工具
-            "add_todo" | "list_todos" | "complete_todo" => {
-                self.todo_manager.call_tool(name, args)
-                    .map_err(|e| format!("工具调用失败：{:?}", e))?
-            }
+            "add_todo" | "list_todos" | "complete_todo" => self
+                .todo_manager
+                .call_tool(name, args)
+                .map_err(|e| format!("工具调用失败：{:?}", e))?,
             // NoteManager 工具
             "create_note" | "list_notes" | "read_note" => {
-                self.note_manager.call_tool(name, args)
+                self.note_manager
+                    .call_tool(name, args)
                     .map_err(|e| format!("工具调用失败：{:?}", e))?
             }
             // ReminderService 工具
-            "set_reminder" | "cancel_reminder" => {
-                self.reminder_service.call_tool(name, args)
-                    .map_err(|e| format!("工具调用失败：{:?}", e))?
-            }
+            "set_reminder" | "cancel_reminder" => self
+                .reminder_service
+                .call_tool(name, args)
+                .map_err(|e| format!("工具调用失败：{:?}", e))?,
             _ => return Err(format!("未知工具：{}", name)),
         };
 
@@ -300,7 +298,7 @@ fn main() -> Result<(), String> {
                 json!({
                     "name": t.name,
                     "description": t.description,
-                    "input_schema": serde_json::from_str::<Value>(t.input_schema).unwrap_or_default()
+                    "input_schema": serde_json::from_str::<Value>(&t.input_schema).unwrap_or_default()
                 })
             })
             .collect::<Vec<_>>(),

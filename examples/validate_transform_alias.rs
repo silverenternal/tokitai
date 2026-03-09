@@ -2,6 +2,7 @@
 //! 演示宏自动验证和转换功能（不需要手动写验证代码）
 
 use tokitai::tool;
+use tokitai::ToolProvider;
 
 #[tool]
 pub struct MyTools;
@@ -27,7 +28,10 @@ impl MyTools {
         age: i32,
     ) -> Result<String, tokitai::ToolError> {
         // 验证由宏自动生成
-        Ok(format!("创建用户：{} (邮箱：{}, 年龄：{})", name, email, age))
+        Ok(format!(
+            "创建用户：{} (邮箱：{}, 年龄：{})",
+            name, email, age
+        ))
     }
 
     /// 获取用户
@@ -44,16 +48,16 @@ fn main() {
 
     // 测试别名
     println!("=== 测试工具定义 ===");
-    for def in MyTools::TOOL_DEFINITIONS {
+    for def in MyTools::tool_definitions() {
         println!("工具：{}", def.name);
         println!("描述：{}", def.description);
         println!("Schema: {}", def.input_schema);
         println!();
     }
-    
+
     // 测试 create_user（带验证和转换）
     println!("=== 测试 create_user ===");
-    
+
     // 测试 1: 正常调用
     let args = tokitai::json!({
         "name": "张三",
@@ -64,7 +68,7 @@ fn main() {
         Ok(result) => println!("成功：{}", result),
         Err(e) => println!("错误：{}", e),
     }
-    
+
     // 测试 2: 使用别名
     let args = tokitai::json!({
         "name": "李四",
@@ -75,7 +79,7 @@ fn main() {
         Ok(result) => println!("使用别名成功：{}", result),
         Err(e) => println!("错误：{}", e),
     }
-    
+
     // 测试 3: 使用另一个别名
     let args = tokitai::json!({
         "name": "王五",
@@ -86,7 +90,7 @@ fn main() {
         Ok(result) => println!("使用另一个别名成功：{}", result),
         Err(e) => println!("错误：{}", e),
     }
-    
+
     // 测试 4: 验证失败 - 空名字
     let args = tokitai::json!({
         "name": "",
@@ -97,7 +101,7 @@ fn main() {
         Ok(result) => println!("成功：{}", result),
         Err(e) => println!("验证失败（预期）：{}", e),
     }
-    
+
     // 测试 5: 验证失败 - 年龄超出范围
     let args = tokitai::json!({
         "name": "赵六",
@@ -108,7 +112,7 @@ fn main() {
         Ok(result) => println!("成功：{}", result),
         Err(e) => println!("验证失败（预期）：{}", e),
     }
-    
+
     // 测试 6: 测试邮箱转换（应该转为小写）
     let args = tokitai::json!({
         "name": "测试用户",
@@ -119,7 +123,7 @@ fn main() {
         Ok(result) => println!("邮箱转换结果：{}", result),
         Err(e) => println!("错误：{}", e),
     }
-    
+
     // 测试 7: 测试 get_user 别名
     println!("\n=== 测试 get_user 别名 ===");
     let args = tokitai::json!({"user_id": 123});
@@ -127,13 +131,13 @@ fn main() {
         Ok(result) => println!("get_user: {}", result),
         Err(e) => println!("错误：{}", e),
     }
-    
+
     let args = tokitai::json!({"user_id": 456});
     match tools.call_tool("get_user_info", &args) {
         Ok(result) => println!("get_user_info: {}", result),
         Err(e) => println!("错误：{}", e),
     }
-    
+
     let args = tokitai::json!({"user_id": 789});
     match tools.call_tool("fetch_user", &args) {
         Ok(result) => println!("fetch_user: {}", result),

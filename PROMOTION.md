@@ -36,7 +36,7 @@ impl Calculator {
 
 // Usage
 let calc = Calculator;
-let tools = Calculator::TOOL_DEFINITIONS;  // Compile-time generated
+let tools = Calculator::tool_definitions();  // Compile-time generated
 let result = calc.call_tool("add", &json!({"a": 10, "b": 20})).await?;
 ```
 
@@ -123,7 +123,7 @@ impl WeatherService {
 }
 
 // Get tool definitions (send to AI)
-let tools = WeatherService::TOOL_DEFINITIONS;
+let tools = WeatherService::tool_definitions();
 
 // Handle AI tool calls
 let result = service.call_tool("get_forecast", &args).await?;
@@ -225,7 +225,7 @@ impl Calculator {
 
 // 使用
 let calc = Calculator;
-let tools = Calculator::TOOL_DEFINITIONS;  // 编译期生成
+let tools = Calculator::tool_definitions();  // 编译期生成
 let result = calc.call_tool("add", &json!({"a": 10, "b": 20})).await?;
 ```
 

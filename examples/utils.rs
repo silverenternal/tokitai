@@ -5,8 +5,8 @@
 /// 在 Windows 上设置控制台输出代码页为 UTF-8，确保中文正常显示
 #[cfg(windows)]
 pub fn init_console() {
-    use windows_sys::Win32::System::Console::{SetConsoleCP, SetConsoleOutputCP};
     use std::io::{self, Write};
+    use windows_sys::Win32::System::Console::{SetConsoleCP, SetConsoleOutputCP};
 
     unsafe {
         // 设置输入和输出代码页为 UTF-8

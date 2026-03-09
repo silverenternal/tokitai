@@ -33,6 +33,9 @@ Tokitai 是一个零运行时依赖的过程宏库，只需一个 `#[tool]` 属�
 ```toml
 [dependencies]
 tokitai = "0.3.3"
+tokitai-mcp-server = "0.1"  # 可选：MCP 服务器脚手架
+tokio = { version = "1", features = ["full"] }
+serde_json = "1.0"
 ```
 
 就这一行！所有必需的依赖（serde、serde_json、thiserror）都会自动包含。
@@ -57,7 +60,7 @@ impl Calculator {
 ### 3. 获取工具定义
 
 ```rust
-let tools = Calculator::TOOL_DEFINITIONS;
+let tools = Calculator::tool_definitions();
 ```
 
 ### 4. 处理 AI 调用
@@ -65,9 +68,42 @@ let tools = Calculator::TOOL_DEFINITIONS;
 ```rust
 use tokitai::json;
 
-let calc = Calculator;
+let calc = Calculator::default();
 let result = calc.call_tool("add", &json!({"a": 10, "b": 20}))?;
 println!("{}", result);  // 30
+```
+
+### 5. 快速启动 MCP HTTP 服务器
+
+```rust
+use tokitai_mcp_server::McpServerBuilder;
+
+#[tokio::main]
+async fn main() {
+    let server = McpServerBuilder::with_tool(Calculator::default())
+        .with_port(8080)
+        .build();
+
+    server.run().await.unwrap();
+}
+```
+
+然后从任何 MCP 客户端调用：
+
+```python
+import requests
+
+# 获取工具列表
+response = requests.get("http://127.0.0.1:8080/tools")
+tools = response.json()
+
+# 调用工具
+response = requests.post(
+    "http://127.0.0.1:8080/call",
+    json={"name": "add", "arguments": {"a": 10, "b": 20}}
+)
+result = response.json()
+print(result["result"])  # 30
 ```
 
 ### 运行示例
@@ -75,6 +111,9 @@ println!("{}", result);  // 30
 ```bash
 # 基础使用示例
 cargo run --example basic_usage
+
+# MCP 服务器示例
+cargo run --example mcp_builder_demo -p tokitai-mcp-server
 
 # 快速聊天示例（交互式）
 cargo run --example quick_chat
@@ -164,7 +203,7 @@ tokitai = "0.3.3"
 
 ## ⚙️ 要求
 
-- **Rust 版本**: 1.70+
+- **Rust 版本**: 1.80+
 - **Edition**: 2021
 
 ## 📄 许可证

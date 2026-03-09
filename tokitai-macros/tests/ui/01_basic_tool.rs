@@ -1,6 +1,7 @@
 //! 基本工具测试
 
 use tokitai::tool;
+use tokitai::ToolProvider;
 
 pub struct Calculator;
 
@@ -21,7 +22,7 @@ fn main() {
     let calc = Calculator;
 
     // 验证 TOOL_DEFINITIONS 生成
-    let tools = Calculator::TOOL_DEFINITIONS;
+    let tools = Calculator::tool_definitions();
     assert_eq!(tools.len(), 2);
 
     // 验证 call_tool 生成

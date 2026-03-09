@@ -1,6 +1,7 @@
 //! 测试 #[tool(skip)] 属性
 
 use tokitai::tool;
+use tokitai::ToolProvider;
 
 pub struct Processor;
 
@@ -28,7 +29,7 @@ fn main() {
     let processor = Processor;
 
     // 验证 TOOL_DEFINITIONS 生成 - 只有 public_method 被注册
-    let tools = Processor::TOOL_DEFINITIONS;
+    let tools = Processor::tool_definitions();
     assert_eq!(tools.len(), 1);
     assert_eq!(tools[0].name, "public_method");
 

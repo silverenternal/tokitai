@@ -1,6 +1,6 @@
 [package]
 name = "tokitai"
-version = "0.3.3"
+version = "0.4.0"
 edition = "2021"
 authors = ["silverenternal <3147264070@qq.com>"]
 license = "MIT OR Apache-2.0"
@@ -10,14 +10,14 @@ repository = "https://github.com/silverenternal/tokitai"
 homepage = "https://github.com/silverenternal/tokitai"
 keywords = ["ai", "llm", "tool-calling", "function-calling", "proc-macro"]
 categories = ["development-tools", "asynchronous"]
-rust-version = "1.70"
+rust-version = "1.80"
 
 [dependencies]
 # 核心类型（零依赖）
-tokitai-core = { path = "../tokitai-core", version = "0.3.3", features = ["serde"] }
+tokitai-core = { path = "../tokitai-core", version = "0.4.0", features = ["serde"] }
 
 # 宏
-tokitai-macros = { path = "../tokitai-macros", version = "0.3.3" }
+tokitai-macros = { path = "../tokitai-macros", version = "0.4.0" }
 
 # 序列化（runtime 必需）- 用户无需关心，默认包含
 serde = { version = "1.0", features = ["derive"] }
@@ -29,11 +29,25 @@ thiserror = "1.0"
 # 日志
 log = { version = "0.4", optional = true }
 
+# 异步运行时（可选）
+async-trait = { version = "0.1", optional = true }
+
+# HTTP 服务器（可选，用于 MCP HTTP）
+axum = { version = "0.7", optional = true }
+tokio = { version = "1", features = ["full"], optional = true }
+tower = { version = "0.4", optional = true }
+tower-http = { version = "0.5", features = ["cors", "trace"], optional = true }
+tracing = { version = "0.1", optional = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
+
 [features]
-default = []
-# MCP 协议支持（需要默认依赖）
-mcp = ["log"]
+default = ["std"]
+std = ["tokitai-core/std", "serde"]
+serde = ["tokitai-core/serde"]
+runtime = ["std", "async-trait", "log"]
+mcp = ["runtime"]
+http-server = ["mcp", "axum", "tokio", "tower", "tower-http", "tracing", "tracing-subscriber"]
 
 [dev-dependencies]
-tokitai-core = { path = "../tokitai-core", version = "0.3.3", default-features = false }
+tokitai-core = { path = "../tokitai-core", version = "0.4.0", default-features = false }
 trybuild = "1.0"

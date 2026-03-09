@@ -47,7 +47,7 @@ impl Calculator {
 let calc = Calculator;
 
 // 获取工具定义（发送给 AI）
-let tools = Calculator::TOOL_DEFINITIONS;
+let tools = Calculator::tool_definitions();
 
 // 调用工具（接收 AI 的请求）
 let result = calc.call_tool("add", &serde_json::json!({"a": 10, "b": 20}))?;
@@ -249,7 +249,7 @@ impl SearchEngine {
 use tokitai::ToolProvider;
 
 // 获取所有工具定义
-let tools = Calculator::TOOL_DEFINITIONS;
+let tools = Calculator::tool_definitions();
 
 // 获取工具数量
 let count = Calculator::tool_count();
@@ -485,7 +485,7 @@ Error: 工具未找到：unknown_tool
 
 ```rust
 // 打印所有可用工具
-for tool in MyTools::TOOL_DEFINITIONS {
+for tool in MyTools::tool_definitions() {
     println!("可用工具：{}", tool.name);
 }
 ```

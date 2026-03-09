@@ -3,6 +3,7 @@ members = [
     "tokitai-core",
     "tokitai-macros",
     "tokitai",
+    "tokitai-mcp-server",
     "examples",
 ]
 resolver = "2"

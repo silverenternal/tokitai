@@ -1,6 +1,7 @@
 //! Result 返回类型测试
 
 use tokitai::tool;
+use tokitai::ToolProvider;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -27,7 +28,7 @@ fn main() {
     let math = MathService;
 
     // 验证 TOOL_DEFINITIONS 生成
-    let tools = MathService::TOOL_DEFINITIONS;
+    let tools = MathService::tool_definitions();
     assert_eq!(tools.len(), 1);
 
     // 成功情况

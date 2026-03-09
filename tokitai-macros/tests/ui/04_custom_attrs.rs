@@ -1,6 +1,7 @@
 //! 自定义工具属性测试
 
 use tokitai::tool;
+use tokitai::ToolProvider;
 
 pub struct DataProcessor;
 
@@ -21,7 +22,7 @@ fn main() {
     let processor = DataProcessor;
 
     // 验证 TOOL_DEFINITIONS 生成
-    let tools = DataProcessor::TOOL_DEFINITIONS;
+    let tools = DataProcessor::tool_definitions();
     assert_eq!(tools.len(), 2);
 
     // 验证自定义名称

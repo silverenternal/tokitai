@@ -8,6 +8,7 @@
 
 use std::collections::HashMap;
 use tokitai::tool;
+use tokitai::ToolProvider;
 
 /// 高级工具服务
 pub struct AdvancedTools;
@@ -15,9 +16,9 @@ pub struct AdvancedTools;
 #[tool]
 impl AdvancedTools {
     /// 处理用户信息
-    /// 
+    ///
     /// 支持可选参数和复杂类型
-    /// 
+    ///
     /// - `user_id`: 用户 ID
     /// - `name`: 用户名称
     /// - `email`: 可选的邮箱地址
@@ -29,12 +30,7 @@ impl AdvancedTools {
         _email: Option<String>,
         tags: Vec<String>,
     ) -> String {
-        format!(
-            "处理用户 {} ({}): 标签数 = {}",
-            user_id,
-            name,
-            tags.len()
-        )
+        format!("处理用户 {} ({}): 标签数 = {}", user_id, name, tags.len())
     }
 
     /// 计算数值统计
@@ -47,19 +43,19 @@ impl AdvancedTools {
         include_median: Option<bool>,
     ) -> HashMap<String, f64> {
         let mut stats = HashMap::new();
-        
+
         if !numbers.is_empty() {
             let sum: f64 = numbers.iter().sum();
             let count = numbers.len() as f64;
             stats.insert("sum".to_string(), sum);
             stats.insert("count".to_string(), count);
             stats.insert("average".to_string(), sum / count);
-            
+
             if include_median.unwrap_or(false) {
                 let mut sorted = numbers.clone();
                 sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
                 let mid = sorted.len() / 2;
-                let median = if sorted.len() % 2 == 0 {
+                let median = if sorted.len().is_multiple_of(2) {
                     (sorted[mid - 1] + sorted[mid]) / 2.0
                 } else {
                     sorted[mid]
@@ -67,7 +63,7 @@ impl AdvancedTools {
                 stats.insert("median".to_string(), median);
             }
         }
-        
+
         stats
     }
 
@@ -93,20 +89,14 @@ impl AdvancedTools {
     /// 处理数组引用
     ///
     /// - `data`: 数据切片
-    pub fn process_slice(
-        &self,
-        data: Vec<i32>,
-    ) -> i32 {
+    pub fn process_slice(&self, data: Vec<i32>) -> i32 {
         data.iter().sum()
     }
 
     /// 处理元组参数（简化为数组）
     ///
     /// - `coordinates`: 坐标数据
-    pub fn process_tuple_data(
-        &self,
-        coordinates: (i32, i32),
-    ) -> String {
+    pub fn process_tuple_data(&self, coordinates: (i32, i32)) -> String {
         format!("坐标：({}, {})", coordinates.0, coordinates.1)
     }
 }
@@ -119,7 +109,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     // 展示工具定义
     println!("1. 工具定义（查看生成的 JSON Schema）");
-    for tool in AdvancedTools::TOOL_DEFINITIONS {
+    for tool in AdvancedTools::tool_definitions() {
         println!("\n   工具：{}", tool.name);
         println!("   描述：{}", tool.description);
         println!("   Schema: {}", tool.input_schema);

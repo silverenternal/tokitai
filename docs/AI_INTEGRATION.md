@@ -211,7 +211,7 @@ impl Calculator {
 }
 
 // 转换为 MCP 格式
-let mcp_tools = mcp::to_mcp_tools(Calculator::TOOL_DEFINITIONS);
+let mcp_tools = mcp::to_mcp_tools(&Calculator::tool_definitions());
 
 // MCP 工具格式
 // [
@@ -240,7 +240,7 @@ impl WeatherService {
     }
 }
 
-let tools = WeatherService::TOOL_DEFINITIONS;
+let tools = WeatherService::tool_definitions();
 println!("工具数量：{}", tools.len());
 ```
 
@@ -341,7 +341,7 @@ ollama serve
 {"type":"object","properties":{"a":{"type":"integer","description":""},"b":{"type":"integer","description":""}},"required":["a","b"]}
 
 // 检查工具定义
-for tool in Calculator::TOOL_DEFINITIONS {
+for tool in Calculator::tool_definitions() {
     println!("{}: {}", tool.name, tool.input_schema);
 }
 ```

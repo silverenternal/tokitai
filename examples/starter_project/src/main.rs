@@ -1,3 +1,5 @@
+use tokitai::ToolProvider;
+
 //! Tokitai 入门项目 - 主程序
 //!
 //! 演示如何：
@@ -19,8 +21,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("1. 工具定义（可发送给 AI）：");
     println!();
 
-    let weather_tools = WeatherTool::TOOL_DEFINITIONS;
-    let calculators = Calculator::TOOL_DEFINITIONS;
+    let weather_tools = WeatherTool::tool_definitions();
+    let calculators = Calculator::tool_definitions();
 
     println!("   天气工具:");
     for tool in weather_tools {

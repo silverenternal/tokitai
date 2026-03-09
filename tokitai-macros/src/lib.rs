@@ -100,7 +100,7 @@
 //! // 2. ToolProvider trait implementation
 //! impl ToolProvider for Calculator {
 //!     fn tool_definitions() -> &'static [ToolDefinition] {
-//!         Self::TOOL_DEFINITIONS
+//!         Self::tool_definitions()
 //!     }
 //! }
 //!
@@ -318,7 +318,7 @@ pub fn tool_type(attr: TokenStream, item: TokenStream) -> TokenStream {
 ///
 /// ## Example (internal usage)
 ///
-/// ```rust,ignore
+/// ```text
 /// #[tool]
 /// impl MyTools {
 ///     pub fn create_user(
@@ -343,7 +343,7 @@ pub fn tool_validate(_attr: TokenStream, item: TokenStream) -> TokenStream {
 ///
 /// ## Example (internal usage)
 ///
-/// ```rust,ignore
+/// ```text
 /// #[tool]
 /// impl MyTools {
 ///     pub fn create_user(
@@ -385,6 +385,54 @@ pub fn tool_required(_attr: TokenStream, item: TokenStream) -> TokenStream {
     item
 }
 
+/// Parameter min attribute (used internally by #[tool] macro)
+#[proc_macro_attribute]
+pub fn tool_min(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    item
+}
+
+/// Parameter max attribute (used internally by #[tool] macro)
+#[proc_macro_attribute]
+pub fn tool_max(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    item
+}
+
+/// Parameter min_length attribute (used internally by #[tool] macro)
+#[proc_macro_attribute]
+pub fn tool_min_length(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    item
+}
+
+/// Parameter max_length attribute (used internally by #[tool] macro)
+#[proc_macro_attribute]
+pub fn tool_max_length(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    item
+}
+
+/// Parameter pattern attribute (used internally by #[tool] macro)
+#[proc_macro_attribute]
+pub fn tool_pattern(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    item
+}
+
+/// Parameter min_items attribute (used internally by #[tool] macro)
+#[proc_macro_attribute]
+pub fn tool_min_items(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    item
+}
+
+/// Parameter max_items attribute (used internally by #[tool] macro)
+#[proc_macro_attribute]
+pub fn tool_max_items(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    item
+}
+
+/// Parameter multiple_of attribute (used internally by #[tool] macro)
+#[proc_macro_attribute]
+pub fn tool_multiple_of(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    item
+}
+
 /// Parameter-level tool attributes (helper macro for #[tool])
 ///
 /// This attribute is used to add validation, transformation, and other metadata
@@ -423,3 +471,42 @@ pub fn param_tool(_attr: TokenStream, item: TokenStream) -> TokenStream {
     item
 }
 
+/// # `tokitai!` Configuration Macro
+///
+/// Used to centrally configure tool properties without modifying original code.
+///
+/// ## Usage
+///
+/// ```rust,ignore
+/// tokitai::config! {
+///     MyService {
+///         get_user: {
+///             desc: "获取用户信息",
+///             tags: ["user", "read"],
+///             params: {
+///                 id: {
+///                     desc: "用户唯一标识",
+///                     example: "1001"
+///                 }
+///             }
+///         }
+///     }
+/// }
+/// ```
+///
+/// ## Features
+///
+/// - Override method descriptions
+/// - Add tags to methods
+/// - Configure parameter-level descriptions and examples
+/// - Works with existing `#[tool]` annotated code
+///
+/// ## Priority
+///
+/// 1. `#[tool(desc = "...")]` > doc comments
+/// 2. `tokitai!` config > `#[tool]` attributes
+/// 3. Parameter-level: `#[param_tool]` > default inference
+#[proc_macro]
+pub fn config(item: TokenStream) -> TokenStream {
+    tool::config(item)
+}

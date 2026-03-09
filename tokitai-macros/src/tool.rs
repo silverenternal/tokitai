@@ -10,39 +10,39 @@ use proc_macro::TokenStream;
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::{format_ident, quote, ToTokens};
 use serde::Serialize;
+use std::collections::BTreeMap;
+use std::sync::{LazyLock, Mutex};
 use syn::{
     parse::{Parse, ParseStream},
     parse_macro_input, parse_quote,
     punctuated::Punctuated,
-    token, Expr, ExprLit, FnArg, Ident, ImplItem, ImplItemFn, ItemImpl, ItemStruct, Lit,
-    LitStr, Meta, Pat, PatType, ReturnType, Type, Visibility,
+    token, Expr, ExprLit, FnArg, Ident, ImplItem, ImplItemFn, ItemImpl, ItemStruct, Lit, LitStr,
+    Meta, Pat, PatType, ReturnType, Type, Visibility,
 };
-use std::collections::BTreeMap;
-use std::sync::Mutex;
 
 /// 参数级别的工具属性
 #[derive(Default, Clone)]
 struct ParamToolAttrs {
     desc: Option<String>,
     required: bool,
-    example: Option<serde_json::Value>,  // 改为支持任意 JSON 值
-    default: Option<serde_json::Value>,  // 改为支持任意 JSON 值
-    validate: Option<String>,  // 验证表达式
-    transform: Option<String>, // 转换表达式
+    example: Option<serde_json::Value>, // 改为支持任意 JSON 值
+    default: Option<serde_json::Value>, // 改为支持任意 JSON 值
+    validate: Option<String>,           // 验证表达式
+    transform: Option<String>,          // 转换表达式
     // JSON Schema 验证属性
-    one_of: Option<Vec<String>>,  // 枚举值（字符串）
-    enum_values: Option<Vec<serde_json::Value>>,  // 枚举值（任意类型）
-    pattern: Option<String>,  // 正则表达式
-    min: Option<f64>,  // 数值最小值
-    max: Option<f64>,  // 数值最大值
-    min_length: Option<usize>,  // 字符串/数组最小长度
-    max_length: Option<usize>,  // 字符串/数组最大长度
-    min_items: Option<usize>,  // 数组最小项数
-    max_items: Option<usize>,  // 数组最大项数
-    multiple_of: Option<f64>,  // 倍数限制
-    validate_msg: Option<String>,  // 自定义验证错误消息
-    validate_msg_zh: Option<String>,  // 中文验证错误消息
-    validate_msg_en: Option<String>,  // 英文验证错误消息
+    one_of: Option<Vec<String>>,                 // 枚举值（字符串）
+    enum_values: Option<Vec<serde_json::Value>>, // 枚举值（任意类型）
+    pattern: Option<String>,                     // 正则表达式
+    min: Option<f64>,                            // 数值最小值
+    max: Option<f64>,                            // 数值最大值
+    min_length: Option<usize>,                   // 字符串/数组最小长度
+    max_length: Option<usize>,                   // 字符串/数组最大长度
+    min_items: Option<usize>,                    // 数组最小项数
+    max_items: Option<usize>,                    // 数组最大项数
+    multiple_of: Option<f64>,                    // 倍数限制
+    validate_msg: Option<String>,                // 自定义验证错误消息
+    validate_msg_zh: Option<String>,             // 中文验证错误消息
+    validate_msg_en: Option<String>,             // 英文验证错误消息
 }
 
 impl Parse for ParamToolAttrs {
@@ -199,7 +199,27 @@ impl Parse for ParamToolAttrs {
             }
         }
 
-        Ok(ParamToolAttrs { desc, required, example, default, validate, transform, one_of, enum_values, pattern, min, max, min_length, max_length, min_items, max_items, multiple_of, validate_msg, validate_msg_zh, validate_msg_en })
+        Ok(ParamToolAttrs {
+            desc,
+            required,
+            example,
+            default,
+            validate,
+            transform,
+            one_of,
+            enum_values,
+            pattern,
+            min,
+            max,
+            min_length,
+            max_length,
+            min_items,
+            max_items,
+            multiple_of,
+            validate_msg,
+            validate_msg_zh,
+            validate_msg_en,
+        })
     }
 }
 
@@ -222,7 +242,7 @@ fn parse_json_value(input: ParseStream) -> syn::Result<Option<serde_json::Value>
         let lit_bool: syn::LitBool = input.parse()?;
         return Ok(Some(serde_json::json!(lit_bool.value)));
     }
-    
+
     // 尝试解析为字符串字面量
     if let Ok(lit_str) = input.parse::<LitStr>() {
         let str_value = lit_str.value();
@@ -304,9 +324,7 @@ fn parse_json_value(input: ParseStream) -> syn::Result<Option<serde_json::Value>
                     Ok(None)
                 }
             }
-            Lit::Bool(lit_bool) => {
-                Ok(Some(serde_json::json!(lit_bool.value)))
-            }
+            Lit::Bool(lit_bool) => Ok(Some(serde_json::json!(lit_bool.value))),
             _ => Ok(None),
         }
     } else {
@@ -388,8 +406,9 @@ fn parse_lit_to_string(input: syn::parse::ParseStream) -> syn::Result<Option<Str
     Ok(None)
 }
 
-/// 全局类型 schema 缓存
-static TYPE_SCHEMA_CACHE: Mutex<Option<BTreeMap<String, JsonSchema>>> = Mutex::new(None);
+/// 全局类型 schema 缓存（使用 LazyLock + Mutex 实现线程安全）
+static TYPE_SCHEMA_CACHE: LazyLock<Mutex<BTreeMap<String, JsonSchema>>> =
+    LazyLock::new(|| Mutex::new(BTreeMap::new()));
 
 /// `#[tool]` 宏入口
 pub fn tool(attr: TokenStream, item: TokenStream) -> TokenStream {
@@ -417,11 +436,10 @@ pub fn tool_type(attr: TokenStream, item: TokenStream) -> TokenStream {
     // 解析属性中的 schema 定义
     if let Ok(schema_attrs) = syn::parse::<ToolTypeAttrs>(attr) {
         let schema = schema_attrs.to_json_schema();
-        
+
         // 缓存 schema
         if let Ok(mut cache) = TYPE_SCHEMA_CACHE.lock() {
-            let cache_map = cache.get_or_insert_with(BTreeMap::new);
-            cache_map.insert(struct_name, schema);
+            cache.insert(struct_name, schema);
         }
     }
 
@@ -458,14 +476,19 @@ impl Parse for ToolTypeAttrs {
                     for prop in value.value().split(',') {
                         let parts: Vec<&str> = prop.trim().split(':').collect();
                         if parts.len() == 2 {
-                            properties.push((parts[0].trim().to_string(), parts[1].trim().to_string()));
+                            properties
+                                .push((parts[0].trim().to_string(), parts[1].trim().to_string()));
                         }
                     }
                 }
                 "required" => {
                     // 解析 required = "field1, field2"
                     let value: LitStr = input.parse()?;
-                    required = value.value().split(',').map(|s| s.trim().to_string()).collect();
+                    required = value
+                        .value()
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .collect();
                 }
                 _ => {
                     let value: LitStr = input.parse()?;
@@ -500,7 +523,11 @@ impl ToolTypeAttrs {
                     "boolean" => JsonSchema::boolean(None),
                     "array" => JsonSchema::Array {
                         ty: "array".to_string(),
-                        items: Box::new(JsonSchema::Any { description: None, default: None, deprecated: None }),
+                        items: Box::new(JsonSchema::Any {
+                            description: None,
+                            default: None,
+                            deprecated: None,
+                        }),
                         description: None,
                         prefix_items: None,
                         min_items: None,
@@ -524,7 +551,11 @@ impl ToolTypeAttrs {
                         context: None,
                         deprecated_note: None,
                     },
-                    _ => JsonSchema::Any { description: None, default: None, deprecated: None },
+                    _ => JsonSchema::Any {
+                        description: None,
+                        default: None,
+                        deprecated: None,
+                    },
                 };
                 (name.clone(), schema)
             })
@@ -595,17 +626,17 @@ struct MethodToolAttrs {
     version: Option<String>,          // 新增：版本
     visible: bool,
     tags: Vec<String>,
-    group: Option<String>,            // 新增：工具分组
+    group: Option<String>, // 新增：工具分组
     return_description: Option<String>,
     context: Option<String>,
-    example_input: Option<serde_json::Value>,  // 改为支持任意 JSON 值
+    example_input: Option<serde_json::Value>, // 改为支持任意 JSON 值
     param_order: Option<Vec<String>>,
     hidden_params: Vec<String>,
     example_output: Option<String>,
-    #[allow(dead_code)]  // category 在解析后添加到 tags，不需要存储
+    #[allow(dead_code)] // category 在解析后添加到 tags，不需要存储
     category: Option<String>,
-    alias: Vec<String>,  // 别名列表
-    allow: Vec<String>,  // 允许抑制的警告列表
+    alias: Vec<String>,         // 别名列表
+    allow: Vec<String>,         // 允许抑制的警告列表
     cache: Option<String>,      // 缓存配置（如 "ttl=60" 或 "key=user_id"）
     rate_limit: Option<String>, // 限流配置（如 "10/min" 或 "100/hour"）
     // 参数级别的验证属性（如 one_of_role, pattern_email 等）
@@ -663,7 +694,7 @@ impl Parse for MethodToolAttrs {
         let mut group = None;
         let mut return_description = None;
         let mut context = None;
-        let mut example_input: Option<serde_json::Value> = None;  // 改为支持任意 JSON 值
+        let mut example_input: Option<serde_json::Value> = None; // 改为支持任意 JSON 值
         let mut param_order: Option<Vec<String>> = None;
         let mut hidden_params = Vec::new();
         let mut example_output = None;
@@ -732,7 +763,7 @@ impl Parse for MethodToolAttrs {
                     // 在 proc-macro 中，false 可能被解析为 Ident 或 Lit::Bool
                     // 尝试 1: 解析为 Ident
                     if let Ok(ident) = input.parse::<Ident>() {
-                        visible = ident.to_string() != "false";
+                        visible = ident != "false";
                     }
                     // 尝试 2: 如果没有解析成功，尝试解析为 LitStr
                     else if input.peek(LitStr) {
@@ -847,29 +878,42 @@ impl Parse for MethodToolAttrs {
                 _ => {
                     // 检查是否是已知的验证属性前缀（注意：更长的前缀必须放在前面）
                     let key_str = key.to_string();
-                    let validation_prefixes = ["enum_values_", "min_length_", "max_length_",
-                                               "min_items_", "max_items_", "multiple_of_",
-                                               "validate_msg_", "default_", "example_",
-                                               "one_of_", "pattern_",
-                                               "min_", "max_"];
-                    
-                    let is_validation_attr = validation_prefixes.iter().any(|prefix| key_str.starts_with(prefix));
-                    
+                    let validation_prefixes = [
+                        "enum_values_",
+                        "min_length_",
+                        "max_length_",
+                        "min_items_",
+                        "max_items_",
+                        "multiple_of_",
+                        "validate_msg_",
+                        "default_",
+                        "example_",
+                        "one_of_",
+                        "pattern_",
+                        "min_",
+                        "max_",
+                    ];
+
+                    let is_validation_attr = validation_prefixes
+                        .iter()
+                        .any(|prefix| key_str.starts_with(prefix));
+
                     if is_validation_attr {
                         // 处理参数级别的验证属性
                         for prefix in &validation_prefixes {
                             if key_str.starts_with(prefix) {
                                 let param_name = key_str.strip_prefix(prefix).unwrap();
                                 // 查找或创建该参数的验证属性
-                                let existing_idx = param_validations.iter().position(|(n, _)| n == param_name);
+                                let existing_idx =
+                                    param_validations.iter().position(|(n, _)| n == param_name);
                                 let mut param_attrs = if let Some(idx) = existing_idx {
                                     param_validations.remove(idx).1
                                 } else {
                                     ParamToolAttrs::default()
                                 };
-                                
+
                                 input.parse::<token::Eq>()?;
-                                
+
                                 // 根据前缀设置对应的字段
                                 match *prefix {
                                     "one_of_" => {
@@ -942,7 +986,7 @@ impl Parse for MethodToolAttrs {
                                     }
                                     _ => {}
                                 }
-                                
+
                                 param_validations.push((param_name.to_string(), param_attrs));
                                 break;
                             }
@@ -970,7 +1014,32 @@ impl Parse for MethodToolAttrs {
             tags.push(cat);
         }
 
-        Ok(MethodToolAttrs { name, desc, skip: false, deprecated, replaced_by, deprecated_note, deprecated_since, remove_in, version, visible, tags, group, return_description, context, example_input, param_order, hidden_params, example_output, category: None, alias, allow, cache, rate_limit, param_validations })
+        Ok(MethodToolAttrs {
+            name,
+            desc,
+            skip: false,
+            deprecated,
+            replaced_by,
+            deprecated_note,
+            deprecated_since,
+            remove_in,
+            version,
+            visible,
+            tags,
+            group,
+            return_description,
+            context,
+            example_input,
+            param_order,
+            hidden_params,
+            example_output,
+            category: None,
+            alias,
+            allow,
+            cache,
+            rate_limit,
+            param_validations,
+        })
     }
 }
 
@@ -987,65 +1056,109 @@ fn generate_for_impl(mut impl_item: ItemImpl, _attrs: ToolAttributes) -> TokenSt
     // 添加编译时警告（支持 #[tool(allow = [...])] 抑制）
     for tool in &tool_methods {
         // 警告 1: deprecated 方法没有指定 replaced_by
-        if tool.deprecated && tool.replaced_by.is_none() {
-            if !tool.allow.contains(&"deprecated_missing_replaced_by".to_string()) {
-                eprintln!(
-                    "⚠️  [tokitai] 方法 `{}` 被标记为 deprecated，但未指定 replaced_by\n\
-                     💡 建议：#[tool(deprecated, replaced_by = \"new_method\")]",
-                    tool.name
-                );
-            }
+        if tool.deprecated
+            && tool.replaced_by.is_none()
+            && !tool
+                .allow
+                .contains(&"deprecated_missing_replaced_by".to_string())
+        {
+            eprintln!(
+                "[tokitai] warning: method `{}` is marked deprecated without replaced_by\n\
+                 💡 Suggestion: #[tool(deprecated, replaced_by = \"new_method\")]",
+                tool.name
+            );
         }
 
         // 警告 2: Option 类型参数没有默认值或示例
         for param in &tool.params {
-            if param.is_option && param.default.is_none() && param.example.is_none() {
-                if !tool.allow.contains(&"option_no_default".to_string()) {
-                    // 使用 schema_name（去掉 `_` 前缀）用于显示
-                    let display_name = &param.schema_name;
-                    eprintln!(
-                        "⚠️  参数 `{}` 是可选的 (Option 类型)\n\
-                         → AI 可能不知道可以不传这个参数，可能导致调用失败\n\
-                         \n\
-                         修复方法（选一个）：\n\
-                         1. #[tool(default_{} = \"null\")]      # 添加默认值\n\
-                         2. #[tool(example_{} = \"null\")]      # 添加示例\n\
-                         3. 改为必填参数：`{}: Option<T>` → `{}: T`",
-                        display_name, display_name, display_name,
-                        display_name, display_name
-                    );
-                }
+            if param.is_option
+                && param.default.is_none()
+                && param.example.is_none()
+                && !tool.allow.contains(&"option_no_default".to_string())
+            {
+                // 使用 schema_name（去掉 `_` 前缀）用于显示
+                let display_name = &param.schema_name;
+                eprintln!(
+                    "[tokitai] warning: parameter `{}` is optional (Option type) without default or example\n\
+                     → AI may not know this parameter can be omitted, which may cause call failures\n\
+                     \n\
+                     Suggested fixes (choose one):\n\
+                     1. #[tool(default_{} = \"null\")]      # Add default value\n\
+                     2. #[tool(example_{} = \"null\")]      # Add example\n\
+                     3. Make it required: `{}: Option<T>` → `{}: T`",
+                    display_name, display_name, display_name,
+                    display_name, display_name
+                );
             }
         }
 
         // 警告 3: 有 context = "async" 但方法不是 async
-        if tool.context.as_deref() == Some("async") && !tool.is_async {
-            if !tool.allow.contains(&"context_async_mismatch".to_string()) {
-                eprintln!(
-                    "⚠️  [tokitai] 方法 `{}` 标记为 context = \"async\" 但不是 async 方法\n\
-                     💡 建议：移除 context 属性或将方法改为 async",
-                    tool.name
-                );
-            }
+        if tool.context.as_deref() == Some("async")
+            && !tool.is_async
+            && !tool.allow.contains(&"context_async_mismatch".to_string())
+        {
+            eprintln!(
+                "[tokitai] warning: method `{}` is marked context = \"async\" but is not an async method\n\
+                 💡 Suggestion: remove context attribute or change method to async",
+                tool.name
+            );
         }
     }
 
+    let impl_type = &impl_item.self_ty;
     let tool_def_consts = generate_tool_def_consts(&tool_methods);
-    let all_tool_defs = generate_all_tool_defs_array(&tool_methods);
+    let all_tool_defs = generate_all_tool_defs_array(&tool_methods, impl_type);
     let call_tool_methods = generate_call_tool_method(&tool_methods);
     let helper_methods = generate_helper_methods(&tool_methods);
 
     let mut new_items: Vec<ImplItem> = impl_item.items.clone();
 
-    for const_def in tool_def_consts {
-        new_items.push(parse_quote! { #const_def });
+    // 将 static 定义添加到 impl 块内部
+    for static_def in &tool_def_consts {
+        // 将 static 定义解析为 ImplItem
+        let static_item: ImplItem = syn::parse2(quote! {
+            #[allow(dead_code)]
+            #static_def
+        }).unwrap_or_else(|e| {
+            eprintln!("Failed to parse static definition: {}", e);
+            syn::parse_quote! { fn __parse_error() { compile_error!("Failed to parse static definition"); } }
+        });
+        new_items.push(static_item);
     }
 
     let all_tool_defs_tokens = &all_tool_defs;
-    new_items.push(parse_quote! {
-        /// 所有工具定义（编译期生成）
-        pub const TOOL_DEFINITIONS: &'static [::tokitai::ToolDefinition] = &[#(#all_tool_defs_tokens),*];
-    });
+    // 使用 LazyLock 支持运行时配置覆盖
+    // 在首次访问时应用配置
+
+    // 生成工具定义获取函数（始终启用，支持配置覆盖）
+    let get_tool_definitions_fn: ImplItem = parse_quote! {
+        /// 所有工具定义（运行时初始化，支持配置覆盖）
+        ///
+        /// # 注意
+        /// 此函数使用 `LazyLock` 进行延迟初始化。在初始化过程中会访问
+        /// `GLOBAL_CONFIG_REGISTRY`，如果配置注册表也在 LazyLock 中初始化，
+        /// 可能存在死锁风险。当前实现已确保初始化顺序安全。
+        fn __get_tool_definitions() -> &'static [::tokitai::ToolDefinition] {
+            static TOOLS: ::std::sync::LazyLock<::std::vec::Vec<::tokitai::ToolDefinition>> = ::std::sync::LazyLock::new(|| {
+                // 编译期生成的原始定义（克隆静态定义）
+                let mut defs = ::std::vec::Vec::from([#(#all_tool_defs_tokens.clone()),*]);
+
+                // 应用运行时配置覆盖
+                // 注意：GLOBAL_CONFIG_REGISTRY 也是 LazyLock，但在 TOOLS 之前初始化
+                for def in &mut defs {
+                    let configs = ::tokitai::GLOBAL_CONFIG_REGISTRY.get(&def.name);
+                    if !configs.is_empty() {
+                        def.apply_configs(&configs);
+                    }
+                }
+
+                defs
+            });
+
+            &TOOLS
+        }
+    };
+    new_items.push(get_tool_definitions_fn);
 
     for method in call_tool_methods {
         new_items.push(parse_quote! { #method });
@@ -1055,10 +1168,49 @@ fn generate_for_impl(mut impl_item: ItemImpl, _attrs: ToolAttributes) -> TokenSt
         new_items.push(parse_quote! { #helper });
     }
 
+    // 添加 configure_tool 方法用于配置宏
+    new_items.push(parse_quote! {
+        /// 配置工具属性（运行时覆盖）
+        ///
+        /// 此方法由 `tokitai!` 配置宏调用，用于在运行时覆盖工具定义。
+        ///
+        /// # 注意
+        ///
+        /// 此方法需要在首次访问工具定义前调用，否则配置可能不会生效。
+        pub fn configure_tool(_tool_name: &str, _configs: &[::tokitai::ToolConfig]) {
+            // 注册配置到全局注册表
+            ::tokitai::GLOBAL_CONFIG_REGISTRY.configure(_tool_name, _configs);
+
+            // 触发 LazyLock 初始化（通过访问一次来确保配置应用）
+            // 这确保配置在首次访问 tool_definitions() 之前被应用
+            let _ = Self::__get_tool_definitions();
+        }
+    });
+
     impl_item.items = new_items;
+
+    // 获取类型名称用于 ToolProvider 实现
+    let impl_type = &impl_item.self_ty;
 
     quote! {
         #impl_item
+
+        // 实现 ToolProvider trait
+        impl ::tokitai::ToolProvider for #impl_type {
+            fn tool_definitions() -> &'static [::tokitai::ToolDefinition] {
+                Self::__get_tool_definitions()
+            }
+        }
+
+        // 实现 ToolCaller trait
+        // 注意：这里直接委托给宏生成的 call_tool 方法
+        // 由于 serde_types::Value 就是 serde_json::Value，类型完全兼容
+        impl ::tokitai_core::ToolCaller for #impl_type {
+            fn call_tool(&self, name: &str, args: &::tokitai_core::serde_types::Value) -> Result<::tokitai_core::serde_types::Value, ::tokitai_core::ToolError> {
+                // 直接调用宏生成的 call_tool 方法（类型完全兼容）
+                <#impl_type>::call_tool(self, name, args)
+            }
+        }
     }
 }
 
@@ -1137,7 +1289,7 @@ fn extract_tool_info(fn_item: &ImplItemFn) -> Option<ToolMethodInfo> {
     let mut group = None;
     let mut return_description = None;
     let mut context = None;
-    let mut example_input: Option<serde_json::Value> = None;  // 改为支持任意 JSON 值
+    let mut example_input: Option<serde_json::Value> = None; // 改为支持任意 JSON 值
     let mut param_order: Option<Vec<String>> = None;
     let mut hidden_params = Vec::new();
     let mut example_output = None;
@@ -1191,10 +1343,16 @@ fn extract_tool_info(fn_item: &ImplItemFn) -> Option<ToolMethodInfo> {
 
     let tool_name = custom_name.unwrap_or_else(|| method_name.clone());
 
-    let description = custom_desc.or_else(|| extract_doc_comment(&fn_item.attrs))
+    let description = custom_desc
+        .or_else(|| extract_doc_comment(&fn_item.attrs))
         .unwrap_or_else(|| format!("调用 {} 方法", method_name));
 
-    let params = extract_params(&fn_item.sig.inputs, &fn_item.attrs, &hidden_params, &param_validations);
+    let params = extract_params(
+        &fn_item.sig.inputs,
+        &fn_item.attrs,
+        &hidden_params,
+        &param_validations,
+    );
     let is_async = fn_item.sig.asyncness.is_some();
     let is_result = is_result_type(&fn_item.sig.output);
 
@@ -1249,35 +1407,35 @@ struct ToolMethodInfo {
     version: Option<String>,          // 新增：版本
     visible: bool,
     tags: Vec<String>,
-    group: Option<String>,            // 新增：工具分组
+    group: Option<String>, // 新增：工具分组
     return_description: Option<String>,
     context: Option<String>,
-    example_input: Option<serde_json::Value>,  // 改为支持任意 JSON 值
+    example_input: Option<serde_json::Value>, // 改为支持任意 JSON 值
     param_order: Option<Vec<String>>,
     hidden_params: Vec<String>,
     example_output: Option<String>,
     return_type: ReturnType,
     doc: Option<String>,
-    alias: Vec<String>,  // 别名列表
-    allow: Vec<String>,  // 允许抑制的警告列表
-    cache: Option<String>,      // 缓存配置
-    rate_limit: Option<String>, // 限流配置
-    param_validations: Vec<(String, ParamToolAttrs)>,  // 参数级别的验证属性
+    alias: Vec<String>,                               // 别名列表
+    allow: Vec<String>,                               // 允许抑制的警告列表
+    cache: Option<String>,                            // 缓存配置
+    rate_limit: Option<String>,                       // 限流配置
+    param_validations: Vec<(String, ParamToolAttrs)>, // 参数级别的验证属性
 }
 
 /// 参数信息
-#[allow(dead_code)]  // 部分字段用于未来扩展
+#[allow(dead_code)] // 部分字段用于未来扩展
 struct ParamInfo {
-    name: Ident,           // 原始参数名（用于方法调用，如 `_name`）
-    schema_name: String,   // Schema 中的名称（去掉 `_` 前缀，如 `name`）
+    name: Ident,         // 原始参数名（用于方法调用，如 `_name`）
+    schema_name: String, // Schema 中的名称（去掉 `_` 前缀，如 `name`）
     ty: Type,
     description: Option<String>,
     is_option: bool,
-    is_required: bool,  // 显式标记为必需（覆盖 Option 类型）
-    example: Option<serde_json::Value>,  // 改为支持任意 JSON 值
-    default: Option<serde_json::Value>,  // 改为支持任意 JSON 值
-    validate: Option<String>,  // 验证表达式
-    transform: Option<String>, // 转换表达式
+    is_required: bool,                  // 显式标记为必需（覆盖 Option 类型）
+    example: Option<serde_json::Value>, // 改为支持任意 JSON 值
+    default: Option<serde_json::Value>, // 改为支持任意 JSON 值
+    validate: Option<String>,           // 验证表达式
+    transform: Option<String>,          // 转换表达式
     // JSON Schema 验证属性
     one_of: Option<Vec<String>>,
     enum_values: Option<Vec<serde_json::Value>>,
@@ -1360,7 +1518,10 @@ enum JsonSchema {
         required: Vec<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         description: Option<String>,
-        #[serde(rename = "additionalProperties", skip_serializing_if = "Option::is_none")]
+        #[serde(
+            rename = "additionalProperties",
+            skip_serializing_if = "Option::is_none"
+        )]
         additional_properties: Option<Box<JsonSchema>>,
         #[serde(skip_serializing_if = "Option::is_none")]
         default: Option<serde_json::Value>,
@@ -1381,6 +1542,8 @@ enum JsonSchema {
     Nullable {
         #[serde(rename = "anyOf")]
         any_of: Vec<JsonSchema>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        description: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         default: Option<serde_json::Value>,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -1419,7 +1582,11 @@ impl JsonSchema {
 
     /// 创建字符串 schema with example
     #[allow(dead_code)]
-    fn string_with_example(description: Option<String>, format: Option<String>, example: Option<String>) -> Self {
+    fn string_with_example(
+        description: Option<String>,
+        format: Option<String>,
+        example: Option<String>,
+    ) -> Self {
         JsonSchema::Basic {
             ty: "string".to_string(),
             description,
@@ -1438,7 +1605,12 @@ impl JsonSchema {
     }
 
     /// 创建字符串 schema with example and default
-    fn string_with_example_and_default(description: Option<String>, format: Option<String>, example: Option<String>, default: Option<serde_json::Value>) -> Self {
+    fn string_with_example_and_default(
+        description: Option<String>,
+        format: Option<String>,
+        example: Option<String>,
+        default: Option<serde_json::Value>,
+    ) -> Self {
         JsonSchema::Basic {
             ty: "string".to_string(),
             description,
@@ -1476,7 +1648,10 @@ impl JsonSchema {
     }
 
     /// 创建整数 schema with default
-    fn integer_with_default(description: Option<String>, default: Option<serde_json::Value>) -> Self {
+    fn integer_with_default(
+        description: Option<String>,
+        default: Option<serde_json::Value>,
+    ) -> Self {
         JsonSchema::Basic {
             ty: "integer".to_string(),
             description,
@@ -1514,7 +1689,10 @@ impl JsonSchema {
     }
 
     /// 创建数字 schema with default
-    fn number_with_default(description: Option<String>, default: Option<serde_json::Value>) -> Self {
+    fn number_with_default(
+        description: Option<String>,
+        default: Option<serde_json::Value>,
+    ) -> Self {
         JsonSchema::Basic {
             ty: "number".to_string(),
             description,
@@ -1552,7 +1730,10 @@ impl JsonSchema {
     }
 
     /// 创建布尔 schema with default
-    fn boolean_with_default(description: Option<String>, default: Option<serde_json::Value>) -> Self {
+    fn boolean_with_default(
+        description: Option<String>,
+        default: Option<serde_json::Value>,
+    ) -> Self {
         JsonSchema::Basic {
             ty: "boolean".to_string(),
             description,
@@ -1594,13 +1775,18 @@ impl JsonSchema {
                     multiple_of: None,
                 },
             ],
+            description: None,
             default: None,
             deprecated: None,
         }
     }
 
-    /// 创建可空 schema with default（JSON Schema 标准格式）
-    fn nullable_with_default(inner: JsonSchema, default: Option<serde_json::Value>) -> Self {
+    /// 创建可空 schema with description and default（JSON Schema 标准格式）
+    fn nullable_with_description_and_default(
+        inner: JsonSchema,
+        description: Option<String>,
+        default: Option<serde_json::Value>,
+    ) -> Self {
         // 扁平化嵌套的 Option
         let flat_inner = flatten_option_schema(inner);
         JsonSchema::Nullable {
@@ -1622,6 +1808,7 @@ impl JsonSchema {
                     multiple_of: None,
                 },
             ],
+            description,
             default,
             deprecated: None,
         }
@@ -1631,28 +1818,83 @@ impl JsonSchema {
     fn to_json_string(&self) -> String {
         serde_json::to_string(self).unwrap_or_else(|_| "{}".to_string())
     }
+
+    /// 获取 description（如果存在）
+    fn description(&self) -> Option<&String> {
+        match self {
+            JsonSchema::Basic { description, .. } => description.as_ref(),
+            JsonSchema::Array { description, .. } => description.as_ref(),
+            JsonSchema::Object { description, .. } => description.as_ref(),
+            JsonSchema::Nullable { description, .. } => description.as_ref(),
+            _ => None,
+        }
+    }
+
+    /// 设置 description
+    fn set_description(&mut self, desc: Option<String>) {
+        match self {
+            JsonSchema::Basic { description, .. } => *description = desc,
+            JsonSchema::Array { description, .. } => *description = desc,
+            JsonSchema::Object { description, .. } => *description = desc,
+            JsonSchema::Nullable { description, .. } => *description = desc,
+            _ => {}
+        }
+    }
 }
 
 /// 扁平化嵌套的 Option schema
-/// 保留 deprecated 信息到扁平化后的 schema
+/// 保留 deprecated 和 description 信息到扁平化后的 schema
 fn flatten_option_schema(schema: JsonSchema) -> JsonSchema {
     match schema {
-        JsonSchema::Nullable { any_of, deprecated, .. } => {
+        JsonSchema::Nullable {
+            any_of,
+            deprecated,
+            description,
+            ..
+        } => {
             // 提取内部的非 null 类型
             let inner = any_of
                 .into_iter()
                 .find(|s| !matches!(s, JsonSchema::Any { .. }))
-                .unwrap_or(JsonSchema::Any { description: None, default: None, deprecated: None });
+                .unwrap_or(JsonSchema::Any {
+                    description: None,
+                    default: None,
+                    deprecated: None,
+                });
             // 递归扁平化
             let mut flat = flatten_option_schema(inner);
-            // 保留 deprecated 信息到扁平化后的 schema
+            // 保留 deprecated 和 description 信息到扁平化后的 schema
             match &mut flat {
-                JsonSchema::Basic { deprecated: d, .. } |
-                JsonSchema::Array { deprecated: d, .. } |
-                JsonSchema::Object { deprecated: d, .. } |
-                JsonSchema::Nullable { deprecated: d, .. } |
-                JsonSchema::Any { deprecated: d, .. } => {
+                JsonSchema::Basic {
+                    deprecated: d,
+                    description: desc,
+                    ..
+                }
+                | JsonSchema::Array {
+                    deprecated: d,
+                    description: desc,
+                    ..
+                }
+                | JsonSchema::Object {
+                    deprecated: d,
+                    description: desc,
+                    ..
+                }
+                | JsonSchema::Nullable {
+                    deprecated: d,
+                    description: desc,
+                    ..
+                }
+                | JsonSchema::Any {
+                    deprecated: d,
+                    description: desc,
+                    ..
+                } => {
                     *d = deprecated;
+                    // 如果内部类型没有 description，使用外层的 description
+                    if desc.is_none() && description.is_some() {
+                        *desc = description;
+                    }
                 }
             }
             flat
@@ -1661,10 +1903,10 @@ fn flatten_option_schema(schema: JsonSchema) -> JsonSchema {
     }
 }
 
-/// 生成编译期工具定义 const
+/// 生成编译期工具定义函数
 fn generate_tool_def_consts(tools: &[ToolMethodInfo]) -> Vec<TokenStream2> {
     let mut consts = Vec::new();
-    
+
     for tool in tools {
         if tool.is_generic {
             let name = &tool.name;
@@ -1686,35 +1928,42 @@ fn generate_tool_def_consts(tools: &[ToolMethodInfo]) -> Vec<TokenStream2> {
             continue;
         }
 
-        // 生成主工具定义
+        // 生成主工具定义函数
         let const_name = format_ident!("__TOOL_DEF_{}", tool.name.to_uppercase());
         let tool_name = &tool.tool_name;
         let description = &tool.description;
 
         let schema_json = generate_schema_json_with_deprecated_and_tags(
-            &tool.params,
-            tool.deprecated,
-            tool.replaced_by.as_deref(),
-            tool.context.as_deref(),
-            &tool.tags,
-            tool.return_description.as_deref(),
-            tool.example_input.as_ref(),
-            tool.param_order.as_deref(),
-            tool.example_output.as_deref(),
-            tool.deprecated_note.as_deref(),
-            tool.deprecated_since.as_deref(),
-            tool.remove_in.as_deref(),
-            tool.group.as_deref(),
-            tool.cache.as_deref(),
-            tool.rate_limit.as_deref(),
+            &SchemaGenConfig::new(&tool.params)
+                .deprecated(tool.deprecated)
+                .replaced_by(tool.replaced_by.as_deref())
+                .context(tool.context.as_deref())
+                .tags(&tool.tags)
+                .return_description(tool.return_description.as_deref())
+                .example_input(tool.example_input.as_ref())
+                .param_order(tool.param_order.as_deref())
+                .example_output(tool.example_output.as_deref())
+                .deprecated_note(tool.deprecated_note.as_deref())
+                .deprecated_since(tool.deprecated_since.as_deref())
+                .remove_in(tool.remove_in.as_deref())
+                .group(tool.group.as_deref())
+                .cache(tool.cache.as_deref())
+                .rate_limit(tool.rate_limit.as_deref()),
         );
 
         // 构建 ToolDefinition，支持 version 字段
-        let version_tokens = tool.version.as_ref().map(|v| {
-            quote! { .with_version(#v) }
-        }).unwrap_or_else(|| quote! {});
+        let version_tokens = tool
+            .version
+            .as_ref()
+            .map(|v| {
+                quote! { .with_version(#v) }
+            })
+            .unwrap_or_else(|| quote! {});
 
-        let deprecated_tokens = if tool.deprecated_since.is_some() || tool.remove_in.is_some() || tool.replaced_by.is_some() {
+        let deprecated_tokens = if tool.deprecated_since.is_some()
+            || tool.remove_in.is_some()
+            || tool.replaced_by.is_some()
+        {
             let dep_since = tool.deprecated_since.as_deref().unwrap_or("");
             let rem_in = tool.remove_in.as_deref().unwrap_or("");
             let repl_by = tool.replaced_by.as_deref().unwrap_or("");
@@ -1724,39 +1973,51 @@ fn generate_tool_def_consts(tools: &[ToolMethodInfo]) -> Vec<TokenStream2> {
         };
 
         consts.push(quote! {
-            const #const_name: ::tokitai::ToolDefinition = ::tokitai::ToolDefinition::new(#tool_name, #description, #schema_json) #version_tokens #deprecated_tokens;
+            fn #const_name() -> &'static ::tokitai::ToolDefinition {
+                static DEF: ::std::sync::LazyLock<::tokitai::ToolDefinition> = ::std::sync::LazyLock::new(|| {
+                    ::tokitai::ToolDefinition::new(#tool_name, #description, #schema_json) #version_tokens #deprecated_tokens
+                });
+                &*DEF
+            }
         });
 
-        // 为每个别名生成工具定义
+        // 为每个别名生成工具定义函数
         for (i, alias_name) in tool.alias.iter().enumerate() {
-            let alias_const_name = format_ident!("__TOOL_DEF_ALIAS_{}_{}", tool.name.to_uppercase(), i);
+            let alias_const_name =
+                format_ident!("__TOOL_DEF_ALIAS_{}_{}", tool.name.to_uppercase(), i);
             let alias_desc = format!("(别名：{}) {}", tool.tool_name, tool.description);
 
             consts.push(quote! {
-                const #alias_const_name: ::tokitai::ToolDefinition = ::tokitai::ToolDefinition::new(#alias_name, #alias_desc, #schema_json);
+                fn #alias_const_name() -> &'static ::tokitai::ToolDefinition {
+                    static DEF: ::std::sync::LazyLock<::tokitai::ToolDefinition> = ::std::sync::LazyLock::new(|| {
+                        ::tokitai::ToolDefinition::new(#alias_name, #alias_desc, #schema_json)
+                    });
+                    &*DEF
+                }
             });
         }
     }
-    
+
     consts
 }
 
 /// 生成所有工具定义的数组
-fn generate_all_tool_defs_array(tools: &[ToolMethodInfo]) -> Vec<TokenStream2> {
+fn generate_all_tool_defs_array(tools: &[ToolMethodInfo], impl_type: &Type) -> Vec<TokenStream2> {
     let mut defs = Vec::new();
-    
+
     for tool in tools {
-        // 添加主工具定义
+        // 添加主工具定义（调用函数）
         let const_name = format_ident!("__TOOL_DEF_{}", tool.name.to_uppercase());
-        defs.push(quote! { Self::#const_name });
-        
-        // 添加别名定义
+        defs.push(quote! { #impl_type::#const_name() });
+
+        // 添加别名定义（调用函数）
         for (i, _alias_name) in tool.alias.iter().enumerate() {
-            let alias_const_name = format_ident!("__TOOL_DEF_ALIAS_{}_{}", tool.name.to_uppercase(), i);
-            defs.push(quote! { Self::#alias_const_name });
+            let alias_const_name =
+                format_ident!("__TOOL_DEF_ALIAS_{}_{}", tool.name.to_uppercase(), i);
+            defs.push(quote! { #impl_type::#alias_const_name() });
         }
     }
-    
+
     defs
 }
 
@@ -1766,10 +2027,13 @@ fn generate_call_tool_method(tools: &[ToolMethodInfo]) -> Vec<TokenStream2> {
     let has_async = tools.iter().any(|t| t.is_async);
 
     // 生成可用工具列表文档
-    let tool_docs = tools.iter().map(|tool| {
-        let doc_line = format!(" - `{}`: {}", tool.tool_name, tool.description);
-        quote! { #[doc = #doc_line] }
-    }).collect::<Vec<_>>();
+    let tool_docs = tools
+        .iter()
+        .map(|tool| {
+            let doc_line = format!(" - `{}`: {}", tool.tool_name, tool.description);
+            quote! { #[doc = #doc_line] }
+        })
+        .collect::<Vec<_>>();
 
     if has_async {
         let match_arms = tools.iter().flat_map(|tool| {
@@ -1865,10 +2129,10 @@ fn generate_call_tool_method(tools: &[ToolMethodInfo]) -> Vec<TokenStream2> {
         let match_arms = tools.iter().flat_map(|tool| {
             let method_name = Ident::new(&tool.name, Span::call_site());
             let wrapper_name_sync = format_ident!("__call_{}_sync", method_name);
-            
+
             // 生成主名称和所有别名的匹配臂
             let mut arms = Vec::new();
-            
+
             // 主名称
             let tool_name = &tool.tool_name;
             arms.push(quote! {
@@ -1876,7 +2140,7 @@ fn generate_call_tool_method(tools: &[ToolMethodInfo]) -> Vec<TokenStream2> {
                     self.#wrapper_name_sync(args)
                 }
             });
-            
+
             // 别名
             for alias_name in &tool.alias {
                 arms.push(quote! {
@@ -1885,7 +2149,7 @@ fn generate_call_tool_method(tools: &[ToolMethodInfo]) -> Vec<TokenStream2> {
                     }
                 });
             }
-            
+
             arms
         });
 
@@ -1973,13 +2237,13 @@ fn generate_wrapper_method_sync(tool: &ToolMethodInfo) -> TokenStream2 {
             let validate_expr_tokens: Expr = match syn::parse_str(&validate_code) {
                 Ok(expr) => expr,
                 Err(e) => {
-                    eprintln!("⚠️  [tokitai] 解析验证表达式失败：{} - {}", validate_code, e);
+                    eprintln!("[tokitai] warning: failed to parse validation expression: {} - {}", validate_code, e);
                     return Vec::new();
                 }
             };
             // 使用自定义错误消息或默认消息（支持多语言）
             let error_msg = if let Some(ref msg_zh) = p.validate_msg_zh {
-                let msg_en = p.validate_msg_en.as_ref().map(|s| s.as_str()).unwrap_or("");
+                let msg_en = p.validate_msg_en.as_deref().unwrap_or("");
                 quote! {
                     if std::env::var("LANG").unwrap_or_default().starts_with("zh") ||
                        std::env::var("LC_ALL").unwrap_or_default().starts_with("zh") {
@@ -2192,7 +2456,10 @@ fn generate_wrapper_method_sync(tool: &ToolMethodInfo) -> TokenStream2 {
             let transform_expr_tokens: Expr = match syn::parse_str(&transform_code) {
                 Ok(expr) => expr,
                 Err(e) => {
-                    eprintln!("⚠️  [tokitai] 解析转换表达式失败：{} - {}", transform_code, e);
+                    eprintln!(
+                        "[tokitai] warning: failed to parse transform expression: {} - {}",
+                        transform_code, e
+                    );
                     return None;
                 }
             };
@@ -2288,13 +2555,13 @@ fn generate_wrapper_method(tool: &ToolMethodInfo, is_async: bool) -> TokenStream
             let validate_expr_tokens: Expr = match syn::parse_str(&validate_code) {
                 Ok(expr) => expr,
                 Err(e) => {
-                    eprintln!("⚠️  [tokitai] 解析验证表达式失败：{} - {}", validate_code, e);
+                    eprintln!("[tokitai] warning: failed to parse validation expression: {} - {}", validate_code, e);
                     return Vec::new();
                 }
             };
             // 使用自定义错误消息或默认消息（支持多语言）
             let error_msg = if let Some(ref msg_zh) = p.validate_msg_zh {
-                let msg_en = p.validate_msg_en.as_ref().map(|s| s.as_str()).unwrap_or("");
+                let msg_en = p.validate_msg_en.as_deref().unwrap_or("");
                 quote! {
                     if std::env::var("LANG").unwrap_or_default().starts_with("zh") ||
                        std::env::var("LC_ALL").unwrap_or_default().starts_with("zh") {
@@ -2507,7 +2774,10 @@ fn generate_wrapper_method(tool: &ToolMethodInfo, is_async: bool) -> TokenStream
             let transform_expr_tokens: Expr = match syn::parse_str(&transform_code) {
                 Ok(expr) => expr,
                 Err(e) => {
-                    eprintln!("⚠️  [tokitai] 解析转换表达式失败：{} - {}", transform_code, e);
+                    eprintln!(
+                        "[tokitai] warning: failed to parse transform expression: {} - {}",
+                        transform_code, e
+                    );
                     return None;
                 }
             };
@@ -2572,28 +2842,132 @@ fn generate_wrapper_method(tool: &ToolMethodInfo, is_async: bool) -> TokenStream
     }
 }
 
-/// 生成 JSON Schema（支持 deprecated、tags、return_description、example_input、param_order、example_output、deprecated_note、deprecated_since、remove_in、group）
-fn generate_schema_json_with_deprecated_and_tags(
-    params: &[ParamInfo],
+/// JSON Schema 生成配置（Builder 模式）
+struct SchemaGenConfig<'a> {
+    params: &'a [ParamInfo],
     deprecated: bool,
-    replaced_by: Option<&str>,
-    context: Option<&str>,
-    tags: &[String],
-    return_description: Option<&str>,
-    example_input: Option<&serde_json::Value>,  // 改为支持任意 JSON 值
-    param_order: Option<&[String]>,
-    example_output: Option<&str>,
-    deprecated_note: Option<&str>,  // 新增：废弃说明
-    deprecated_since: Option<&str>, // 新增：废弃版本
-    remove_in: Option<&str>,        // 新增：移除版本
-    group: Option<&str>,            // 新增：工具分组
-    cache: Option<&str>,            // 新增：缓存配置
-    rate_limit: Option<&str>,       // 新增：限流配置
-) -> String {
+    replaced_by: Option<&'a str>,
+    context: Option<&'a str>,
+    tags: &'a [String],
+    return_description: Option<&'a str>,
+    example_input: Option<&'a serde_json::Value>,
+    param_order: Option<&'a [String]>,
+    example_output: Option<&'a str>,
+    deprecated_note: Option<&'a str>,
+    deprecated_since: Option<&'a str>,
+    remove_in: Option<&'a str>,
+    group: Option<&'a str>,
+    cache: Option<&'a str>,
+    rate_limit: Option<&'a str>,
+}
+
+impl<'a> SchemaGenConfig<'a> {
+    fn new(params: &'a [ParamInfo]) -> Self {
+        Self {
+            params,
+            deprecated: false,
+            replaced_by: None,
+            context: None,
+            tags: &[],
+            return_description: None,
+            example_input: None,
+            param_order: None,
+            example_output: None,
+            deprecated_note: None,
+            deprecated_since: None,
+            remove_in: None,
+            group: None,
+            cache: None,
+            rate_limit: None,
+        }
+    }
+
+    pub fn deprecated(mut self, val: bool) -> Self {
+        self.deprecated = val;
+        self
+    }
+
+    pub fn replaced_by(mut self, val: Option<&'a str>) -> Self {
+        self.replaced_by = val;
+        self
+    }
+
+    pub fn context(mut self, val: Option<&'a str>) -> Self {
+        self.context = val;
+        self
+    }
+
+    pub fn tags(mut self, val: &'a [String]) -> Self {
+        self.tags = val;
+        self
+    }
+
+    pub fn return_description(mut self, val: Option<&'a str>) -> Self {
+        self.return_description = val;
+        self
+    }
+
+    pub fn example_input(mut self, val: Option<&'a serde_json::Value>) -> Self {
+        self.example_input = val;
+        self
+    }
+
+    pub fn param_order(mut self, val: Option<&'a [String]>) -> Self {
+        self.param_order = val;
+        self
+    }
+
+    pub fn example_output(mut self, val: Option<&'a str>) -> Self {
+        self.example_output = val;
+        self
+    }
+
+    pub fn deprecated_note(mut self, val: Option<&'a str>) -> Self {
+        self.deprecated_note = val;
+        self
+    }
+
+    pub fn deprecated_since(mut self, val: Option<&'a str>) -> Self {
+        self.deprecated_since = val;
+        self
+    }
+
+    pub fn remove_in(mut self, val: Option<&'a str>) -> Self {
+        self.remove_in = val;
+        self
+    }
+
+    pub fn group(mut self, val: Option<&'a str>) -> Self {
+        self.group = val;
+        self
+    }
+
+    pub fn cache(mut self, val: Option<&'a str>) -> Self {
+        self.cache = val;
+        self
+    }
+
+    pub fn rate_limit(mut self, val: Option<&'a str>) -> Self {
+        self.rate_limit = val;
+        self
+    }
+
+    /// 构建配置对象（链式调用终点）
+    ///
+    /// 注意：此方法是可选的，因为所有 Builder 方法都返回 `Self`，
+    /// 可以直接使用链式调用的最终结果。此方法主要用于明确链式调用的结束。
+    #[allow(dead_code)] // 供未来使用或外部调用
+    pub fn build(self) -> Self {
+        self
+    }
+}
+
+/// 生成 JSON Schema（支持 deprecated、tags、return_description、example_input、param_order、example_output、deprecated_note、deprecated_since、remove_in、group）
+fn generate_schema_json_with_deprecated_and_tags(config: &SchemaGenConfig) -> String {
     let mut properties: BTreeMap<String, JsonSchema> = BTreeMap::new();
     let mut required = Vec::new();
 
-    for p in params {
+    for p in config.params {
         let schema_name = p.schema_name.clone();
         let mut schema = generate_schema_for_type_with_default_and_example(
             &p.ty,
@@ -2601,41 +2975,86 @@ fn generate_schema_json_with_deprecated_and_tags(
             p.example.as_ref(),
             p.default.as_ref(),
         );
-        
+
         // 添加验证属性到 schema
         match &mut schema {
-            JsonSchema::Basic { enum_values, pattern, minimum, maximum, min_length, max_length, multiple_of, .. } => {
+            JsonSchema::Basic {
+                enum_values,
+                pattern,
+                minimum,
+                maximum,
+                min_length,
+                max_length,
+                multiple_of,
+                ..
+            } => {
                 if p.one_of.is_some() {
                     // 将 one_of 转换为 enum_values（字符串数组）
-                    let vals = p.one_of.as_ref().unwrap()
+                    let vals = p
+                        .one_of
+                        .as_ref()
+                        .unwrap()
                         .iter()
                         .map(|s| serde_json::Value::String(s.clone()))
                         .collect();
                     *enum_values = Some(vals);
                 }
-                if p.enum_values.is_some() { *enum_values = p.enum_values.clone(); }
-                if p.pattern.is_some() { *pattern = p.pattern.clone(); }
-                if p.min.is_some() { *minimum = p.min; }
-                if p.max.is_some() { *maximum = p.max; }
-                if p.min_length.is_some() { *min_length = p.min_length; }
-                if p.max_length.is_some() { *max_length = p.max_length; }
-                if p.multiple_of.is_some() { *multiple_of = p.multiple_of; }
+                if p.enum_values.is_some() {
+                    *enum_values = p.enum_values.clone();
+                }
+                if p.pattern.is_some() {
+                    *pattern = p.pattern.clone();
+                }
+                if p.min.is_some() {
+                    *minimum = p.min;
+                }
+                if p.max.is_some() {
+                    *maximum = p.max;
+                }
+                if p.min_length.is_some() {
+                    *min_length = p.min_length;
+                }
+                if p.max_length.is_some() {
+                    *max_length = p.max_length;
+                }
+                if p.multiple_of.is_some() {
+                    *multiple_of = p.multiple_of;
+                }
             }
-            JsonSchema::Array { enum_values, min_items, max_items, .. } => {
+            JsonSchema::Array {
+                enum_values,
+                min_items,
+                max_items,
+                ..
+            } => {
                 if p.one_of.is_some() {
-                    let vals = p.one_of.as_ref().unwrap()
+                    let vals = p
+                        .one_of
+                        .as_ref()
+                        .unwrap()
                         .iter()
                         .map(|s| serde_json::Value::String(s.clone()))
                         .collect();
                     *enum_values = Some(vals);
                 }
-                if p.enum_values.is_some() { *enum_values = p.enum_values.clone(); }
-                if p.min_items.is_some() { *min_items = p.min_items; }
-                if p.max_items.is_some() { *max_items = p.max_items; }
+                if p.enum_values.is_some() {
+                    *enum_values = p.enum_values.clone();
+                }
+                if p.min_items.is_some() {
+                    *min_items = p.min_items;
+                }
+                if p.max_items.is_some() {
+                    *max_items = p.max_items;
+                }
             }
             _ => {}
         }
-        
+
+        // ✅ 如果 schema 没有 description，但参数有，则使用参数的
+        if schema.description().is_none() && p.description.is_some() {
+            schema.set_description(p.description.clone());
+        }
+
         properties.insert(schema_name.clone(), schema);
 
         // 如果显式标记为 required 或者不是 Option 类型，则加入 required 列表
@@ -2645,27 +3064,24 @@ fn generate_schema_json_with_deprecated_and_tags(
     }
 
     // 生成 returns schema
-    let returns_schema = return_description.map(|desc| {
-        JsonSchema::Basic {
-            ty: "string".to_string(),
-            description: Some(desc.to_string()),
-            format: None,
-            example: example_output.map(|s| s.to_string()),
-            default: None,
-            deprecated: None,
-            enum_values: None,
-            pattern: None,
-            minimum: None,
-            maximum: None,
-            min_length: None,
-            max_length: None,
-            multiple_of: None,
-        }
+    let returns_schema = config.return_description.map(|desc| JsonSchema::Basic {
+        ty: "string".to_string(),
+        description: Some(desc.to_string()),
+        format: None,
+        example: config.example_output.map(|s| s.to_string()),
+        default: None,
+        deprecated: None,
+        enum_values: None,
+        pattern: None,
+        minimum: None,
+        maximum: None,
+        min_length: None,
+        max_length: None,
+        multiple_of: None,
     });
 
     // 解析 example_input
-    let examples = example_input
-        .map(|val| vec![val.clone()]);
+    let examples = config.example_input.map(|val| vec![val.clone()]);
 
     let schema = JsonSchema::Object {
         ty: "object".to_string(),
@@ -2674,40 +3090,60 @@ fn generate_schema_json_with_deprecated_and_tags(
         description: None,
         additional_properties: None,
         default: None,
-        deprecated: if deprecated { Some(true) } else { None },
-        tags: tags.to_vec(),
+        deprecated: if config.deprecated { Some(true) } else { None },
+        tags: config.tags.to_vec(),
         returns: returns_schema.map(Box::new),
-        replaced_by: replaced_by.map(|s| s.to_string()),
-        context: context.map(|s| s.to_string()),
-        deprecated_note: deprecated_note.map(|s| s.to_string()),
+        replaced_by: config.replaced_by.map(|s| s.to_string()),
+        context: config.context.map(|s| s.to_string()),
+        deprecated_note: config.deprecated_note.map(|s| s.to_string()),
     };
 
     // 如果有 examples、param_order、deprecated_since、remove_in、group、cache 或 rate_limit，需要手动添加到 JSON 输出
     let mut json_str = schema.to_json_string();
-    let needs_update = examples.is_some() || param_order.is_some() || deprecated_since.is_some() || remove_in.is_some() || group.is_some() || cache.is_some() || rate_limit.is_some();
+    let needs_update = examples.is_some()
+        || config.param_order.is_some()
+        || config.deprecated_since.is_some()
+        || config.remove_in.is_some()
+        || config.group.is_some()
+        || config.cache.is_some()
+        || config.rate_limit.is_some();
 
     if needs_update {
-        if let Ok(mut json_obj) = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&json_str) {
+        if let Ok(mut json_obj) =
+            serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&json_str)
+        {
             if let Some(examples_val) = examples {
-                json_obj.insert("examples".to_string(), serde_json::to_value(&examples_val).unwrap());
+                json_obj.insert(
+                    "examples".to_string(),
+                    serde_json::to_value(examples_val).unwrap(),
+                );
             }
-            if let Some(order) = param_order {
-                json_obj.insert("x-param-order".to_string(), serde_json::to_value(&order).unwrap());
+            if let Some(order) = config.param_order {
+                json_obj.insert(
+                    "x-param-order".to_string(),
+                    serde_json::to_value(order).unwrap(),
+                );
             }
-            if let Some(since) = deprecated_since {
-                json_obj.insert("x-deprecated-since".to_string(), serde_json::to_value(&since).unwrap());
+            if let Some(since) = config.deprecated_since {
+                json_obj.insert(
+                    "x-deprecated-since".to_string(),
+                    serde_json::to_value(since).unwrap(),
+                );
             }
-            if let Some(remove) = remove_in {
-                json_obj.insert("x-remove-in".to_string(), serde_json::to_value(&remove).unwrap());
+            if let Some(remove) = config.remove_in {
+                json_obj.insert(
+                    "x-remove-in".to_string(),
+                    serde_json::to_value(remove).unwrap(),
+                );
             }
-            if let Some(g) = group {
-                json_obj.insert("x-group".to_string(), serde_json::to_value(&g).unwrap());
+            if let Some(g) = config.group {
+                json_obj.insert("x-group".to_string(), serde_json::to_value(g).unwrap());
             }
-            if let Some(c) = cache {
-                json_obj.insert("x-cache".to_string(), serde_json::to_value(&c).unwrap());
+            if let Some(c) = config.cache {
+                json_obj.insert("x-cache".to_string(), serde_json::to_value(c).unwrap());
             }
-            if let Some(r) = rate_limit {
-                json_obj.insert("x-rate-limit".to_string(), serde_json::to_value(&r).unwrap());
+            if let Some(r) = config.rate_limit {
+                json_obj.insert("x-rate-limit".to_string(), serde_json::to_value(r).unwrap());
             }
             json_str = serde_json::to_string(&json_obj).unwrap();
         }
@@ -2719,7 +3155,7 @@ fn generate_schema_json_with_deprecated_and_tags(
 /// 生成 JSON Schema（向后兼容的旧函数）
 #[allow(dead_code)]
 fn generate_schema_json(params: &[ParamInfo]) -> String {
-    generate_schema_json_with_deprecated_and_tags(params, false, None, None, &[], None, None, None, None, None, None, None, None, None, None)
+    generate_schema_json_with_deprecated_and_tags(&SchemaGenConfig::new(params))
 }
 
 /// 为类型生成 JSON Schema（递归解析）
@@ -2730,7 +3166,11 @@ fn generate_schema_for_type(ty: &Type, description: Option<String>) -> JsonSchem
 
 /// 为类型生成 JSON Schema（递归解析，支持 example）
 #[allow(dead_code)]
-fn generate_schema_for_type_with_example(ty: &Type, description: Option<String>, example: Option<&serde_json::Value>) -> JsonSchema {
+fn generate_schema_for_type_with_example(
+    ty: &Type,
+    description: Option<String>,
+    example: Option<&serde_json::Value>,
+) -> JsonSchema {
     generate_schema_for_type_with_default_and_example(ty, description, example, None)
 }
 
@@ -2742,7 +3182,7 @@ fn generate_schema_for_type_with_default_and_example(
     default: Option<&serde_json::Value>,
 ) -> JsonSchema {
     let default_value = default.cloned();
-    
+
     match ty {
         Type::Path(path) => {
             let ident = path
@@ -2754,8 +3194,18 @@ fn generate_schema_for_type_with_default_and_example(
 
             match ident.as_str() {
                 // 基本类型
-                "String" => JsonSchema::string_with_example_and_default(description, None, example.and_then(|v| serde_json::to_string(v).ok()), default_value),
-                "str" => JsonSchema::string_with_example_and_default(description, Some("string".to_string()), example.and_then(|v| serde_json::to_string(v).ok()), default_value),
+                "String" => JsonSchema::string_with_example_and_default(
+                    description,
+                    None,
+                    example.and_then(|v| serde_json::to_string(v).ok()),
+                    default_value,
+                ),
+                "str" => JsonSchema::string_with_example_and_default(
+                    description,
+                    Some("string".to_string()),
+                    example.and_then(|v| serde_json::to_string(v).ok()),
+                    default_value,
+                ),
                 "i8" | "i16" | "i32" | "i64" | "i128" | "u8" | "u16" | "u32" | "u64" | "u128"
                 | "usize" | "isize" => JsonSchema::integer_with_default(description, default_value),
                 "f32" | "f64" => JsonSchema::number_with_default(description, default_value),
@@ -2766,12 +3216,27 @@ fn generate_schema_for_type_with_default_and_example(
                     if let Some(last_segment) = path.path.segments.last() {
                         if let syn::PathArguments::AngleBracketed(args) = &last_segment.arguments {
                             if let Some(syn::GenericArgument::Type(inner_ty)) = args.args.first() {
-                                let inner_schema = generate_schema_for_type_with_default_and_example(inner_ty, None, None, None);
-                                return JsonSchema::nullable_with_default(inner_schema, default_value);
+                                // 传递 description 到内部类型
+                                let inner_schema =
+                                    generate_schema_for_type_with_default_and_example(
+                                        inner_ty,
+                                        description.clone(), // 保留 description
+                                        None,
+                                        None,
+                                    );
+                                return JsonSchema::nullable_with_description_and_default(
+                                    inner_schema,
+                                    description,
+                                    default_value,
+                                );
                             }
                         }
                     }
-                    JsonSchema::Any { description, default: default_value, deprecated: None }
+                    JsonSchema::Any {
+                        description,
+                        default: default_value,
+                        deprecated: None,
+                    }
                 }
 
                 // Vec<T> - 数组类型
@@ -2779,7 +3244,10 @@ fn generate_schema_for_type_with_default_and_example(
                     if let Some(last_segment) = path.path.segments.last() {
                         if let syn::PathArguments::AngleBracketed(args) = &last_segment.arguments {
                             if let Some(syn::GenericArgument::Type(inner_ty)) = args.args.first() {
-                                let items_schema = generate_schema_for_type_with_default_and_example(inner_ty, None, None, None);
+                                let items_schema =
+                                    generate_schema_for_type_with_default_and_example(
+                                        inner_ty, None, None, None,
+                                    );
                                 return JsonSchema::Array {
                                     ty: "array".to_string(),
                                     items: Box::new(items_schema),
@@ -2797,7 +3265,11 @@ fn generate_schema_for_type_with_default_and_example(
                     }
                     JsonSchema::Array {
                         ty: "array".to_string(),
-                        items: Box::new(JsonSchema::Any { description: None, default: None, deprecated: None }),
+                        items: Box::new(JsonSchema::Any {
+                            description: None,
+                            default: None,
+                            deprecated: None,
+                        }),
                         description,
                         prefix_items: None,
                         min_items: None,
@@ -2821,7 +3293,9 @@ fn generate_schema_for_type_with_default_and_example(
                                     if !is_string_type(key_ty) {
                                         // 非 String key 的 HashMap 无法正确表示为 JSON object
                                         return JsonSchema::Any {
-                                            description: Some("HashMap 的 key 类型必须是 String".to_string()),
+                                            description: Some(
+                                                "HashMap 的 key 类型必须是 String".to_string(),
+                                            ),
                                             default: default_value,
                                             deprecated: None,
                                         };
@@ -2833,7 +3307,9 @@ fn generate_schema_for_type_with_default_and_example(
                                     args.args.iter().nth(1)
                                 {
                                     let additional_schema =
-                                        generate_schema_for_type_with_default_and_example(value_ty, None, None, None);
+                                        generate_schema_for_type_with_default_and_example(
+                                            value_ty, None, None, None,
+                                        );
                                     return JsonSchema::Object {
                                         ty: "object".to_string(),
                                         properties: BTreeMap::new(),
@@ -2870,23 +3346,43 @@ fn generate_schema_for_type_with_default_and_example(
 
                 // 第三方类型特判
                 "DateTime" | "NaiveDateTime" | "NaiveDate" | "NaiveTime" => {
-                    JsonSchema::string_with_example_and_default(description, Some("date-time".to_string()), example.and_then(|v| serde_json::to_string(v).ok()), default_value)
+                    JsonSchema::string_with_example_and_default(
+                        description,
+                        Some("date-time".to_string()),
+                        example.and_then(|v| serde_json::to_string(v).ok()),
+                        default_value,
+                    )
                 }
-                "Uuid" => JsonSchema::string_with_example_and_default(description, Some("uuid".to_string()), example.and_then(|v| serde_json::to_string(v).ok()), default_value),
-                "Url" => JsonSchema::string_with_example_and_default(description, Some("uri".to_string()), example.and_then(|v| serde_json::to_string(v).ok()), default_value),
-                "PathBuf" | "Path" => {
-                    JsonSchema::string_with_example_and_default(description, Some("file-path".to_string()), example.and_then(|v| serde_json::to_string(v).ok()), default_value)
-                }
-                "Value" => JsonSchema::Any { description, default: default_value, deprecated: None },
+                "Uuid" => JsonSchema::string_with_example_and_default(
+                    description,
+                    Some("uuid".to_string()),
+                    example.and_then(|v| serde_json::to_string(v).ok()),
+                    default_value,
+                ),
+                "Url" => JsonSchema::string_with_example_and_default(
+                    description,
+                    Some("uri".to_string()),
+                    example.and_then(|v| serde_json::to_string(v).ok()),
+                    default_value,
+                ),
+                "PathBuf" | "Path" => JsonSchema::string_with_example_and_default(
+                    description,
+                    Some("file-path".to_string()),
+                    example.and_then(|v| serde_json::to_string(v).ok()),
+                    default_value,
+                ),
+                "Value" => JsonSchema::Any {
+                    description,
+                    default: default_value,
+                    deprecated: None,
+                },
 
                 // 自定义类型 - 尝试从缓存中获取 schema
                 _ => {
                     // 首先检查缓存
                     if let Ok(cache) = TYPE_SCHEMA_CACHE.lock() {
-                        if let Some(schema_map) = cache.as_ref() {
-                            if let Some(cached_schema) = schema_map.get(&ident) {
-                                return cached_schema.clone();
-                            }
+                        if let Some(cached_schema) = cache.get(&ident) {
+                            return cached_schema.clone();
                         }
                     }
 
@@ -2914,16 +3410,27 @@ fn generate_schema_for_type_with_default_and_example(
             if let Type::Path(path) = &*reference.elem {
                 if let Some(ident) = path.path.segments.first() {
                     if ident.ident == "str" {
-                        return JsonSchema::string_with_example_and_default(description, Some("string".to_string()), example.and_then(|v| serde_json::to_string(v).ok()), default_value);
+                        return JsonSchema::string_with_example_and_default(
+                            description,
+                            Some("string".to_string()),
+                            example.and_then(|v| serde_json::to_string(v).ok()),
+                            default_value,
+                        );
                     }
                 }
             }
-            generate_schema_for_type_with_default_and_example(&reference.elem, description, example, default)
+            generate_schema_for_type_with_default_and_example(
+                &reference.elem,
+                description,
+                example,
+                default,
+            )
         }
 
         // 切片类型
         Type::Slice(slice) => {
-            let elem_schema = generate_schema_for_type_with_default_and_example(&slice.elem, None, None, None);
+            let elem_schema =
+                generate_schema_for_type_with_default_and_example(&slice.elem, None, None, None);
             JsonSchema::Array {
                 ty: "array".to_string(),
                 items: Box::new(elem_schema),
@@ -2940,10 +3447,14 @@ fn generate_schema_for_type_with_default_and_example(
 
         // 数组类型 [T; N]
         Type::Array(array) => {
-            let elem_schema = generate_schema_for_type_with_default_and_example(&array.elem, None, None, None);
+            let elem_schema =
+                generate_schema_for_type_with_default_and_example(&array.elem, None, None, None);
             let len = match &array.len {
                 Expr::Lit(lit) => {
-                    if let ExprLit { lit: Lit::Int(int), .. } = lit {
+                    if let ExprLit {
+                        lit: Lit::Int(int), ..
+                    } = lit
+                    {
                         int.base10_parse::<usize>().ok()
                     } else {
                         None
@@ -2970,12 +3481,18 @@ fn generate_schema_for_type_with_default_and_example(
             let prefix_items: Vec<JsonSchema> = tuple
                 .elems
                 .iter()
-                .map(|elem| generate_schema_for_type_with_default_and_example(elem, None, None, None))
+                .map(|elem| {
+                    generate_schema_for_type_with_default_and_example(elem, None, None, None)
+                })
                 .collect();
             let len = prefix_items.len();
             // 从 prefix_items 中提取统一的 items 类型
             let items_schema = if prefix_items.is_empty() {
-                JsonSchema::Any { description: None, default: None, deprecated: None }
+                JsonSchema::Any {
+                    description: None,
+                    default: None,
+                    deprecated: None,
+                }
             } else {
                 // 使用第一个元素的类型作为 items 类型（简化处理）
                 prefix_items[0].clone()
@@ -3028,7 +3545,7 @@ fn extract_params(
     inputs: &Punctuated<FnArg, token::Comma>,
     fn_attrs: &[syn::Attribute],
     hidden_params: &[String],
-    param_validations: &[(String, ParamToolAttrs)],  // 新增：方法级别的参数验证属性
+    param_validations: &[(String, ParamToolAttrs)], // 新增：方法级别的参数验证属性
 ) -> Vec<ParamInfo> {
     let mut params = Vec::new();
 
@@ -3043,28 +3560,37 @@ fn extract_params(
                 }
 
                 let param_name = ident.ident.to_string();
-                
+
                 // 如果参数在 hidden_params 列表中，跳过
                 if hidden_params.contains(&param_name) {
                     continue;
                 }
-                
+
                 // 去掉 `_` 前缀（Rust 中 unused 参数的命名约定）
-                let schema_name = param_name.strip_prefix('_').unwrap_or(&param_name).to_string();
+                let schema_name = param_name
+                    .strip_prefix('_')
+                    .unwrap_or(&param_name)
+                    .to_string();
 
                 // 优先级：#[tool(desc = "...")] > @param_desc > @param doc comment > 普通 doc comment
                 let mut param_tool_attrs = parse_param_tool_attrs(attrs).unwrap_or_default();
-                
+
                 // 合并方法级别的参数验证属性（如 one_of_role, pattern_email 等）
-                if let Some(method_level_attrs) = param_validations.iter().find(|(name, _)| name == &schema_name) {
+                if let Some(method_level_attrs) = param_validations
+                    .iter()
+                    .find(|(name, _)| name == &schema_name)
+                {
                     // 合并验证属性：方法级别的属性作为默认值，参数级别的属性优先级更高
                     if method_level_attrs.1.one_of.is_some() && param_tool_attrs.one_of.is_none() {
                         param_tool_attrs.one_of = method_level_attrs.1.one_of.clone();
                     }
-                    if method_level_attrs.1.enum_values.is_some() && param_tool_attrs.enum_values.is_none() {
+                    if method_level_attrs.1.enum_values.is_some()
+                        && param_tool_attrs.enum_values.is_none()
+                    {
                         param_tool_attrs.enum_values = method_level_attrs.1.enum_values.clone();
                     }
-                    if method_level_attrs.1.pattern.is_some() && param_tool_attrs.pattern.is_none() {
+                    if method_level_attrs.1.pattern.is_some() && param_tool_attrs.pattern.is_none()
+                    {
                         param_tool_attrs.pattern = method_level_attrs.1.pattern.clone();
                     }
                     if method_level_attrs.1.min.is_some() && param_tool_attrs.min.is_none() {
@@ -3073,40 +3599,61 @@ fn extract_params(
                     if method_level_attrs.1.max.is_some() && param_tool_attrs.max.is_none() {
                         param_tool_attrs.max = method_level_attrs.1.max;
                     }
-                    if method_level_attrs.1.min_length.is_some() && param_tool_attrs.min_length.is_none() {
+                    if method_level_attrs.1.min_length.is_some()
+                        && param_tool_attrs.min_length.is_none()
+                    {
                         param_tool_attrs.min_length = method_level_attrs.1.min_length;
                     }
-                    if method_level_attrs.1.max_length.is_some() && param_tool_attrs.max_length.is_none() {
+                    if method_level_attrs.1.max_length.is_some()
+                        && param_tool_attrs.max_length.is_none()
+                    {
                         param_tool_attrs.max_length = method_level_attrs.1.max_length;
                     }
-                    if method_level_attrs.1.min_items.is_some() && param_tool_attrs.min_items.is_none() {
+                    if method_level_attrs.1.min_items.is_some()
+                        && param_tool_attrs.min_items.is_none()
+                    {
                         param_tool_attrs.min_items = method_level_attrs.1.min_items;
                     }
-                    if method_level_attrs.1.max_items.is_some() && param_tool_attrs.max_items.is_none() {
+                    if method_level_attrs.1.max_items.is_some()
+                        && param_tool_attrs.max_items.is_none()
+                    {
                         param_tool_attrs.max_items = method_level_attrs.1.max_items;
                     }
-                    if method_level_attrs.1.multiple_of.is_some() && param_tool_attrs.multiple_of.is_none() {
+                    if method_level_attrs.1.multiple_of.is_some()
+                        && param_tool_attrs.multiple_of.is_none()
+                    {
                         param_tool_attrs.multiple_of = method_level_attrs.1.multiple_of;
                     }
-                    if method_level_attrs.1.validate_msg.is_some() && param_tool_attrs.validate_msg.is_none() {
+                    if method_level_attrs.1.validate_msg.is_some()
+                        && param_tool_attrs.validate_msg.is_none()
+                    {
                         param_tool_attrs.validate_msg = method_level_attrs.1.validate_msg.clone();
                     }
-                    if method_level_attrs.1.validate_msg_zh.is_some() && param_tool_attrs.validate_msg_zh.is_none() {
-                        param_tool_attrs.validate_msg_zh = method_level_attrs.1.validate_msg_zh.clone();
+                    if method_level_attrs.1.validate_msg_zh.is_some()
+                        && param_tool_attrs.validate_msg_zh.is_none()
+                    {
+                        param_tool_attrs.validate_msg_zh =
+                            method_level_attrs.1.validate_msg_zh.clone();
                     }
-                    if method_level_attrs.1.validate_msg_en.is_some() && param_tool_attrs.validate_msg_en.is_none() {
-                        param_tool_attrs.validate_msg_en = method_level_attrs.1.validate_msg_en.clone();
+                    if method_level_attrs.1.validate_msg_en.is_some()
+                        && param_tool_attrs.validate_msg_en.is_none()
+                    {
+                        param_tool_attrs.validate_msg_en =
+                            method_level_attrs.1.validate_msg_en.clone();
                     }
-                    if method_level_attrs.1.default.is_some() && param_tool_attrs.default.is_none() {
+                    if method_level_attrs.1.default.is_some() && param_tool_attrs.default.is_none()
+                    {
                         param_tool_attrs.default = method_level_attrs.1.default.clone();
                     }
-                    if method_level_attrs.1.example.is_some() && param_tool_attrs.example.is_none() {
+                    if method_level_attrs.1.example.is_some() && param_tool_attrs.example.is_none()
+                    {
                         param_tool_attrs.example = method_level_attrs.1.example.clone();
                     }
                 }
-                
+
                 let description = param_tool_attrs
-                    .desc.clone()
+                    .desc
+                    .clone()
                     .or_else(|| extract_param_desc_from_docs(fn_attrs, &schema_name))
                     .or_else(|| param_docs.get(&schema_name).cloned())
                     .or_else(|| extract_doc_comment(attrs));
@@ -3126,13 +3673,19 @@ fn extract_params(
 
                 // 获取 validate 和 transform
                 // 优先级：#[tool_validate] / #[param_tool(validate = "...")] > @validate doc > 无
-                let validate = param_tool_attrs.validate.clone()
+                let validate = param_tool_attrs
+                    .validate
+                    .clone()
                     .or_else(|| extract_param_validate_from_docs(fn_attrs, &schema_name));
-                let transform = param_tool_attrs.transform.clone()
+                let transform = param_tool_attrs
+                    .transform
+                    .clone()
                     .or_else(|| extract_param_transform_from_docs(fn_attrs, &schema_name));
                 // 获取 validate_msg
                 // 优先级：#[tool_validate_msg] / #[param_tool(validate_msg = "...")] > @validate_msg doc > 方法级 validate_msg_ > 无
-                let validate_msg = param_tool_attrs.validate_msg.clone()
+                let validate_msg = param_tool_attrs
+                    .validate_msg
+                    .clone()
                     .or_else(|| extract_validate_msg_from_docs(fn_attrs, &schema_name));
 
                 // 获取 JSON Schema 验证属性
@@ -3282,7 +3835,9 @@ fn parse_param_tool_attrs(attrs: &[syn::Attribute]) -> Option<ParamToolAttrs> {
             if let Ok(_meta) = attr.parse_args::<Expr>() {
                 // 尝试解析为字符串字面量
                 if let Ok(meta) = attr.parse_args::<LitStr>() {
-                    result.example = serde_json::from_str::<serde_json::Value>(&format!("\"{}\"", meta.value())).ok();
+                    result.example =
+                        serde_json::from_str::<serde_json::Value>(&format!("\"{}\"", meta.value()))
+                            .ok();
                     found_any = true;
                 }
                 // 尝试解析为其他字面量
@@ -3296,7 +3851,9 @@ fn parse_param_tool_attrs(attrs: &[syn::Attribute]) -> Option<ParamToolAttrs> {
             if let Ok(_meta) = attr.parse_args::<Expr>() {
                 // 尝试解析为字符串字面量
                 if let Ok(meta) = attr.parse_args::<LitStr>() {
-                    result.default = serde_json::from_str::<serde_json::Value>(&format!("\"{}\"", meta.value())).ok();
+                    result.default =
+                        serde_json::from_str::<serde_json::Value>(&format!("\"{}\"", meta.value()))
+                            .ok();
                     found_any = true;
                 }
                 // 尝试解析为其他字面量
@@ -3346,15 +3903,15 @@ fn parse_literal_to_json(lit: &Lit) -> Option<serde_json::Value> {
                 Some(serde_json::Value::String(lit_str.value()))
             }
         }
-        Lit::Int(lit_int) => {
-            lit_int.base10_parse::<i64>().ok().map(|v| serde_json::json!(v))
-        }
-        Lit::Float(lit_float) => {
-            lit_float.base10_parse::<f64>().ok().map(|v| serde_json::json!(v))
-        }
-        Lit::Bool(lit_bool) => {
-            Some(serde_json::json!(lit_bool.value))
-        }
+        Lit::Int(lit_int) => lit_int
+            .base10_parse::<i64>()
+            .ok()
+            .map(|v| serde_json::json!(v)),
+        Lit::Float(lit_float) => lit_float
+            .base10_parse::<f64>()
+            .ok()
+            .map(|v| serde_json::json!(v)),
+        Lit::Bool(lit_bool) => Some(serde_json::json!(lit_bool.value)),
         _ => None,
     }
 }
@@ -3387,40 +3944,78 @@ fn is_result_type(output: &ReturnType) -> bool {
     }
 }
 
-/// 提取 doc comment（过滤 @param、@required、@param_desc 和 - `name`: 行）
+/// 提取 doc comment（保留原始文本格式）
+///
+/// 功能：
+/// - 保留原始文本内容，包括 Markdown 标记：**bold**, *italic*, `code`, [links](url)
+/// - 支持多段落合并（空行分隔）
+/// - 支持结构化注释过滤：# Parameters, # Returns, # Example
+/// - 过滤 @param、@required、@param_desc 等参数标记
+/// - 支持代码块识别（``` 标记）
+///
+/// 注意：此函数仅保留原始文本，不进行 Markdown 解析（如转换为 HTML）。
+/// 如需完整的 Markdown 支持，建议使用 pulldown-cmark 等外部库。
 fn extract_doc_comment(attrs: &[syn::Attribute]) -> Option<String> {
     let mut doc_lines = Vec::new();
+    let mut in_code_block = false;
 
     for attr in attrs {
         if attr.path().is_ident("doc") {
             if let Meta::NameValue(nv) = &attr.meta {
                 if let Expr::Lit(expr_lit) = &nv.value {
                     if let Lit::Str(lit) = &expr_lit.lit {
-                        let value = lit.value();
-                        let line = value.trim().trim_start_matches(':').trim();
+                        let line = lit.value();
+                        let trimmed = line.trim().trim_start_matches(':').trim();
+
+                        // 跟踪代码块状态（``` 标记）
+                        if trimmed.starts_with("```") {
+                            in_code_block = !in_code_block;
+                            doc_lines.push(trimmed.to_string());
+                            continue;
+                        }
 
                         // 跳过 @param 行（这些是参数描述，不是工具描述）
-                        if line.starts_with("@param") {
+                        if trimmed.starts_with("@param") {
                             continue;
                         }
 
                         // 跳过 @required 行（这些是参数标记，不是工具描述）
-                        if line.starts_with("@required") {
+                        if trimmed.starts_with("@required") {
                             continue;
                         }
 
                         // 跳过 @param_desc 行（这些是参数描述，不是工具描述）
-                        if line.starts_with("@param_desc") {
+                        if trimmed.starts_with("@param_desc") {
                             continue;
                         }
 
-                        // 跳过 - `name`: description 格式的参数行
-                        if line.starts_with('-') && line.contains('`') && line.contains("`:") {
+                        // 跳过 - `name`: description 格式的参数行（除非在代码块内）
+                        if !in_code_block
+                            && trimmed.starts_with('-')
+                            && trimmed.contains('`')
+                            && trimmed.contains("`:")
+                        {
                             continue;
                         }
 
-                        if !line.is_empty() {
-                            doc_lines.push(line.to_string());
+                        // 跳过 # Parameters / # Returns / # Example 等结构化标记
+                        if trimmed.starts_with('#')
+                            && (trimmed.contains("Parameters")
+                                || trimmed.contains("Returns")
+                                || trimmed.contains("Example"))
+                        {
+                            continue;
+                        }
+
+                        // 保留空行用于段落分隔（如果在代码块内或两段之间）
+                        if trimmed.is_empty() {
+                            if !doc_lines.is_empty()
+                                && doc_lines.last().is_some_and(|s| !s.is_empty())
+                            {
+                                doc_lines.push(String::new());
+                            }
+                        } else {
+                            doc_lines.push(trimmed.to_string());
                         }
                     }
                 }
@@ -3428,10 +4023,15 @@ fn extract_doc_comment(attrs: &[syn::Attribute]) -> Option<String> {
         }
     }
 
+    // 移除末尾的空行
+    while doc_lines.last().is_some_and(|s| s.is_empty()) {
+        doc_lines.pop();
+    }
+
     if doc_lines.is_empty() {
         None
     } else {
-        Some(doc_lines.join(" "))
+        Some(doc_lines.join("\n"))
     }
 }
 
@@ -3463,7 +4063,11 @@ fn extract_param_docs(attrs: &[syn::Attribute]) -> BTreeMap<String, String> {
 }
 
 /// 从 doc comment 中提取参数级别的属性（如 @required param_name）
-fn extract_param_attr_from_docs(attrs: &[syn::Attribute], param_name: &str, attr_name: &str) -> bool {
+fn extract_param_attr_from_docs(
+    attrs: &[syn::Attribute],
+    param_name: &str,
+    attr_name: &str,
+) -> bool {
     for attr in attrs {
         if attr.path().is_ident("doc") {
             if let Meta::NameValue(nv) = &attr.meta {
@@ -3585,7 +4189,7 @@ fn extract_validate_msg_from_docs(attrs: &[syn::Attribute], param_name: &str) ->
                                 let msg_part = msg_part.trim();
                                 // 解析字符串字面量
                                 if msg_part.starts_with('"') && msg_part.ends_with('"') {
-                                    return Some(msg_part[1..msg_part.len()-1].to_string());
+                                    return Some(msg_part[1..msg_part.len() - 1].to_string());
                                 }
                             }
                         }
@@ -3624,10 +4228,10 @@ fn parse_param_doc(line: &str) -> Option<(String, String)> {
     // 格式 2: /// - `name`: description
     if let Some(rest) = line.strip_prefix('-') {
         let rest = rest.trim();
-        if rest.starts_with('`') {
-            if let Some(end) = rest[1..].find('`') {
-                let param_name = rest[1..end + 1].to_string();
-                let desc = rest[end + 2..]
+        if let Some(stripped) = rest.strip_prefix('`') {
+            if let Some(end) = stripped.find('`') {
+                let param_name = stripped[..end].to_string();
+                let desc = stripped[end + 1..]
                     .trim()
                     .trim_start_matches(':')
                     .trim()
@@ -3640,4 +4244,219 @@ fn parse_param_doc(line: &str) -> Option<(String, String)> {
     }
 
     None
+}
+
+// ============================================================================
+// tokitai! 配置宏实现
+// ============================================================================
+
+/// 配置宏输入结构
+struct ConfigInput {
+    struct_name: Ident,
+    methods: Vec<MethodConfig>,
+}
+
+struct MethodConfig {
+    method_name: Ident,
+    desc: Option<String>,
+    tags: Option<Vec<String>>,
+    params: BTreeMap<String, ParamConfig>,
+}
+
+struct ParamConfig {
+    desc: Option<String>,
+    example: Option<serde_json::Value>,
+}
+
+impl Parse for ConfigInput {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let struct_name: Ident = input.parse()?;
+
+        let content;
+        syn::braced!(content in input);
+
+        let mut methods = Vec::new();
+
+        while !content.is_empty() {
+            let method_name: Ident = content.parse()?;
+            content.parse::<token::Colon>()?;
+
+            let method_content;
+            syn::braced!(method_content in content);
+
+            let mut desc = None;
+            let mut tags = None;
+            let mut params = BTreeMap::new();
+
+            while !method_content.is_empty() {
+                let key: Ident = method_content.parse()?;
+                method_content.parse::<token::Colon>()?;
+
+                match key.to_string().as_str() {
+                    "desc" => {
+                        let value: LitStr = method_content.parse()?;
+                        desc = Some(value.value());
+                    }
+                    "tags" => {
+                        let tag_content;
+                        syn::bracketed!(tag_content in method_content);
+                        let mut tag_list = Vec::new();
+                        while !tag_content.is_empty() {
+                            let tag: LitStr = tag_content.parse()?;
+                            tag_list.push(tag.value());
+                            if tag_content.peek(token::Comma) {
+                                tag_content.parse::<token::Comma>()?;
+                            }
+                        }
+                        tags = Some(tag_list);
+                    }
+                    "params" => {
+                        let params_content;
+                        syn::braced!(params_content in method_content);
+
+                        while !params_content.is_empty() {
+                            let param_name: Ident = params_content.parse()?;
+                            params_content.parse::<token::Colon>()?;
+
+                            let param_content;
+                            syn::braced!(param_content in params_content);
+
+                            let mut param_desc = None;
+                            let mut param_example = None;
+
+                            while !param_content.is_empty() {
+                                let param_key: Ident = param_content.parse()?;
+                                param_content.parse::<token::Colon>()?;
+
+                                match param_key.to_string().as_str() {
+                                    "desc" => {
+                                        let value: LitStr = param_content.parse()?;
+                                        param_desc = Some(value.value());
+                                    }
+                                    "example" => {
+                                        param_example =
+                                            parse_json_value(&param_content).ok().flatten();
+                                    }
+                                    _ => {
+                                        // 跳过未知属性
+                                        let _ = param_content.parse::<syn::Expr>();
+                                    }
+                                }
+
+                                if param_content.peek(token::Comma) {
+                                    param_content.parse::<token::Comma>()?;
+                                }
+                            }
+
+                            params.insert(
+                                param_name.to_string(),
+                                ParamConfig {
+                                    desc: param_desc,
+                                    example: param_example,
+                                },
+                            );
+
+                            if params_content.peek(token::Comma) {
+                                params_content.parse::<token::Comma>()?;
+                            }
+                        }
+                    }
+                    _ => {
+                        // 跳过未知属性
+                        let _ = method_content.parse::<syn::Expr>();
+                    }
+                }
+
+                if method_content.peek(token::Comma) {
+                    method_content.parse::<token::Comma>()?;
+                }
+            }
+
+            methods.push(MethodConfig {
+                method_name,
+                desc,
+                tags,
+                params,
+            });
+
+            if content.peek(token::Comma) {
+                content.parse::<token::Comma>()?;
+            }
+        }
+
+        Ok(ConfigInput {
+            struct_name,
+            methods,
+        })
+    }
+}
+
+/// 配置宏主函数
+pub fn config(item: TokenStream) -> TokenStream {
+    let config_input = parse_macro_input!(item as ConfigInput);
+
+    let struct_name = &config_input.struct_name;
+
+    // 生成唯一的静态变量名
+    let config_init_name = format_ident!("__CONFIG_INIT_{}", struct_name);
+
+    // 生成配置代码 - 目前实现为编译期提示
+    // 后续可以通过修改 TOOL_DEFINITIONS 来实现真正的覆盖
+    let mut method_configs = Vec::new();
+
+    for method in &config_input.methods {
+        let method_name = &method.method_name;
+        let mut config_items = Vec::new();
+
+        if let Some(ref desc) = method.desc {
+            config_items.push(quote! {
+                ::tokitai::ToolConfig::Desc(#desc.to_string())
+            });
+        }
+
+        if let Some(ref tags) = method.tags {
+            config_items.push(quote! {
+                ::tokitai::ToolConfig::Tags(vec![#(#tags.to_string()),*])
+            });
+        }
+
+        for (param_name, param_config) in &method.params {
+            if let Some(ref param_desc) = param_config.desc {
+                config_items.push(quote! {
+                    ::tokitai::ToolConfig::ParamDesc {
+                        name: #param_name.to_string(),
+                        desc: #param_desc.to_string()
+                    }
+                });
+            }
+            if let Some(ref param_example) = param_config.example {
+                let example_json = serde_json::to_string(param_example).unwrap_or_default();
+                config_items.push(quote! {
+                    ::tokitai::ToolConfig::ParamExample {
+                        name: #param_name.to_string(),
+                        example: serde_json::json!(#example_json)
+                    }
+                });
+            }
+        }
+
+        if !config_items.is_empty() {
+            let method_name_str = method_name.to_string();
+            method_configs.push(quote! {
+                #struct_name::configure_tool(#method_name_str, &[#(#config_items),*]);
+            });
+        }
+    }
+
+    let output = quote! {
+        // 配置宏展开 - 用于集中配置工具属性
+        // 使用 LazyLock 在首次访问时初始化配置
+        // 注意：配置会在首次访问 GLOBAL_CONFIG_REGISTRY 时自动应用
+        #[used]
+        static #config_init_name: ::std::sync::LazyLock<()> = ::std::sync::LazyLock::new(|| {
+            #(#method_configs)*
+        });
+    };
+
+    TokenStream::from(output)
 }

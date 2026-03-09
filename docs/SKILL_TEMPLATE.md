@@ -179,7 +179,7 @@ impl MyTools {
 }
 
 fn main() {
-    let tools = MyTools::TOOL_DEFINITIONS;
+    let tools = MyTools::tool_definitions();
     let mut md = String::from("# 我的工具集\n\n## 工具列表\n\n");
     
     for tool in tools {

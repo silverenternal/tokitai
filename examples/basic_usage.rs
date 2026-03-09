@@ -6,6 +6,7 @@
 
 mod utils;
 use tokitai::tool;
+use tokitai::ToolProvider;
 use utils::init_console;
 
 /// Simple Calculator
@@ -51,7 +52,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 1. 获取工具定义（发送给 AI）
     println!("1. Get Tool Definitions (send to AI)");
-    let tools = Calculator::TOOL_DEFINITIONS;
+    let tools = Calculator::tool_definitions();
     println!("   Tool count: {}", tools.len());
     for tool in tools {
         println!("   - {}: {}", tool.name, tool.description);
@@ -80,7 +81,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 4. 自定义工具属性
     println!("4. Custom Tool Attributes");
     let weather = WeatherService;
-    let weather_tools = WeatherService::TOOL_DEFINITIONS;
+    let weather_tools = WeatherService::tool_definitions();
     for tool in weather_tools {
         println!("   - {} (custom name): {}", tool.name, tool.description);
     }
@@ -101,7 +102,7 @@ fn simulate_ai_conversation() -> Result<(), Box<dyn std::error::Error>> {
     let calc = Calculator;
 
     // 步骤 1: 发送工具定义给 AI
-    let tools = Calculator::TOOL_DEFINITIONS;
+    let tools = Calculator::tool_definitions();
     println!("   [Send to AI] Tool definitions: {} tools", tools.len());
 
     // 步骤 2: 模拟 AI 返回的工具调用
@@ -119,11 +120,10 @@ fn simulate_ai_conversation() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // 步骤 3: 执行工具调用
-    let result = calc
-        .call_tool(
-            ai_tool_call["tool_name"].as_str().unwrap(),
-            &ai_tool_call["arguments"],
-        )?;
+    let result = calc.call_tool(
+        ai_tool_call["tool_name"].as_str().unwrap(),
+        &ai_tool_call["arguments"],
+    )?;
 
     println!("   [Execute Result] {}", result);
 

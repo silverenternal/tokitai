@@ -13,7 +13,9 @@
 //! - **Single Attribute** - Just `#[tool]`, no need for multiple tags
 //! - **Optional Runtime** - Control dependencies via features, supports async-free environments
 //! - **Vendor Neutral** - Works with any AI/LLM provider (Ollama, OpenAI, Anthropic, etc.)
-//!
+
+#![allow(unexpected_cfgs)]
+
 //! ## 🚀 Quick Start
 //!
 //! ### 1. Add Dependencies
@@ -51,7 +53,7 @@
 //!
 //! ```rust,ignore
 //! // Compile-time generated tool definitions
-//! let tools = Calculator::TOOL_DEFINITIONS;
+//! let tools = Calculator::tool_definitions();
 //!
 //! // Convert to JSON and send to AI
 //! let tools_json = serde_json::to_string_pretty(tools)?;
@@ -216,10 +218,14 @@
 //! - [`tokitai-macros`](https://crates.io/crates/tokitai-macros) - Procedural macros
 
 // Re-export core types (always available)
-pub use tokitai_core::{ToolDefinition, ToolError, ToolErrorKind, ParamType, ToolProvider};
+pub use tokitai_core::{ParamType, ToolDefinition, ToolError, ToolErrorKind, ToolProvider};
 
 // Re-export serde_json for convenience (users don't need to add extra dependency)
-pub use serde_json::{json, Value, Map};
+pub use serde_json::{json, Map, Value};
+
+// Re-export config types (when serde feature is enabled)
+#[cfg(feature = "serde")]
+pub use tokitai_core::{ToolConfig, ToolConfigRegistry, GLOBAL_CONFIG_REGISTRY};
 
 // Runtime module (always available)
 pub mod error;
@@ -234,7 +240,11 @@ pub use error::AiToolError;
 pub use mcp::*;
 
 // Re-export macros
-pub use tokitai_macros::{tool, tool_type, tool_validate, tool_transform, tool_desc, tool_example, tool_default, tool_required, param_tool};
+pub use tokitai_macros::{
+    config, param_tool, tool, tool_default, tool_desc, tool_example, tool_max, tool_max_items,
+    tool_max_length, tool_min, tool_min_items, tool_min_length, tool_multiple_of, tool_pattern,
+    tool_required, tool_transform, tool_type, tool_validate,
+};
 
 /// Library version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

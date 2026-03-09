@@ -46,9 +46,7 @@ impl From<AiToolError> for tokitai_core::ToolError {
             AiToolError::ValidationError { message } => {
                 tokitai_core::ToolError::validation_error(message)
             }
-            AiToolError::NotFound { name } => {
-                tokitai_core::ToolError::not_found(name)
-            }
+            AiToolError::NotFound { name } => tokitai_core::ToolError::not_found(name),
             AiToolError::SerializationError(e) => {
                 tokitai_core::ToolError::internal_error(e.to_string())
             }

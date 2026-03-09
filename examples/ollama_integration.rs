@@ -29,9 +29,9 @@ mod utils;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use tokitai::tool;
 use tokitai::ToolProvider;
-use sha2::{Sha256, Digest};
 use utils::init_console;
 
 // ==================== 环境变量配置 ====================
@@ -48,20 +48,22 @@ impl Config {
     fn from_env() -> Self {
         // 尝试从项目根目录加载 examples/.env
         let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string());
-        let env_path = std::path::Path::new(&manifest_dir).join("examples").join(".env");
+        let env_path = std::path::Path::new(&manifest_dir)
+            .join("examples")
+            .join(".env");
         dotenv::from_path(env_path).ok();
-        
+
         // 也尝试当前目录的 .env（兼容）
         dotenv::dotenv().ok();
 
-        let base_url = std::env::var("OLLAMA_BASE_URL")
-            .unwrap_or_else(|_| "https://ollama.com".to_string());
-        let model = std::env::var("OLLAMA_MODEL")
-            .unwrap_or_else(|_| "qwen3.5:cloud".to_string());
+        let base_url =
+            std::env::var("OLLAMA_BASE_URL").unwrap_or_else(|_| "https://ollama.com".to_string());
+        let model = std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| "qwen3.5:cloud".to_string());
         let api_key = std::env::var("OLLAMA_API_KEY").ok();
         let enabled = std::env::var("OLLAMA_ENABLED")
             .unwrap_or_else(|_| "false".to_string())
-            .to_lowercase() == "true";
+            .to_lowercase()
+            == "true";
 
         Self {
             base_url,
@@ -241,7 +243,7 @@ impl OllamaClient {
         T::tool_definitions()
             .iter()
             .map(|tool| {
-                let schema: Value = serde_json::from_str(tool.input_schema).unwrap_or_else(|_| {
+                let schema: Value = serde_json::from_str(&tool.input_schema).unwrap_or_else(|_| {
                     json!({
                         "type": "object",
                         "properties": {}
@@ -275,25 +277,29 @@ impl OllamaClient {
 
         // Ollama 云 API 路径是 /api/chat
         let url = format!("{}/api/chat", self.base_url);
-        
+
         let mut req = self.client.post(&url).json(&request);
-        
+
         // 如果有 API key，添加认证头（Ollama 云需要）
         if let Some(ref api_key) = self.api_key {
             req = req.header("Authorization", format!("Bearer {}", api_key));
         }
-        
-        let response = req.send().await
-            .map_err(|e| format!("请求失败：{}", e))?;
-        
+
+        let response = req.send().await.map_err(|e| format!("请求失败：{}", e))?;
+
         // 检查响应状态
         let status = response.status();
         if !status.is_success() {
-            let error_text = response.text().await.unwrap_or_else(|_| "未知错误".to_string());
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "未知错误".to_string());
             return Err(format!("API 返回错误 ({}): {}", status, error_text));
         }
-        
-        let result = response.json::<OllamaResponse>().await
+
+        let result = response
+            .json::<OllamaResponse>()
+            .await
             .map_err(|e| format!("解析响应失败：{}", e))?;
 
         Ok(result.message)
@@ -320,22 +326,26 @@ impl AiAssistant {
     }
 
     /// 处理工具调用
-    fn handle_tool_call(
-        &self,
-        name: &str,
-        args: &Value,
-    ) -> Result<Value, String> {
+    fn handle_tool_call(&self, name: &str, args: &Value) -> Result<Value, String> {
         println!("   [工具调用] {}({:?})", name, args);
 
         // 根据工具名称路由到不同的服务
         let result = match name {
-            "add" | "multiply" | "sqrt" => self.calculator.call_tool(name, args)
+            "add" | "multiply" | "sqrt" => self
+                .calculator
+                .call_tool(name, args)
                 .map_err(|e| format!("计算器工具错误：{:?}", e))?,
-            "sha256" | "sha256_file" => self.hash_calculator.call_tool(name, args)
+            "sha256" | "sha256_file" => self
+                .hash_calculator
+                .call_tool(name, args)
                 .map_err(|e| format!("哈希工具错误：{:?}", e))?,
-            "get_weather" => self.weather.call_tool(name, args)
+            "get_weather" => self
+                .weather
+                .call_tool(name, args)
                 .map_err(|e| format!("天气工具错误：{:?}", e))?,
-            "get_current_time" | "days_between" => self.time_service.call_tool(name, args)
+            "get_current_time" | "days_between" => self
+                .time_service
+                .call_tool(name, args)
                 .map_err(|e| format!("时间工具错误：{:?}", e))?,
             _ => return Err(format!("未知工具：{}", name)),
         };
@@ -369,10 +379,9 @@ async fn main() -> Result<(), String> {
     }
 
     // 检查是否为在线服务（有 API key 或非 localhost 地址）
-    let is_cloud = config.api_key.is_some() && !config.api_key.as_ref().unwrap().is_empty() || 
-                   (!config.base_url.contains("localhost") && 
-                    !config.base_url.contains("127.0.0.1"));
-    
+    let is_cloud = config.api_key.is_some() && !config.api_key.as_ref().unwrap().is_empty()
+        || (!config.base_url.contains("localhost") && !config.base_url.contains("127.0.0.1"));
+
     if is_cloud {
         println!("✓ 使用 Ollama 云服务");
         println!("  服务地址：{}", config.base_url);
@@ -386,7 +395,11 @@ async fn main() -> Result<(), String> {
         // 本地服务检查
         println!("正在检查 Ollama 本地服务 ({})...", config.base_url);
         let client = reqwest::Client::new();
-        match client.get(format!("{}/api/tags", config.base_url)).send().await {
+        match client
+            .get(format!("{}/api/tags", config.base_url))
+            .send()
+            .await
+        {
             Ok(resp) => {
                 if resp.status().is_success() {
                     println!("✓ Ollama 本地服务正常运行\n");
@@ -408,10 +421,18 @@ async fn main() -> Result<(), String> {
 
     // 收集所有工具定义
     let mut all_tools = Vec::new();
-    all_tools.extend(Calculator::TOOL_DEFINITIONS.iter().map(convert_tool_def));
-    all_tools.extend(HashCalculator::TOOL_DEFINITIONS.iter().map(convert_tool_def));
-    all_tools.extend(WeatherService::TOOL_DEFINITIONS.iter().map(convert_tool_def));
-    all_tools.extend(TimeService::TOOL_DEFINITIONS.iter().map(convert_tool_def));
+    all_tools.extend(Calculator::tool_definitions().iter().map(convert_tool_def));
+    all_tools.extend(
+        HashCalculator::tool_definitions()
+            .iter()
+            .map(convert_tool_def),
+    );
+    all_tools.extend(
+        WeatherService::tool_definitions()
+            .iter()
+            .map(convert_tool_def),
+    );
+    all_tools.extend(TimeService::tool_definitions().iter().map(convert_tool_def));
 
     println!("已加载 {} 个工具:", all_tools.len());
     for tool in &all_tools {
@@ -436,8 +457,8 @@ async fn main() -> Result<(), String> {
     if let Some(tool_calls) = response.tool_calls {
         println!("[AI 请求工具调用]");
         for call in tool_calls {
-            let result = assistant
-                .handle_tool_call(&call.function.name, &call.function.arguments)?;
+            let result =
+                assistant.handle_tool_call(&call.function.name, &call.function.arguments)?;
             println!("   [工具返回] {}\n", result);
 
             // 添加工具调用结果到消息
@@ -454,7 +475,9 @@ async fn main() -> Result<(), String> {
         }
 
         // 获取最终回复
-        let final_response = ollama.chat(messages, None).await
+        let final_response = ollama
+            .chat(messages, None)
+            .await
             .map_err(|e| e.to_string())?;
         println!("[AI 最终回复] {}", final_response.content);
     } else {
@@ -472,15 +495,15 @@ async fn run_offline_demo() -> Result<(), Box<dyn std::error::Error>> {
 
     // 展示工具定义
     println!("1. 工具定义（可发送给任何 AI）");
-    let tools = Calculator::TOOL_DEFINITIONS;
+    let tools = Calculator::tool_definitions();
     for tool in tools {
         println!(
             "   {{ \"name\": \"{}\", \"description\": \"{}\", \"input_schema\": {} }}",
             tool.name, tool.description, tool.input_schema
         );
     }
-    
-    let hash_tools = HashCalculator::TOOL_DEFINITIONS;
+
+    let hash_tools = HashCalculator::tool_definitions();
     for tool in hash_tools {
         println!(
             "   {{ \"name\": \"{}\", \"description\": \"{}\", \"input_schema\": {} }}",
@@ -494,8 +517,7 @@ async fn run_offline_demo() -> Result<(), Box<dyn std::error::Error>> {
     println!("   [用户] 请计算 100 + 250");
     println!("   [AI] 我来帮你计算...");
 
-    let result = assistant
-        .handle_tool_call("add", &json!({"a": 100, "b": 250}))?;
+    let result = assistant.handle_tool_call("add", &json!({"a": 100, "b": 250}))?;
     println!("   [工具执行] {}", result);
     println!("   [AI] 结果是 {}\n", result);
 
@@ -504,15 +526,13 @@ async fn run_offline_demo() -> Result<(), Box<dyn std::error::Error>> {
     println!("   [用户] 计算 'hello world' 的 SHA256");
     println!("   [AI] 我来使用工具计算...");
 
-    let result = assistant
-        .handle_tool_call("sha256", &json!({"input": "hello world"}))?;
+    let result = assistant.handle_tool_call("sha256", &json!({"input": "hello world"}))?;
     println!("   [工具执行] {}", result);
     println!("   [AI] SHA256 哈希值是：{}\n", result);
 
     println!("4. 天气查询示例");
     println!("   [用户] 北京天气怎么样？");
-    let result = assistant
-        .handle_tool_call("get_weather", &json!({"city": "北京"}))?;
+    let result = assistant.handle_tool_call("get_weather", &json!({"city": "北京"}))?;
     println!("   [工具执行] {}", result);
     println!("   [AI] {}\n", result);
 
@@ -526,7 +546,7 @@ async fn run_offline_demo() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn convert_tool_def(tool: &tokitai::ToolDefinition) -> ToolDefinition {
-    let schema: Value = serde_json::from_str(tool.input_schema).unwrap_or_else(|_| {
+    let schema: Value = serde_json::from_str(&tool.input_schema).unwrap_or_else(|_| {
         json!({
             "type": "object",
             "properties": {}
