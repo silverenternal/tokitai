@@ -292,7 +292,8 @@ pub fn generate_wrapper_method_sync(tool: &ToolMethodInfo) -> TokenStream2 {
                 Err(e) => {
                     warn_if_not_test!(
                         "[tokitai] warning: failed to parse transform expression: {} - {}",
-                        transform_code, e
+                        transform_code,
+                        e
                     );
                     return None;
                 }
@@ -597,7 +598,8 @@ pub fn generate_wrapper_method(tool: &ToolMethodInfo, is_async: bool) -> TokenSt
                 Err(e) => {
                     warn_if_not_test!(
                         "[tokitai] warning: failed to parse transform expression: {} - {}",
-                        transform_code, e
+                        transform_code,
+                        e
                     );
                     return None;
                 }
