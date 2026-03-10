@@ -2,7 +2,7 @@
 
 use tokitai::tool;
 
-#[tool]
+#[derive(Default)]
 pub struct ValidateMsgTools;
 
 #[tool]

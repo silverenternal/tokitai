@@ -1,6 +1,6 @@
 # Tokitai 架构设计
 
-**版本**: 0.3 | **最后更新**: 2026-03-06
+**版本**: 0.4.0 | **最后更新**: 2026-03-10
 
 本文档描述 Tokitai 的内部设计和工作原理。
 
@@ -71,14 +71,16 @@ impl Calculator {
 **输出**:
 ```rust
 impl Calculator {
-    // ① 工具定义数组
-    pub const TOOL_DEFINITIONS: &'static [ToolDefinition] = &[
-        ToolDefinition {
-            name: "add",
-            description: "两个数相加",
-            input_schema: "{\"type\":\"object\",\"properties\":{\"a\":{\"type\":\"integer\"},\"b\":{\"type\":\"integer\"}},\"required\":[\"a\",\"b\"]}",
-        }
-    ];
+    // ① 工具定义数组（v0.4.0+ 现在是方法）
+    pub fn tool_definitions() -> &'static [ToolDefinition] {
+        &[
+            ToolDefinition {
+                name: "add",
+                description: "两个数相加",
+                input_schema: "{\"type\":\"object\",\"properties\":{\"a\":{\"type\":\"integer\"},\"b\":{\"type\":\"integer\"}},\"required\":[\"a\",\"b\"]}",
+            }
+        ]
+    }
 
     // ② call_tool 分发器
     fn call_tool(&self, name: &str, args: &Value) -> Result<Value, ToolError> {
@@ -249,14 +251,16 @@ impl Calculator {
 pub struct Calculator;
 
 impl Calculator {
-    /// 工具定义数组（编译期生成）
-    pub const TOOL_DEFINITIONS: &'static [tokitai::ToolDefinition] = &[
-        tokitai::ToolDefinition {
-            name: "add",
-            description: "两个数相加",
-            input_schema: "{\"type\":\"object\",\"properties\":{\"a\":{\"type\":\"integer\"},\"b\":{\"type\":\"integer\"}},\"required\":[\"a\",\"b\"]}",
-        }
-    ];
+    /// 工具定义数组（编译期生成，v0.4.0+ 现在是方法）
+    pub fn tool_definitions() -> &'static [tokitai::ToolDefinition] {
+        &[
+            tokitai::ToolDefinition {
+                name: "add",
+                description: "两个数相加",
+                input_schema: "{\"type\":\"object\",\"properties\":{\"a\":{\"type\":\"integer\"},\"b\":{\"type\":\"integer\"}},\"required\":[\"a\",\"b\"]}",
+            }
+        ]
+    }
 
     /// 工具调用分发器
     pub fn call_tool(
@@ -276,7 +280,7 @@ impl Calculator {
                         format!("参数 'a' 类型错误：{}", e)
                     )
                 })?;
-                
+
                 let b: i32 = serde_json::from_value(
                     args.get("b").ok_or_else(|| {
                         tokitai::ToolError::validation_error("缺少参数 'b'")
@@ -286,10 +290,10 @@ impl Calculator {
                         format!("参数 'b' 类型错误：{}", e)
                     )
                 })?;
-                
+
                 // 调用原始方法
                 let result = self.add(a, b);
-                
+
                 // 返回 JSON
                 Ok(serde_json::json!(result))
             }
@@ -302,7 +306,7 @@ impl Calculator {
 
 impl tokitai::ToolProvider for Calculator {
     fn tool_definitions() -> &'static [tokitai::ToolDefinition] {
-        Self::TOOL_DEFINITIONS
+        Self::tool_definitions()
     }
 }
 ```

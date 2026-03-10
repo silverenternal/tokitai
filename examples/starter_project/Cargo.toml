@@ -7,7 +7,7 @@ description = "Tokitai 入门项目模板 - 5 分钟快速上手"
 [workspace]
 
 [dependencies]
-tokitai = { path = "../../tokitai", version = "0.3" }
+tokitai = { path = "../../tokitai", version = "0.4.0" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tokio = { version = "1.0", features = ["full"] }

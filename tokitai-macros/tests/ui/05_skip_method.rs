@@ -3,6 +3,7 @@
 use tokitai::tool;
 use tokitai::ToolProvider;
 
+#[derive(Default)]
 pub struct Processor;
 
 #[tool]

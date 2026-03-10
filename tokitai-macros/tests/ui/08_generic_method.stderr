@@ -1,0 +1,35 @@
+error: 🔧 工具方法 `generic_method` 使用了泛型参数，这不被支持。
+       💡 解决方案：
+          1. 使用具体类型：fn generic_method(data: MyType) -> String
+          2. 使用 serde_json::Value: fn generic_method(data: Value) -> String
+          3. 在方法内部手动反序列化
+ --> tests/ui/08_generic_method.rs:8:1
+  |
+8 | #[tool]
+  | ^^^^^^^
+  |
+  = note: this error originates in the attribute macro `tool` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0599]: no associated item named `__TOOL_DEF_GENERIC_METHOD` found for struct `GenericTools` in the current scope
+ --> tests/ui/08_generic_method.rs:8:1
+  |
+6 | pub struct GenericTools;
+  | ----------------------- associated item `__TOOL_DEF_GENERIC_METHOD` not found for this struct
+7 |
+8 | #[tool]
+  | ^^^^^^^ associated item not found in `GenericTools`
+  |
+  = note: this error originates in the attribute macro `tool` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0061]: this method takes 1 argument but 0 arguments were supplied
+  --> tests/ui/08_generic_method.rs:8:1
+   |
+ 8 | #[tool]
+   | ^^^^^^^ argument #1 is missing
+   |
+note: method defined here
+  --> tests/ui/08_generic_method.rs:11:12
+   |
+11 |     pub fn generic_method<T: ToString>(&self, value: T) -> String {
+   |            ^^^^^^^^^^^^^^                     --------
+   = note: this error originates in the attribute macro `tool` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -4,7 +4,7 @@ use serde_json::json;
 use tokitai::tool;
 use tokitai::ToolProvider;
 
-#[tool]
+#[derive(Default)]
 pub struct IntegrationTools;
 
 #[tool]

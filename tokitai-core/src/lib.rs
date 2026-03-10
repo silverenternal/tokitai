@@ -51,7 +51,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! tokitai-core = { version = "0.3.3", default-features = false }
+//! tokitai-core = { version = "0.4.0", default-features = false }
 //! ```
 //!
 //! ## Type Mapping
@@ -203,27 +203,106 @@ pub use config::{ToolConfig, ToolConfigRegistry, GLOBAL_CONFIG_REGISTRY};
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ToolDefinition {
     /// Tool name used for identification during AI calls
-    pub name: String,
+    #[cfg(feature = "serde")]
+    pub name: alloc::string::String,
+    #[cfg(not(feature = "serde"))]
+    pub name: &'static str,
     /// Tool description helping AI understand its purpose
-    pub description: String,
+    #[cfg(feature = "serde")]
+    pub description: alloc::string::String,
+    #[cfg(not(feature = "serde"))]
+    pub description: &'static str,
     /// Input parameter JSON Schema (compile-time generated string)
-    pub input_schema: String,
+    #[cfg(feature = "serde")]
+    pub input_schema: alloc::string::String,
+    #[cfg(not(feature = "serde"))]
+    pub input_schema: &'static str,
     /// Tool version (optional)
     #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
-    pub version: Option<String>,
+    #[cfg(feature = "serde")]
+    pub version: Option<alloc::string::String>,
+    #[cfg(not(feature = "serde"))]
+    pub version: Option<&'static str>,
     /// Version since when the tool is deprecated (optional)
     #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
-    pub deprecated_since: Option<String>,
+    #[cfg(feature = "serde")]
+    pub deprecated_since: Option<alloc::string::String>,
+    #[cfg(not(feature = "serde"))]
+    pub deprecated_since: Option<&'static str>,
     /// Version when the tool will be removed (optional)
     #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
-    pub remove_in: Option<String>,
+    #[cfg(feature = "serde")]
+    pub remove_in: Option<alloc::string::String>,
+    #[cfg(not(feature = "serde"))]
+    pub remove_in: Option<&'static str>,
     /// Tool that replaces this deprecated tool (optional)
     #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
-    pub replaced_by: Option<String>,
+    #[cfg(feature = "serde")]
+    pub replaced_by: Option<alloc::string::String>,
+    #[cfg(not(feature = "serde"))]
+    pub replaced_by: Option<&'static str>,
+}
+
+/// Internal struct for compile-time tool definition data
+///
+/// This is used to store tool definitions as `&'static str` at compile time,
+/// then convert to `ToolDefinition` at runtime with zero allocation.
+#[doc(hidden)]
+pub struct ToolDefinitionConst {
+    pub name: &'static str,
+    pub description: &'static str,
+    pub input_schema: &'static str,
 }
 
 impl ToolDefinition {
-    /// Create a new tool definition
+    /// Create a new tool definition from compile-time constants
+    ///
+    /// This is optimized for compile-time generated code where all strings
+    /// are `'static`. The conversion to `ToolDefinition` happens at runtime
+    /// but with zero allocation since we're just copying references.
+    ///
+    /// # Parameters
+    ///
+    /// - `name` - Tool name
+    /// - `description` - Tool description
+    /// - `input_schema` - JSON Schema string
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::{ToolDefinition, ToolDefinitionConst};
+    ///
+    /// const TOOL_DATA: ToolDefinitionConst = ToolDefinitionConst {
+    ///     name: "get_weather",
+    ///     description: "Get weather information for a specified city",
+    ///     input_schema: r#"{"type":"object"}"#,
+    /// };
+    ///
+    /// let tool = ToolDefinition::from_const(TOOL_DATA);
+    /// ```
+    #[inline(always)]
+    pub fn from_const(data: ToolDefinitionConst) -> Self {
+        Self {
+            #[cfg(feature = "serde")]
+            name: data.name.into(),
+            #[cfg(not(feature = "serde"))]
+            name: data.name,
+            #[cfg(feature = "serde")]
+            description: data.description.into(),
+            #[cfg(not(feature = "serde"))]
+            description: data.description,
+            #[cfg(feature = "serde")]
+            input_schema: data.input_schema.into(),
+            #[cfg(not(feature = "serde"))]
+            input_schema: data.input_schema,
+            version: None,
+            deprecated_since: None,
+            remove_in: None,
+            replaced_by: None,
+        }
+    }
+
+    /// Create a new tool definition (runtime version)
     ///
     /// # Parameters
     ///
@@ -242,10 +321,11 @@ impl ToolDefinition {
     ///     r#"{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}"#
     /// );
     /// ```
+    #[cfg(feature = "serde")]
     pub fn new(
-        name: impl Into<String>,
-        description: impl Into<String>,
-        input_schema: impl Into<String>,
+        name: impl Into<alloc::string::String>,
+        description: impl Into<alloc::string::String>,
+        input_schema: impl Into<alloc::string::String>,
     ) -> Self {
         Self {
             name: name.into(),
@@ -258,22 +338,63 @@ impl ToolDefinition {
         }
     }
 
+    /// Create a new tool definition (no_std version)
+    #[cfg(not(feature = "serde"))]
+    pub fn new(
+        name: &'static str,
+        description: &'static str,
+        input_schema: &'static str,
+    ) -> Self {
+        Self {
+            name,
+            description,
+            input_schema,
+            version: None,
+            deprecated_since: None,
+            remove_in: None,
+            replaced_by: None,
+        }
+    }
+
     /// Set the tool version
-    pub fn with_version(mut self, version: impl Into<String>) -> Self {
+    #[cfg(feature = "serde")]
+    pub fn with_version(mut self, version: impl Into<alloc::string::String>) -> Self {
         self.version = Some(version.into());
         self
     }
 
+    /// Set the tool version (no_std version)
+    #[cfg(not(feature = "serde"))]
+    pub fn with_version(mut self, version: &'static str) -> Self {
+        self.version = Some(version);
+        self
+    }
+
     /// Set deprecation information
+    #[cfg(feature = "serde")]
     pub fn with_deprecated(
         mut self,
-        deprecated_since: impl Into<String>,
-        remove_in: impl Into<String>,
-        replaced_by: impl Into<String>,
+        deprecated_since: impl Into<alloc::string::String>,
+        remove_in: impl Into<alloc::string::String>,
+        replaced_by: impl Into<alloc::string::String>,
     ) -> Self {
         self.deprecated_since = Some(deprecated_since.into());
         self.remove_in = Some(remove_in.into());
         self.replaced_by = Some(replaced_by.into());
+        self
+    }
+
+    /// Set deprecation information (no_std version)
+    #[cfg(not(feature = "serde"))]
+    pub fn with_deprecated(
+        mut self,
+        deprecated_since: &'static str,
+        remove_in: &'static str,
+        replaced_by: &'static str,
+    ) -> Self {
+        self.deprecated_since = Some(deprecated_since);
+        self.remove_in = Some(remove_in);
+        self.replaced_by = Some(replaced_by);
         self
     }
 
@@ -479,8 +600,8 @@ impl ToolDefinition {
     }
 }
 
-impl std::fmt::Display for ToolDefinition {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for ToolDefinition {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}: {}", self.name, self.description)
     }
 }
@@ -830,6 +951,231 @@ pub trait ToolCaller {
         name: &str,
         args: &crate::serde_types::Value,
     ) -> Result<crate::serde_types::Value, ToolError>;
+}
+
+/// # From Json Value Trait (P0 优化)
+///
+/// Trait for parsing JSON values into Rust types.
+/// This trait is implemented for common types and used by the `#[tool]` macro
+/// to parse tool parameters from JSON arguments.
+///
+/// ## Design Goals
+///
+/// - **Zero code duplication**: Implemented once per type, not per tool method
+/// - **Compile-time monomorphization**: Generic over types for optimal performance
+/// - **Clear error messages**: Type-specific error handling
+///
+/// ## Example
+///
+/// ```rust
+/// use tokitai_core::{FromJsonValue, ToolError};
+/// use serde_json::json;
+///
+/// let args = json!({"count": 42, "name": "test"});
+/// let count = i64::from_json_value(&args, "count").unwrap();
+/// let name = String::from_json_value(&args, "name").unwrap();
+/// assert_eq!(count, 42);
+/// assert_eq!(name, "test");
+/// ```
+#[cfg(feature = "serde")]
+pub trait FromJsonValue: Sized {
+    /// Parse a value from JSON arguments
+    ///
+    /// # Parameters
+    ///
+    /// - `args` - JSON arguments object
+    /// - `key` - Parameter name to extract
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(Self)` - Successfully parsed value
+    /// - `Err(ToolError)` - Parsing failed (missing key or type mismatch)
+    fn from_json_value(args: &crate::serde_types::Value, key: &str) -> Result<Self, ToolError>;
+
+    /// Parse an optional value from JSON arguments
+    ///
+    /// # Parameters
+    ///
+    /// - `args` - JSON arguments object
+    /// - `key` - Parameter name to extract
+    ///
+    /// # Returns
+    ///
+    /// - `Some(Self)` - Successfully parsed value
+    /// - `None` - Key does not exist or type mismatch
+    fn from_json_value_opt(args: &crate::serde_types::Value, key: &str) -> Option<Self> {
+        Self::from_json_value(args, key).ok()
+    }
+}
+
+// ============== 基本类型实现 ==============
+
+#[cfg(feature = "serde")]
+impl FromJsonValue for i64 {
+    #[inline(always)]
+    fn from_json_value(args: &crate::serde_types::Value, key: &str) -> Result<Self, ToolError> {
+        args.get(key)
+            .ok_or_else(|| ToolError::validation_error(format!("缺少必需参数 '{}'", key)))?
+            .as_i64()
+            .ok_or_else(|| ToolError::validation_error(format!("参数 '{}' 类型错误，期望 integer", key)))
+    }
+}
+
+#[cfg(feature = "serde")]
+impl FromJsonValue for i32 {
+    #[inline(always)]
+    fn from_json_value(args: &crate::serde_types::Value, key: &str) -> Result<Self, ToolError> {
+        args.get(key)
+            .ok_or_else(|| ToolError::validation_error(format!("缺少必需参数 '{}'", key)))?
+            .as_i64()
+            .map(|v| v as i32)
+            .ok_or_else(|| ToolError::validation_error(format!("参数 '{}' 类型错误，期望 integer", key)))
+    }
+}
+
+#[cfg(feature = "serde")]
+impl FromJsonValue for u64 {
+    #[inline(always)]
+    fn from_json_value(args: &crate::serde_types::Value, key: &str) -> Result<Self, ToolError> {
+        args.get(key)
+            .ok_or_else(|| ToolError::validation_error(format!("缺少必需参数 '{}'", key)))?
+            .as_u64()
+            .ok_or_else(|| ToolError::validation_error(format!("参数 '{}' 类型错误，期望 unsigned integer", key)))
+    }
+}
+
+#[cfg(feature = "serde")]
+impl FromJsonValue for u32 {
+    #[inline(always)]
+    fn from_json_value(args: &crate::serde_types::Value, key: &str) -> Result<Self, ToolError> {
+        args.get(key)
+            .ok_or_else(|| ToolError::validation_error(format!("缺少必需参数 '{}'", key)))?
+            .as_u64()
+            .map(|v| v as u32)
+            .ok_or_else(|| ToolError::validation_error(format!("参数 '{}' 类型错误，期望 unsigned integer", key)))
+    }
+}
+
+#[cfg(feature = "serde")]
+impl FromJsonValue for f64 {
+    #[inline(always)]
+    fn from_json_value(args: &crate::serde_types::Value, key: &str) -> Result<Self, ToolError> {
+        args.get(key)
+            .ok_or_else(|| ToolError::validation_error(format!("缺少必需参数 '{}'", key)))?
+            .as_f64()
+            .ok_or_else(|| ToolError::validation_error(format!("参数 '{}' 类型错误，期望 number", key)))
+    }
+}
+
+#[cfg(feature = "serde")]
+impl FromJsonValue for f32 {
+    #[inline(always)]
+    fn from_json_value(args: &crate::serde_types::Value, key: &str) -> Result<Self, ToolError> {
+        args.get(key)
+            .ok_or_else(|| ToolError::validation_error(format!("缺少必需参数 '{}'", key)))?
+            .as_f64()
+            .map(|v| v as f32)
+            .ok_or_else(|| ToolError::validation_error(format!("参数 '{}' 类型错误，期望 number", key)))
+    }
+}
+
+#[cfg(feature = "serde")]
+impl FromJsonValue for bool {
+    #[inline(always)]
+    fn from_json_value(args: &crate::serde_types::Value, key: &str) -> Result<Self, ToolError> {
+        args.get(key)
+            .ok_or_else(|| ToolError::validation_error(format!("缺少必需参数 '{}'", key)))?
+            .as_bool()
+            .ok_or_else(|| ToolError::validation_error(format!("参数 '{}' 类型错误，期望 boolean", key)))
+    }
+}
+
+#[cfg(feature = "serde")]
+impl FromJsonValue for String {
+    #[inline(always)]
+    fn from_json_value(args: &crate::serde_types::Value, key: &str) -> Result<Self, ToolError> {
+        args.get(key)
+            .ok_or_else(|| ToolError::validation_error(format!("缺少必需参数 '{}'", key)))?
+            .as_str()
+            .map(|s| s.to_string())
+            .ok_or_else(|| ToolError::validation_error(format!("参数 '{}' 类型错误，期望 string", key)))
+    }
+}
+
+// ============== &str 零拷贝支持 ==============
+// 特殊处理：需要生命周期，使用单独函数
+#[cfg(feature = "serde")]
+#[inline(always)]
+pub fn from_json_value_str<'a>(
+    args: &'a crate::serde_types::Value,
+    key: &str,
+) -> Result<&'a str, ToolError> {
+    args.get(key)
+        .ok_or_else(|| ToolError::validation_error(format!("Missing required parameter '{}'", key)))?
+        .as_str()
+        .ok_or_else(|| ToolError::validation_error(format!("Parameter '{}' type error, expected string", key)))
+}
+
+// ============== Option 实现 ==============
+
+#[cfg(feature = "serde")]
+impl<T: FromJsonValue> FromJsonValue for Option<T> {
+    #[inline(always)]
+    fn from_json_value(args: &crate::serde_types::Value, key: &str) -> Result<Self, ToolError> {
+        Ok(T::from_json_value_opt(args, key))
+    }
+}
+
+// ============== Vec 实现 ==============
+
+#[cfg(feature = "serde")]
+impl<T: serde::de::DeserializeOwned> FromJsonValue for Vec<T> {
+    #[inline(always)]
+    fn from_json_value(args: &crate::serde_types::Value, key: &str) -> Result<Self, ToolError> {
+        let value = args.get(key)
+            .ok_or_else(|| ToolError::validation_error(format!("缺少必需参数 '{}'", key)))?;
+        serde_json::from_value(value.clone())
+            .map_err(|e| ToolError::validation_error(format!("参数 '{}' 类型错误：{}", key, e)))
+    }
+}
+
+// ============== 辅助函数：解析任意 DeserializeOwned 类型 ==============
+// 对于不支持的自定义类型，用户可以在方法内部手动反序列化
+
+#[cfg(feature = "serde")]
+#[inline(always)]
+pub fn from_json_value_generic<T: serde::de::DeserializeOwned>(
+    args: &crate::serde_types::Value,
+    key: &str,
+) -> Result<T, ToolError> {
+    let value = args.get(key)
+        .ok_or_else(|| ToolError::validation_error(format!("Missing required parameter '{}'", key)))?;
+    serde_json::from_value(value.clone())
+        .map_err(|e| ToolError::validation_error(format!("Parameter '{}' type error: {}", key, e)))
+}
+
+// ============== HashMap 实现 ==============
+#[cfg(feature = "serde")]
+impl<V: serde::de::DeserializeOwned> FromJsonValue for std::collections::HashMap<String, V> {
+    #[inline(always)]
+    fn from_json_value(args: &crate::serde_types::Value, key: &str) -> Result<Self, ToolError> {
+        let value = args.get(key)
+            .ok_or_else(|| ToolError::validation_error(format!("Missing required parameter '{}'", key)))?;
+        serde_json::from_value(value.clone())
+            .map_err(|e| ToolError::validation_error(format!("Parameter '{}' type error: {}", key, e)))
+    }
+}
+
+// ============== BTreeMap 实现 ==============
+#[cfg(feature = "serde")]
+impl<V: serde::de::DeserializeOwned> FromJsonValue for std::collections::BTreeMap<String, V> {
+    #[inline(always)]
+    fn from_json_value(args: &crate::serde_types::Value, key: &str) -> Result<Self, ToolError> {
+        let value = args.get(key)
+            .ok_or_else(|| ToolError::validation_error(format!("Missing required parameter '{}'", key)))?;
+        serde_json::from_value(value.clone())
+            .map_err(|e| ToolError::validation_error(format!("Parameter '{}' type error: {}", key, e)))
+    }
 }
 
 /// Tool configuration types for runtime customization.

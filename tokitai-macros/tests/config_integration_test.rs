@@ -5,6 +5,7 @@
 #![cfg(feature = "serde")]
 
 use serde_json::Value;
+use tokitai::ToolCaller;
 use tokitai::ToolProvider;
 use tokitai::{config, tool};
 
@@ -12,6 +13,7 @@ use tokitai::{config, tool};
 // 测试：配置宏覆盖的描述是否在 TOOL_DEFINITIONS 中生效
 // ============================================================================
 
+#[derive(Default)]
 struct IntegrationTestTools;
 
 #[tool]

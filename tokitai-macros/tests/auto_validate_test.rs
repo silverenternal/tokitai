@@ -4,7 +4,7 @@
 use serde_json::json;
 use tokitai::tool;
 
-#[tool]
+#[derive(Default)]
 pub struct UserService;
 
 #[tool]

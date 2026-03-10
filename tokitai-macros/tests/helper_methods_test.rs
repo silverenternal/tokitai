@@ -3,7 +3,7 @@
 use tokitai::tool;
 use tokitai::ToolProvider;
 
-#[tool]
+#[derive(Default)]
 pub struct HelperTools;
 
 #[tool]

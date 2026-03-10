@@ -4,7 +4,7 @@
 
 ```toml
 [dependencies]
-tokitai = "0.3.3"
+tokitai = "0.4.0"
 ```
 
 就这一行！所有必需的依赖（serde、serde_json、thiserror）都会自动包含。
@@ -72,7 +72,7 @@ println!("{}", serde_json::to_string_pretty(&json)?);
 ```rust
 use tokitai::json;
 
-let calc = Calculator;
+let calc = Calculator::default();
 
 // AI 返回工具调用请求
 let call_request = json!({
@@ -105,8 +105,8 @@ cargo run --example quick_chat
 
 - [完整 API 文档](https://docs.rs/tokitai)
 - [更多示例](https://github.com/silverenternal/tokitai/tree/main/examples)
-- [属性参考](docs/attributes.md)
-- [类型映射](docs/types.md)
+- [高级用法](ADVANCED_USAGE.md)
+- [类型映射](USAGE.md)
 
 ## 常见问题
 
@@ -122,12 +122,12 @@ tokitai 在编译期分析你的代码，自动生成所有必需的元数据。
 #[tool]
 impl MyTools {
     // 添加默认值
-    pub fn process(&self, data: String, #[tool(default = "null")] options: Option<Value>) {
+    pub fn process(&self, data: String, #[tool(default = "null")] options: Option<serde_json::Value>) {
         // ...
     }
-    
+
     // 或者改为必填
-    pub fn process(&self, data: String, options: Value) {
+    pub fn process(&self, data: String, options: serde_json::Value) {
         // ...
     }
 }

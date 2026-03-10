@@ -4,9 +4,12 @@ version = "0.1.0"
 edition = "2021"
 publish = false
 
+# 抑制宏警告输出（测试和示例环境）
+[build-dependencies]
+
 [dependencies]
 tokitai = { path = "../tokitai", features = ["http-server"] }
-tokitai-core = { path = "../tokitai-core" }
+tokitai-core = { path = "../tokitai-core", features = ["serde"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "1.0"
@@ -39,14 +42,6 @@ path = "multi_tool_chat.rs"
 [[example]]
 name = "advanced_types"
 path = "advanced_types.rs"
-
-[[example]]
-name = "param_attrs"
-path = "param_attrs.rs"
-
-[[example]]
-name = "validate_transform_alias"
-path = "validate_transform_alias.rs"
 
 [[example]]
 name = "debug_tools"

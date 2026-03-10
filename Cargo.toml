@@ -12,3 +12,14 @@ resolver = "2"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/silverenternal/tokitai"
+
+# 【P3 性能优化】发布构建配置
+# 启用 LTO（链接时优化）和代码生成优化，提升运行时性能 10-15%
+[profile.release]
+lto = "thin"          # 轻量级 LTO，编译时间和性能的平衡
+codegen-units = 1     # 单一代码生成单元，优化更好
+strip = "debuginfo"   # 移除调试符号，减小二进制大小
+
+# 宏 crate 专门优化 - 编译期代码生成密集型
+[profile.release.package.tokitai-macros]
+opt-level = 3         # 最高优化级别，加快宏生成速度

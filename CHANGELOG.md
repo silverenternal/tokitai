@@ -21,6 +21,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed 🐛
 
+- **P0: Workspace profile 配置修复** - 将 `[profile.release]` 从 `tokitai/Cargo.toml` 移到 workspace 根目录
+  - 消除 `profiles for the non root package will be ignored` 警告
+- **P1: 文档版本号统一** - 将所有文档中的 `0.3.3` 更新为 `0.4.0`
+  - `docs/USAGE.md`, `tokitai/docs/USAGE.md`, `PROMOTION.md`
+- **P2: 宏警告抑制改进** - 使用 `TOKITAI_QUIET` 环境变量控制宏警告输出
+  - 添加 `build.rs` 自动设置环境变量（测试/示例环境）
+  - 修复 `cfg!(test)` 在过程宏中的误用
 - **P0: Clippy 警告清理** - 修复 12 个 `default()` 调用警告
   - `tokitai-mcp-server/tests/integration_test.rs`: 使用 unit struct 直接初始化
 - **P1: 测试警告输出抑制** - 使用 `cfg!(test)` 抑制测试环境下的宏警告输出
@@ -28,13 +35,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - 验证/转换表达式解析失败警告
   - context=async 不匹配警告
 
+### Added 📚
+
+- **build.rs 脚本** - 自动配置环境变量抑制测试/示例中的宏警告
+  - `tokitai-macros/build.rs`: 测试环境安静模式
+  - `examples/build.rs`: 示例环境安静模式
+
+### Changed 🔄
+
+- **宏警告控制逻辑重构** - `tokitai-macros/src/tool/mod.rs::should_show_warnings()`
+  - 优先检查 `TOKITAI_SHOW_WARNINGS` 环境变量
+  - 其次检查 `TOKITAI_QUIET` 环境变量
+  - 默认显示警告
+
 ## [0.4.0] - 2026-03-10
 
 ### Breaking Changes ⚠️
 
 - **API 简化：`TOOL_DEFINITIONS` 常量 → `tool_definitions()` 方法**
-  - Before: `pub const TOOL_DEFINITIONS: &str = include_str!(...);`
-  - After: `pub fn tool_definitions() -> &'static [&'static str] { ... }`
+  - Before: `pub const TOOL_DEFINITIONS: &'static [ToolDefinition] = &[...];`
+  - After: `pub fn tool_definitions() -> &'static [ToolDefinition] { ... }`
   - Reason: 更灵活的运行时工具定义生成，支持动态工具注册
   - Migration: 替换所有 `TOOL_DEFINITIONS` 引用为 `tool_definitions()`
 

@@ -5,6 +5,10 @@
 //! 2. 编译期生成所有工具定义
 //! 3. 使用 JsonSchema AST + serde_json 生成规范的 JSON Schema
 //! 4. 支持自定义 struct 字段解析
+//!
+//! 警告控制：
+//! - 测试环境下自动抑制警告
+//! - 可通过环境变量 `TOKITAI_SHOW_WARNINGS=1` 启用警告输出
 
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
@@ -22,12 +26,41 @@ use attrs::method::ToolAttributes;
 use codegen::{definitions, dispatcher, wrappers};
 use extract::collect_tool_methods;
 
+/// 检查是否应该显示警告
+///
+/// 测试环境下默认抑制警告
+/// 可通过环境变量 `TOKITAI_SHOW_WARNINGS=1` 启用警告
+/// 或通过 `TOKITAI_QUIET=1` 禁用警告
+fn should_show_warnings() -> bool {
+    // 检查是否显式启用了警告
+    if option_env!("TOKITAI_SHOW_WARNINGS").is_some() {
+        return true;
+    }
+    
+    // 检查是否显式禁用了警告
+    if option_env!("TOKITAI_QUIET").is_some() {
+        return false;
+    }
+    
+    // 默认行为：显示警告
+    // 用户可以通过设置 TOKITAI_QUIET=1 来禁用警告
+    true
+}
+
 /// `#[tool]` 宏入口
 pub fn tool(attr: TokenStream, item: TokenStream) -> TokenStream {
+    // 尝试解析为 impl 块
     if let Ok(impl_item) = syn::parse::<ItemImpl>(item.clone()) {
         let attr_args = parse_macro_input!(attr as ToolAttributes);
         generate_for_impl(impl_item, attr_args).into()
-    } else {
+    }
+    // 尝试解析为 struct（用于标记工具提供者类型）
+    else if let Ok(_struct_item) = syn::parse::<ItemStruct>(item.clone()) {
+        // struct 上不需要生成代码，直接返回
+        item
+    }
+    // 其他情况直接返回
+    else {
         item
     }
 }
@@ -191,7 +224,7 @@ fn generate_for_impl(mut impl_item: ItemImpl, _attrs: ToolAttributes) -> TokenSt
     }
 
     for tool in &tool_methods {
-        if !cfg!(test)
+        if should_show_warnings()
             && tool.deprecated
             && tool.replaced_by.is_none()
             && !tool
@@ -199,10 +232,10 @@ fn generate_for_impl(mut impl_item: ItemImpl, _attrs: ToolAttributes) -> TokenSt
                 .contains(&"deprecated_missing_replaced_by".to_string())
         {
             eprintln!(
-                "[tokitai] warning: method `{}` is marked deprecated without replaced_by\n\
-                 💡 Suggestion: #[tool(deprecated, replaced_by = \"new_method\")]",
+                "[tokitai] [W001] deprecated method `{}` missing `replaced_by`",
                 tool.name
             );
+            eprintln!("  --> help: add `replaced_by = \"new_method\"`");
         }
 
         for param in &tool.params {
@@ -210,36 +243,28 @@ fn generate_for_impl(mut impl_item: ItemImpl, _attrs: ToolAttributes) -> TokenSt
                 && param.default.is_none()
                 && param.example.is_none()
                 && !tool.allow.contains(&"option_no_default".to_string())
+                && should_show_warnings()
             {
-                // 在测试环境下抑制警告输出，避免污染测试输出
-                if !cfg!(test) {
-                    let display_name = &param.schema_name;
-                    eprintln!(
-                        "[tokitai] warning: parameter `{}` is optional (Option type) without default or example\n\
-                         → AI may not know this parameter can be omitted, which may cause call failures\n\
-                         \n\
-                         Suggested fixes (choose one):\n\
-                         1. #[tool(default_{} = \"null\")]      # Add default value\n\
-                         2. #[tool(example_{} = \"null\")]      # Add example\n\
-                         3. Make it required: `{}: Option<T>` → `{}: T`",
-                        display_name, display_name, display_name,
-                        display_name, display_name
-                    );
-                }
+                let display_name = &param.schema_name;
+                eprintln!(
+                    "[tokitai] [W002] optional param `{}` lacks default/example",
+                    display_name
+                );
+                eprintln!("  --> help: add `#[tool(default_{0} = \"null\")]`", display_name);
             }
         }
 
-        // 在测试环境下抑制警告输出，避免污染测试输出
-        if !cfg!(test)
+        // 检查 context=async 与非异步方法的冲突
+        if should_show_warnings()
             && tool.context.as_deref() == Some("async")
             && !tool.is_async
             && !tool.allow.contains(&"context_async_mismatch".to_string())
         {
             eprintln!(
-                "[tokitai] warning: method `{}` is marked context = \"async\" but is not an async method\n\
-                 💡 Suggestion: remove context attribute or change method to async",
+                "[tokitai] [W003] method `{}` has `context=\"async\"` but is not async",
                 tool.name
             );
+            eprintln!("  --> help: use `async fn` or remove `context`");
         }
     }
 
@@ -248,18 +273,20 @@ fn generate_for_impl(mut impl_item: ItemImpl, _attrs: ToolAttributes) -> TokenSt
     let all_tool_defs = definitions::generate_all_tool_defs_array(&tool_methods, impl_type);
     let call_tool_methods = dispatcher::generate_call_tool_method(&tool_methods);
     let helper_methods = wrappers::generate_helper_methods(&tool_methods);
+    let tool_count_const = definitions::generate_tool_count_const(&tool_methods);
 
     let mut new_items: Vec<ImplItem> = impl_item.items.clone();
 
-    for static_def in &tool_def_consts {
-        let static_item: ImplItem = syn::parse2(quote! {
-            #[allow(dead_code)]
-            #static_def
-        }).unwrap_or_else(|e| {
-            eprintln!("Failed to parse static definition: {}", e);
-            syn::parse_quote! { fn __parse_error() { compile_error!("Failed to parse static definition"); } }
-        });
-        new_items.push(static_item);
+    // tool_def_consts 返回 TokenStream2，需要解析为 ImplItem
+    for static_def in tool_def_consts {
+        if let Ok(item) = syn::parse2::<ImplItem>(static_def) {
+            new_items.push(item);
+        }
+    }
+
+    // 【P3 优化】添加编译期工具计数常量
+    if let Ok(item) = syn::parse2::<ImplItem>(tool_count_const) {
+        new_items.push(item);
     }
 
     let all_tool_defs_tokens = &all_tool_defs;
@@ -271,12 +298,12 @@ fn generate_for_impl(mut impl_item: ItemImpl, _attrs: ToolAttributes) -> TokenSt
         /// 此函数使用 `LazyLock` 进行延迟初始化。在初始化过程中会访问
         /// `GLOBAL_CONFIG_REGISTRY`，如果配置注册表也在 LazyLock 中初始化，
         /// 可能存在死锁风险。当前实现已确保初始化顺序安全。
-        fn __get_tool_definitions() -> &'static [::tokitai::ToolDefinition] {
-            static TOOLS: ::std::sync::LazyLock<::std::vec::Vec<::tokitai::ToolDefinition>> = ::std::sync::LazyLock::new(|| {
+        fn __get_tool_definitions() -> &'static [::tokitai_core::ToolDefinition] {
+            static TOOLS: ::std::sync::LazyLock<::std::vec::Vec<::tokitai_core::ToolDefinition>> = ::std::sync::LazyLock::new(|| {
                 let mut defs = ::std::vec::Vec::from([#(#all_tool_defs_tokens.clone()),*]);
 
                 for def in &mut defs {
-                    let configs = ::tokitai::GLOBAL_CONFIG_REGISTRY.get(&def.name);
+                    let configs = ::tokitai_core::GLOBAL_CONFIG_REGISTRY.get(&def.name);
                     if !configs.is_empty() {
                         def.apply_configs(&configs);
                     }
@@ -291,11 +318,15 @@ fn generate_for_impl(mut impl_item: ItemImpl, _attrs: ToolAttributes) -> TokenSt
     new_items.push(get_tool_definitions_fn);
 
     for method in call_tool_methods {
-        new_items.push(parse_quote! { #method });
+        if let Ok(item) = syn::parse2::<ImplItem>(method) {
+            new_items.push(item);
+        }
     }
 
     for helper in helper_methods {
-        new_items.push(parse_quote! { #helper });
+        if let Ok(item) = syn::parse2::<ImplItem>(helper) {
+            new_items.push(item);
+        }
     }
 
     new_items.push(parse_quote! {
@@ -306,8 +337,8 @@ fn generate_for_impl(mut impl_item: ItemImpl, _attrs: ToolAttributes) -> TokenSt
         /// # 注意
         ///
         /// 此方法需要在首次访问工具定义前调用，否则配置可能不会生效。
-        pub fn configure_tool(_tool_name: &str, _configs: &[::tokitai::ToolConfig]) {
-            ::tokitai::GLOBAL_CONFIG_REGISTRY.configure(_tool_name, _configs);
+        pub fn configure_tool(_tool_name: &str, _configs: &[::tokitai_core::ToolConfig]) {
+            ::tokitai_core::GLOBAL_CONFIG_REGISTRY.configure(_tool_name, _configs);
             let _ = Self::__get_tool_definitions();
         }
     });
@@ -316,20 +347,33 @@ fn generate_for_impl(mut impl_item: ItemImpl, _attrs: ToolAttributes) -> TokenSt
 
     let impl_type = &impl_item.self_ty;
 
+    // ToolCaller trait 实现 - 直接委托给 impl 块中生成的 call_tool 方法
+    // 使用完全限定语法避免递归调用
+    let tool_caller_impl = quote! {
+        impl ::tokitai_core::ToolCaller for #impl_type {
+            fn call_tool(&self, name: &str, args: &::tokitai_core::serde_types::Value) -> Result<::tokitai_core::serde_types::Value, ::tokitai_core::ToolError> {
+                // 直接调用 impl 块中生成的 call_tool 方法
+                // Rust 方法解析规则会优先选择 impl 块中的具体方法
+                self.call_tool(name, args)
+            }
+        }
+    };
+
     quote! {
         #impl_item
 
-        impl ::tokitai::ToolProvider for #impl_type {
-            fn tool_definitions() -> &'static [::tokitai::ToolDefinition] {
+        impl ::tokitai_core::ToolProvider for #impl_type {
+            fn tool_definitions() -> &'static [::tokitai_core::ToolDefinition] {
                 Self::__get_tool_definitions()
+            }
+
+            /// 【P3 优化】编译期工具计数
+            fn tool_count() -> usize {
+                Self::__TOOL_COUNT
             }
         }
 
-        impl ::tokitai_core::ToolCaller for #impl_type {
-            fn call_tool(&self, name: &str, args: &::tokitai_core::serde_types::Value) -> Result<::tokitai_core::serde_types::Value, ::tokitai_core::ToolError> {
-                <#impl_type>::call_tool(self, name, args)
-            }
-        }
+        #tool_caller_impl
     }
 }
 

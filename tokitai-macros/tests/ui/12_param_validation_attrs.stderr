@@ -1,0 +1,29 @@
+error: expected non-macro attribute, found attribute macro `param_tool`
+  --> tests/ui/12_param_validation_attrs.rs:15:11
+   |
+15 |         #[param_tool(desc = "用户名，3-20 个字符", min_length = 3, max_length = 20)]
+   |           ^^^^^^^^^^ not a non-macro attribute
+
+error: expected non-macro attribute, found attribute macro `param_tool`
+  --> tests/ui/12_param_validation_attrs.rs:17:11
+   |
+17 |         #[param_tool(desc = "邮箱地址", pattern = "@")]
+   |           ^^^^^^^^^^ not a non-macro attribute
+
+error: expected non-macro attribute, found attribute macro `param_tool`
+  --> tests/ui/12_param_validation_attrs.rs:19:11
+   |
+19 |         #[param_tool(desc = "年龄", min = 0, max = 150)]
+   |           ^^^^^^^^^^ not a non-macro attribute
+
+error: expected non-macro attribute, found attribute macro `param_tool`
+  --> tests/ui/12_param_validation_attrs.rs:21:11
+   |
+21 |         #[param_tool(desc = "可选的备注", default = "无备注")]
+   |           ^^^^^^^^^^ not a non-macro attribute
+
+error: expected non-macro attribute, found attribute macro `param_tool`
+  --> tests/ui/12_param_validation_attrs.rs:30:11
+   |
+30 |         #[param_tool(transform = "value.to_lowercase()")]
+   |           ^^^^^^^^^^ not a non-macro attribute

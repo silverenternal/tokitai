@@ -1,0 +1,16 @@
+error[E0599]: no method named `method_without_self` found for reference `&NoSelfTools` in the current scope
+  --> tests/ui/07_missing_self_param.rs:8:1
+   |
+ 8 | #[tool]
+   | ^^^^^^^
+   | |
+   | this is an associated function, not a method
+   | help: use associated function syntax instead: `NoSelfTools::method_without_self(a, b)`
+   |
+   = note: found the following associated functions; to be used as methods, functions must have a `self` parameter
+note: the candidate is defined in an impl for the type `NoSelfTools`
+  --> tests/ui/07_missing_self_param.rs:11:5
+   |
+11 |     pub fn method_without_self(a: i32, b: i32) -> i32 {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: this error originates in the attribute macro `tool` (in Nightly builds, run with -Z macro-backtrace for more info)

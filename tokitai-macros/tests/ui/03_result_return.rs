@@ -10,6 +10,7 @@ pub enum MathError {
     DivisionByZero,
 }
 
+#[derive(Default)]
 pub struct MathService;
 
 #[tool]

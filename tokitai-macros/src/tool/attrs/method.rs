@@ -15,10 +15,16 @@ use crate::tool::types::param::ParamToolAttrs;
 ///
 /// 注意：当前版本中 `name` 和 `description` 字段暂未使用
 /// 保留这些字段是为了未来扩展（如工具注册表功能）
+///
+/// TODO(#42): 实现工具注册表功能，届时将使用这些字段
+/// 计划：https://github.com/silverenternal/tokitai/issues/42
+/// 预计实现：v0.5.0 (2026 Q2)
 #[derive(Default)]
 pub struct ToolAttributes {
+    /// 工具名称（保留用于 v0.5.0 的工具注册表功能）
     #[allow(dead_code)]
     pub name: Option<String>,
+    /// 工具描述（保留用于 v0.5.0 的工具注册表功能）
     #[allow(dead_code)]
     pub description: Option<String>,
 }
@@ -27,6 +33,11 @@ impl Parse for ToolAttributes {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let mut name = None;
         let mut description = None;
+
+        // 支持空输入（impl 块级别的 #[tool] 不需要参数）
+        if input.is_empty() {
+            return Ok(ToolAttributes { name, description });
+        }
 
         while !input.is_empty() {
             let key: Ident = input.parse()?;

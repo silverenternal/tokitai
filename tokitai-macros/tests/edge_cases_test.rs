@@ -8,7 +8,7 @@ use tokitai::tool;
 // multiple_of 边界测试
 // ========================================
 
-#[tool]
+#[derive(Default)]
 pub struct MultipleOfTools;
 
 #[tool]
@@ -83,7 +83,7 @@ fn test_multiple_of_edge_cases() {
 // 空字符串验证测试
 // ========================================
 
-#[tool]
+#[derive(Default)]
 pub struct ValidateMsgTools;
 
 #[tool]
@@ -142,7 +142,7 @@ fn test_empty_string_validation() {
 // 组合验证测试
 // ========================================
 
-#[tool]
+#[derive(Default)]
 pub struct CombinedTools;
 
 #[tool]
@@ -215,7 +215,7 @@ fn test_combined_validation() {
 // Option 类型边界测试
 // ========================================
 
-#[tool]
+#[derive(Default)]
 pub struct OptionTools;
 
 #[tool]
@@ -260,7 +260,7 @@ fn test_option_multiple_of() {
 // 数值边界测试
 // ========================================
 
-#[tool]
+#[derive(Default)]
 pub struct NumericBoundaryTools;
 
 #[tool]

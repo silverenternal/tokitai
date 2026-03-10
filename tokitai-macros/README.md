@@ -23,7 +23,7 @@ Tokitai Macros 提供了 `#[tool]` 过程宏，用于在编译期自动生成 AI
 
 ```toml
 [dependencies]
-tokitai = "0.3.3"
+tokitai = "0.4.0"
 ```
 
 **注意**：通常你不需要直接添加 `tokitai-macros` 依赖，它通过 `tokitai` crate 自动引入。
@@ -49,10 +49,10 @@ impl Calculator {
 }
 
 // 使用
-let calc = Calculator;
+let calc = Calculator::default();
 
 // 获取工具定义（编译期生成）
-let tools = Calculator::TOOL_DEFINITIONS;
+let tools = Calculator::tool_definitions();
 println!("工具数量：{}", tools.len());
 
 // 调用工具
@@ -145,22 +145,24 @@ impl MyTools {
 对于每个 `#[tool]` impl 块，宏生成：
 
 ```rust
-// 1. 工具定义常量
+// 1. 工具定义方法
 impl Calculator {
-    pub const TOOL_DEFINITIONS: &'static [ToolDefinition] = &[
-        ToolDefinition {
-            name: "add",
-            description: "两个数相加",
-            input_schema: "{\"type\":\"object\",\"properties\":{\"a\":{\"type\":\"integer\"},\"b\":{\"type\":\"integer\"}},\"required\":[\"a\",\"b\"]}",
-        },
-        // ... 更多工具
-    ];
+    pub fn tool_definitions() -> &'static [ToolDefinition] {
+        &[
+            ToolDefinition {
+                name: "add",
+                description: "两个数相加",
+                input_schema: "{\"type\":\"object\",\"properties\":{\"a\":{\"type\":\"integer\"},\"b\":{\"type\":\"integer\"}},\"required\":[\"a\",\"b\"]}",
+            },
+            // ... 更多工具
+        ]
+    }
 }
 
 // 2. ToolProvider trait 实现
 impl ToolProvider for Calculator {
     fn tool_definitions() -> &'static [ToolDefinition] {
-        Self::TOOL_DEFINITIONS
+        Self::tool_definitions()
     }
 }
 

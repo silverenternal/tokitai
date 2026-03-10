@@ -22,9 +22,9 @@ impl MyTools {
 
 ---
 
-**编译期 AI 工具定义 · 零运行时侵入 · 魔法贴纸式集成**
+**编译期 AI 工具定义 · 最小运行时依赖 · 魔法贴纸式集成**
 
-Tokitai 是一个零运行时依赖的过程宏库，只需一个 `#[tool]` 属性，即可将你的 Rust 方法自动转换为 AI 可调用的工具。所有工具定义在编译期生成，类型错误在编译时暴露。
+Tokitai 是一个过程宏库，只需一个 `#[tool]` 属性，即可将你的 Rust 方法自动转换为 AI 可调用的工具。所有工具定义在编译期生成，类型错误在编译时暴露。运行时仅需最小依赖（serde + serde_json），无额外开销。
 
 ## 🚀 5 分钟快速开始
 
@@ -32,8 +32,8 @@ Tokitai 是一个零运行时依赖的过程宏库，只需一个 `#[tool]` 属�
 
 ```toml
 [dependencies]
-tokitai = "0.3.3"
-tokitai-mcp-server = "0.1"  # 可选：MCP 服务器脚手架
+tokitai = "0.4.0"
+tokitai-mcp-server = "0.4"  # 可选：MCP 服务器脚手架
 tokio = { version = "1", features = ["full"] }
 serde_json = "1.0"
 ```
@@ -60,7 +60,7 @@ impl Calculator {
 ### 3. 获取工具定义
 
 ```rust
-let tools = Calculator::tool_definitions();
+let tools = Calculator::tool_definitions();  // v0.4.0+ 使用方法而非常量
 ```
 
 ### 4. 处理 AI 调用
@@ -132,7 +132,7 @@ cargo run --example quick_chat
 
 | 特性 | 说明 |
 |------|------|
-| **零依赖侵入** | 用户只需添加 `tokitai = "0.3.3"` |
+| **最小依赖侵入** | 用户只需添加 `tokitai = "0.4.0`，运行时仅需 serde + serde_json |
 | **编译期生成** | 工具定义在编译期生成，类型错误早发现 |
 | **单一属性** | 只需 `#[tool]`，无需多个标签 |
 | **类型安全** | Rust 类型自动映射到 JSON Schema |
@@ -147,6 +147,7 @@ cargo run --example quick_chat
 | `f32`, `f64` | `number` |
 | `bool` | `boolean` |
 | `Vec<T>` | `array` |
+| `Option<T>` | 可选 `T` |
 | 自定义 struct | `object` |
 
 ## 🔧 常用属性
@@ -198,7 +199,7 @@ Tokitai 由三个 crate 组成：
 **99% 的用户只需要：**
 ```toml
 [dependencies]
-tokitai = "0.3.3"
+tokitai = "0.4.0"
 ```
 
 ## ⚙️ 要求
@@ -224,9 +225,16 @@ at your option.
 更多示例见 [examples 目录](examples/)：
 
 - `basic_usage.rs` - 基础使用示例
-- `quick_chat.rs` - 交互式数学计算器
-- `version_management.rs` - 版本管理属性演示
+- `advanced_types.rs` - 高级类型和功能完整演示
+- `mcp_server_demo.rs` - MCP 服务器示例
+- `mcp_http_server.rs` - HTTP 服务器示例
 - `ollama_integration.rs` - Ollama AI 集成
+
+## 🔒 API 稳定承诺
+
+Tokitai 遵循 [语义化版本](https://semver.org/)，详细的 API 稳定政策见 [API 稳定承诺](docs/API_STABILITY.md)。
+
+**当前状态**: v0.4.x 系列 - 核心 API 已稳定，v1.0.0 计划中。
 
 ---
 

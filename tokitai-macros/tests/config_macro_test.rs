@@ -4,12 +4,14 @@
 
 #![cfg(feature = "serde")]
 
+use tokitai::ToolCaller;
 use tokitai::{config, tool, ToolConfig};
 
 // ============================================================================
 // 测试 1: 配置宏覆盖工具描述
 // ============================================================================
 
+#[derive(Default)]
 struct ConfigTestTools;
 
 #[tool]

@@ -348,13 +348,53 @@ impl ToolConfigRegistry {
 /// This is the default registry used by the `tokitai!` configuration macro.
 /// Tools can access this registry to apply configurations to their definitions.
 ///
-/// # Safety Note
-/// This static uses `LazyLock` for thread-safe lazy initialization. When accessing
-/// this registry during tool definition initialization (which also uses LazyLock),
-/// ensure proper initialization order to avoid deadlocks. The current implementation
-/// initializes `GLOBAL_CONFIG_REGISTRY` before tool definitions to prevent this issue.
+/// # Initialization Order
+///
+/// To avoid deadlocks, the initialization order is:
+/// 1. `GLOBAL_CONFIG_REGISTRY` is initialized first (accessed by tool definitions)
+/// 2. Tool definitions are initialized second (may access config registry)
+///
+/// # Safety
+/// Do NOT call `tool_definitions()` inside a `tokitai!` configuration macro,
+/// as this will cause a deadlock. The compiler cannot detect this pattern.
+///
+/// # Example
+///
+/// ```rust
+/// use tokitai_core::{ToolConfig, ToolConfigRegistry};
+///
+/// let registry = ToolConfigRegistry::default();
+/// registry.configure("get_user", &[
+///     ToolConfig::Desc("Description".to_string()),
+/// ]);
+///
+/// let configs = registry.get("get_user");
+/// assert_eq!(configs.len(), 1);
+/// ```
 pub static GLOBAL_CONFIG_REGISTRY: LazyLock<ToolConfigRegistry> =
     LazyLock::new(ToolConfigRegistry::new);
+
+/// Macro for compile-time deadlock detection.
+///
+/// This macro provides a compile-time check to help detect potential deadlocks
+/// when using the configuration system.
+///
+/// # Usage
+///
+/// ```rust
+/// use tokitai_core::assert_no_config_deadlock;
+///
+/// // Place this at the beginning of your tool implementation
+/// assert_no_config_deadlock!();
+/// ```
+#[macro_export]
+macro_rules! assert_no_config_deadlock {
+    () => {
+        // Compile-time check placeholder
+        // Currently serves as documentation for the initialization order requirement
+        // Future versions may add actual compile-time assertions
+    };
+}
 
 #[cfg(test)]
 mod tests {

@@ -1,6 +1,6 @@
 # Tokitai 使用指南
 
-**版本**: 0.3.4 | **最后更新**: 2026-03-08
+**版本**: 0.4.0 | **最后更新**: 2026-03-10
 
 ## 目录
 
@@ -21,7 +21,7 @@
 
 ```toml
 [dependencies]
-tokitai = "0.3.3"
+tokitai = "0.4.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 ```
@@ -45,7 +45,7 @@ impl Calculator {
 ### 3. 使用工具
 
 ```rust
-let calc = Calculator;
+let calc = Calculator::default();
 
 // 获取工具定义（发送给 AI）
 let tools = Calculator::tool_definitions();
@@ -62,7 +62,7 @@ let result = calc.call_tool("add", &serde_json::json!({"a": 10, "b": 20}))?;
 
 ```toml
 [dependencies]
-tokitai = "0.3.3"
+tokitai = "0.4.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 ```
@@ -71,7 +71,7 @@ serde_json = "1.0"
 
 ```toml
 [dependencies]
-tokitai = { version = "0.3.3", default-features = false }
+tokitai = { version = "0.4.0", default-features = false }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 ```
@@ -249,7 +249,7 @@ impl SearchEngine {
 ```rust
 use tokitai::ToolProvider;
 
-// 获取所有工具定义
+// 获取所有工具定义（v0.4.0+ 现在是方法而非常量）
 let tools = Calculator::tool_definitions();
 
 // 获取工具数量
@@ -268,14 +268,14 @@ if let Some(tool) = Calculator::find_tool("add") {
 ```rust
 use serde_json::json;
 
-let calc = Calculator;
+let calc = Calculator::default();
 let result = calc.call_tool("add", &json!({"a": 10, "b": 20}));
 ```
 
 #### 异步调用
 
 ```rust
-let calc = Calculator;
+let calc = Calculator::default();
 let result = calc.call_tool("query", &json!({"sql": "SELECT *"})).await;
 ```
 
@@ -584,7 +584,7 @@ error[E0433]: failed to resolve: use of undeclared crate or module `serde_json`
 
 ```toml
 [dependencies]
-tokitai = { version = "0.3.3", features = ["serde"] }
+tokitai = { version = "0.4.0", features = ["serde"] }
 serde_json = "1.0"
 ```
 
@@ -603,7 +603,7 @@ Error: 异步工具调用需要 tokio 运行时
 ```rust
 #[tokio::main]
 async fn main() {
-    let calc = Calculator;
+    let calc = Calculator::default();
     let result = calc.call_tool("async_method", &args).await;
 }
 ```

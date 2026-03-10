@@ -124,3 +124,12 @@ pub fn generate_all_tool_defs_array(
 
     defs
 }
+
+/// 【P3 优化】生成编译期工具计数常量
+pub fn generate_tool_count_const(tools: &[ToolMethodInfo]) -> TokenStream2 {
+    let tool_count = tools.len() + tools.iter().flat_map(|t| t.alias.iter()).count();
+    quote! {
+        #[allow(dead_code)]
+        const __TOOL_COUNT: usize = #tool_count;
+    }
+}
