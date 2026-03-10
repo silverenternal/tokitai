@@ -1,0 +1,40 @@
+//! 工具方法信息数据结构
+
+use serde_json::Value;
+use syn::ReturnType;
+
+use super::param::{ParamInfo, ParamToolAttrs};
+
+/// 工具方法信息
+#[allow(dead_code)]
+pub struct ToolMethodInfo {
+    pub name: String,
+    pub tool_name: String,
+    pub description: String,
+    pub params: Vec<ParamInfo>,
+    pub is_async: bool,
+    pub is_result: bool,
+    pub is_generic: bool,
+    pub deprecated: bool,
+    pub replaced_by: Option<String>,
+    pub deprecated_note: Option<String>,
+    pub deprecated_since: Option<String>,
+    pub remove_in: Option<String>,
+    pub version: Option<String>,
+    pub visible: bool,
+    pub tags: Vec<String>,
+    pub group: Option<String>,
+    pub return_description: Option<String>,
+    pub context: Option<String>,
+    pub example_input: Option<Value>,
+    pub param_order: Option<Vec<String>>,
+    pub hidden_params: Vec<String>,
+    pub example_output: Option<String>,
+    pub return_type: ReturnType,
+    pub doc: Option<String>,
+    pub alias: Vec<String>,
+    pub allow: Vec<String>,
+    pub cache: Option<String>,
+    pub rate_limit: Option<String>,
+    pub param_validations: Vec<(String, ParamToolAttrs)>,
+}
