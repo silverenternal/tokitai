@@ -53,14 +53,14 @@ fn test_tool_definitions() {
 
 #[test]
 fn test_call_add() {
-    let calc = TestCalculator::default();
+    let calc = TestCalculator;
     let result = calc.call_tool("add", &json!({"a": 10, "b": 20})).unwrap();
     assert_eq!(result, json!(30));
 }
 
 #[test]
 fn test_call_multiply() {
-    let calc = TestCalculator::default();
+    let calc = TestCalculator;
     let result = calc
         .call_tool("multiply", &json!({"a": 6, "b": 7}))
         .unwrap();
@@ -69,7 +69,7 @@ fn test_call_multiply() {
 
 #[test]
 fn test_call_unknown_tool() {
-    let calc = TestCalculator::default();
+    let calc = TestCalculator;
     let result = calc.call_tool("unknown", &json!({}));
     assert!(result.is_err());
 }
@@ -88,7 +88,7 @@ fn test_mcp_tool_format() {
 
 #[tokio::test]
 async fn test_server_builder() {
-    let calc = TestCalculator::default();
+    let calc = TestCalculator;
     let _server = McpServerBuilder::with_tool(calc).with_port(9999).build();
 
     // 验证服务器创建成功
@@ -97,7 +97,7 @@ async fn test_server_builder() {
 
 #[tokio::test]
 async fn test_server_tools() {
-    let calc = TestCalculator::default();
+    let calc = TestCalculator;
     let server = McpServerBuilder::with_tool(calc).with_port(9998).build();
 
     // 验证工具列表
@@ -110,7 +110,7 @@ async fn test_server_tools() {
 
 #[tokio::test]
 async fn test_health_endpoint() {
-    let calc = TestCalculator::default();
+    let calc = TestCalculator;
     let server = McpServerBuilder::with_tool(calc)
         .with_tracing(false) // 禁用 tracing 避免重复初始化
         .build();
@@ -127,8 +127,8 @@ async fn test_health_endpoint() {
 #[tokio::test]
 async fn test_multi_tool_provider() {
     let mut provider = MultiToolProvider::new();
-    provider.add(TestCalculator::default());
-    provider.add(TestTextTools::default());
+    provider.add(TestCalculator);
+    provider.add(TestTextTools);
 
     // 验证工具定义
     let tools = provider.tool_definitions();
@@ -148,8 +148,8 @@ async fn test_multi_tool_call() {
     use tokitai_core::ToolCaller;
 
     let mut provider = MultiToolProvider::new();
-    provider.add(TestCalculator::default());
-    provider.add(TestTextTools::default());
+    provider.add(TestCalculator);
+    provider.add(TestTextTools);
 
     // 测试调用计算器工具
     let result = provider
@@ -171,8 +171,8 @@ async fn test_multi_tool_call() {
 #[tokio::test]
 async fn test_server_with_multi_tool_provider() {
     let mut provider = MultiToolProvider::new();
-    provider.add(TestCalculator::default());
-    provider.add(TestTextTools::default());
+    provider.add(TestCalculator);
+    provider.add(TestTextTools);
 
     let server = McpServerBuilder::with_tool(provider)
         .with_port(9997)

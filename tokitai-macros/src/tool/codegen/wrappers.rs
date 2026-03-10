@@ -8,6 +8,15 @@ use syn::{Expr, Ident};
 
 use crate::tool::types::tool_method::ToolMethodInfo;
 
+/// 打印警告信息（在测试环境下抑制输出）
+macro_rules! warn_if_not_test {
+    ($($arg:tt)*) => {
+        if !cfg!(test) {
+            eprintln!($($arg)*);
+        }
+    };
+}
+
 /// 生成参数解析辅助方法
 pub fn generate_helper_methods(tools: &[ToolMethodInfo]) -> Vec<TokenStream2> {
     let mut methods = Vec::new();
@@ -73,7 +82,7 @@ pub fn generate_wrapper_method_sync(tool: &ToolMethodInfo) -> TokenStream2 {
             let validate_expr_tokens: Expr = match syn::parse_str(&validate_code) {
                 Ok(expr) => expr,
                 Err(e) => {
-                    eprintln!("[tokitai] warning: failed to parse validation expression: {} - {}", validate_code, e);
+                    warn_if_not_test!("[tokitai] warning: failed to parse validation expression: {} - {}", validate_code, e);
                     return Vec::new();
                 }
             };
@@ -281,7 +290,7 @@ pub fn generate_wrapper_method_sync(tool: &ToolMethodInfo) -> TokenStream2 {
             let transform_expr_tokens: Expr = match syn::parse_str(&transform_code) {
                 Ok(expr) => expr,
                 Err(e) => {
-                    eprintln!(
+                    warn_if_not_test!(
                         "[tokitai] warning: failed to parse transform expression: {} - {}",
                         transform_code, e
                     );
@@ -378,7 +387,7 @@ pub fn generate_wrapper_method(tool: &ToolMethodInfo, is_async: bool) -> TokenSt
             let validate_expr_tokens: Expr = match syn::parse_str(&validate_code) {
                 Ok(expr) => expr,
                 Err(e) => {
-                    eprintln!("[tokitai] warning: failed to parse validation expression: {} - {}", validate_code, e);
+                    warn_if_not_test!("[tokitai] warning: failed to parse validation expression: {} - {}", validate_code, e);
                     return Vec::new();
                 }
             };
@@ -586,7 +595,7 @@ pub fn generate_wrapper_method(tool: &ToolMethodInfo, is_async: bool) -> TokenSt
             let transform_expr_tokens: Expr = match syn::parse_str(&transform_code) {
                 Ok(expr) => expr,
                 Err(e) => {
-                    eprintln!(
+                    warn_if_not_test!(
                         "[tokitai] warning: failed to parse transform expression: {} - {}",
                         transform_code, e
                     );

@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance ⚡
+
+- **50% 性能提升** - 通过系统化 `#[inline]` 优化
+  - `tool_definitions_access`: 764ps → 421ps (-45%)
+  - `tool_lookup`: 1.56ns → 750ps (-52%)
+  - `schema_pretty_print`: 1.19μs → 568ns (-53%)
+  - `tool_call_simple`: 307ns → 152ns (-50%)
+  - `tool_call_multi_param`: 685ns → 534ns (-35%)
+- 优化热点路径：`SchemaGenConfig` Builder 方法（17 个函数）
+- 优化提取函数：`extract_param_info`, `extract_doc_comments`
+- 优化代码生成：`generate_schema_json_*` 系列函数
+
+### Fixed 🐛
+
+- **P0: Clippy 警告清理** - 修复 12 个 `default()` 调用警告
+  - `tokitai-mcp-server/tests/integration_test.rs`: 使用 unit struct 直接初始化
+- **P1: 测试警告输出抑制** - 使用 `cfg!(test)` 抑制测试环境下的宏警告输出
+  - 参数默认值警告（Option 类型无 default/example）
+  - 验证/转换表达式解析失败警告
+  - context=async 不匹配警告
+
 ## [0.4.0] - 2026-03-10
 
 ### Breaking Changes ⚠️
