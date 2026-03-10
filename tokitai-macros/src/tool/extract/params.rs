@@ -11,6 +11,7 @@ use super::docs::{
 use crate::tool::types::param::{ParamInfo, ParamToolAttrs};
 
 /// 从函数签名提取参数
+#[inline]
 pub fn extract_params(
     inputs: &Punctuated<FnArg, token::Comma>,
     fn_attrs: &[syn::Attribute],
@@ -347,6 +348,7 @@ fn parse_literal_to_json(lit: &Lit) -> Option<serde_json::Value> {
 }
 
 /// 检查类型是否为 Option
+#[inline]
 pub fn is_option_type(ty: &Type) -> bool {
     if let Type::Path(path) = ty {
         if let Some(segment) = path.path.segments.first() {
@@ -357,6 +359,7 @@ pub fn is_option_type(ty: &Type) -> bool {
 }
 
 /// 检查返回类型是否为 Result
+#[inline]
 pub fn is_result_type(output: &syn::ReturnType) -> bool {
     match output {
         syn::ReturnType::Type(_, ty) => {

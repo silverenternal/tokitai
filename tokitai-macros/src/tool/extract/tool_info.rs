@@ -11,6 +11,7 @@ use crate::tool::types::param::ParamToolAttrs;
 use crate::tool::types::tool_method::ToolMethodInfo;
 
 /// 收集所有被标记为工具的方法
+#[inline]
 pub fn collect_tool_methods(impl_item: &ItemImpl) -> Vec<ToolMethodInfo> {
     let mut tools = Vec::new();
 

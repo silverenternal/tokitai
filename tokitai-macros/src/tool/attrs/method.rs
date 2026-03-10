@@ -12,9 +12,14 @@ use super::param::{
 use crate::tool::types::param::ParamToolAttrs;
 
 /// impl 块级别的工具属性
+///
+/// 注意：当前版本中 `name` 和 `description` 字段暂未使用
+/// 保留这些字段是为了未来扩展（如工具注册表功能）
 #[derive(Default)]
 pub struct ToolAttributes {
+    #[allow(dead_code)]
     pub name: Option<String>,
+    #[allow(dead_code)]
     pub description: Option<String>,
 }
 

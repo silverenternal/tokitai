@@ -16,6 +16,7 @@ use syn::{Expr, Lit, Meta};
 ///
 /// 注意：此函数仅保留原始文本，不进行 Markdown 解析（如转换为 HTML）。
 /// 如需完整的 Markdown 支持，建议使用 pulldown-cmark 等外部库。
+#[inline]
 pub fn extract_doc_comment(attrs: &[syn::Attribute]) -> Option<String> {
     let mut doc_lines = Vec::new();
     let mut in_code_block = false;

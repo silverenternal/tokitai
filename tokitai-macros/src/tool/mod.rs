@@ -191,7 +191,8 @@ fn generate_for_impl(mut impl_item: ItemImpl, _attrs: ToolAttributes) -> TokenSt
     }
 
     for tool in &tool_methods {
-        if tool.deprecated
+        if !cfg!(test)
+            && tool.deprecated
             && tool.replaced_by.is_none()
             && !tool
                 .allow
@@ -210,22 +211,27 @@ fn generate_for_impl(mut impl_item: ItemImpl, _attrs: ToolAttributes) -> TokenSt
                 && param.example.is_none()
                 && !tool.allow.contains(&"option_no_default".to_string())
             {
-                let display_name = &param.schema_name;
-                eprintln!(
-                    "[tokitai] warning: parameter `{}` is optional (Option type) without default or example\n\
-                     → AI may not know this parameter can be omitted, which may cause call failures\n\
-                     \n\
-                     Suggested fixes (choose one):\n\
-                     1. #[tool(default_{} = \"null\")]      # Add default value\n\
-                     2. #[tool(example_{} = \"null\")]      # Add example\n\
-                     3. Make it required: `{}: Option<T>` → `{}: T`",
-                    display_name, display_name, display_name,
-                    display_name, display_name
-                );
+                // 在测试环境下抑制警告输出，避免污染测试输出
+                if !cfg!(test) {
+                    let display_name = &param.schema_name;
+                    eprintln!(
+                        "[tokitai] warning: parameter `{}` is optional (Option type) without default or example\n\
+                         → AI may not know this parameter can be omitted, which may cause call failures\n\
+                         \n\
+                         Suggested fixes (choose one):\n\
+                         1. #[tool(default_{} = \"null\")]      # Add default value\n\
+                         2. #[tool(example_{} = \"null\")]      # Add example\n\
+                         3. Make it required: `{}: Option<T>` → `{}: T`",
+                        display_name, display_name, display_name,
+                        display_name, display_name
+                    );
+                }
             }
         }
 
-        if tool.context.as_deref() == Some("async")
+        // 在测试环境下抑制警告输出，避免污染测试输出
+        if !cfg!(test)
+            && tool.context.as_deref() == Some("async")
             && !tool.is_async
             && !tool.allow.contains(&"context_async_mismatch".to_string())
         {

@@ -399,34 +399,5 @@ pub struct ParamInfo {
     pub validate_msg_en: Option<String>,
 }
 
-impl ParamInfo {
-    /// 创建新的 ParamInfo
-    pub fn new(name: Ident, ty: Type) -> Self {
-        let schema_name = name.to_string();
-        Self {
-            name,
-            schema_name,
-            ty,
-            description: None,
-            is_option: false,
-            is_required: false,
-            example: None,
-            default: None,
-            validate: None,
-            transform: None,
-            one_of: None,
-            enum_values: None,
-            pattern: None,
-            min: None,
-            max: None,
-            min_length: None,
-            max_length: None,
-            min_items: None,
-            max_items: None,
-            multiple_of: None,
-            validate_msg: None,
-            validate_msg_zh: None,
-            validate_msg_en: None,
-        }
-    }
-}
+// Note: ParamInfo::new() has been removed to reduce dead code.
+// ParamInfo instances are created directly using struct initialization syntax.

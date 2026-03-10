@@ -28,6 +28,7 @@ pub struct SchemaGenConfig<'a> {
 }
 
 impl<'a> SchemaGenConfig<'a> {
+    #[inline]
     pub fn new(params: &'a [ParamInfo]) -> Self {
         Self {
             params,
@@ -48,71 +49,85 @@ impl<'a> SchemaGenConfig<'a> {
         }
     }
 
+    #[inline]
     pub(crate) fn deprecated(mut self, val: bool) -> Self {
         self.deprecated = val;
         self
     }
 
+    #[inline]
     pub(crate) fn replaced_by(mut self, val: Option<&'a str>) -> Self {
         self.replaced_by = val;
         self
     }
 
+    #[inline]
     pub(crate) fn context(mut self, val: Option<&'a str>) -> Self {
         self.context = val;
         self
     }
 
+    #[inline]
     pub(crate) fn tags(mut self, val: &'a [String]) -> Self {
         self.tags = val;
         self
     }
 
+    #[inline]
     pub(crate) fn return_description(mut self, val: Option<&'a str>) -> Self {
         self.return_description = val;
         self
     }
 
+    #[inline]
     pub(crate) fn example_input(mut self, val: Option<&'a serde_json::Value>) -> Self {
         self.example_input = val;
         self
     }
 
+    #[inline]
     pub(crate) fn param_order(mut self, val: Option<&'a [String]>) -> Self {
         self.param_order = val;
         self
     }
 
+    #[inline]
     pub(crate) fn example_output(mut self, val: Option<&'a str>) -> Self {
         self.example_output = val;
         self
     }
 
+    #[inline]
     pub(crate) fn deprecated_note(mut self, val: Option<&'a str>) -> Self {
         self.deprecated_note = val;
         self
     }
 
+    #[inline]
     pub(crate) fn deprecated_since(mut self, val: Option<&'a str>) -> Self {
         self.deprecated_since = val;
         self
     }
 
+    #[inline]
     pub(crate) fn remove_in(mut self, val: Option<&'a str>) -> Self {
         self.remove_in = val;
         self
     }
 
+    #[inline]
     pub(crate) fn group(mut self, val: Option<&'a str>) -> Self {
         self.group = val;
         self
     }
 
+    #[inline]
     pub(crate) fn cache(mut self, val: Option<&'a str>) -> Self {
         self.cache = val;
         self
     }
 
+    #[inline]
     pub(crate) fn rate_limit(mut self, val: Option<&'a str>) -> Self {
         self.rate_limit = val;
         self
@@ -129,6 +144,7 @@ impl<'a> SchemaGenConfig<'a> {
 }
 
 /// 生成 JSON Schema（支持 deprecated、tags、return_description、example_input、param_order、example_output、deprecated_note、deprecated_since、remove_in、group）
+#[inline]
 pub fn generate_schema_json_with_deprecated_and_tags(config: &SchemaGenConfig) -> String {
     let mut properties: BTreeMap<String, JsonSchema> = BTreeMap::new();
     let mut required = Vec::new();
@@ -314,6 +330,7 @@ pub fn generate_schema_json_with_deprecated_and_tags(config: &SchemaGenConfig) -
 
 /// 生成 JSON Schema（向后兼容的旧函数）
 #[allow(dead_code)]
+#[inline]
 pub fn generate_schema_json(params: &[ParamInfo]) -> String {
     generate_schema_json_with_deprecated_and_tags(&SchemaGenConfig::new(params))
 }
