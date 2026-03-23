@@ -137,6 +137,46 @@ cargo run --example quick_chat
 | **单一属性** | 只需 `#[tool]`，无需多个标签 |
 | **类型安全** | Rust 类型自动映射到 JSON Schema |
 | **供应商中立** | 支持任何 AI/LLM 提供商 |
+| **异步执行器** | 内置线程池、并发控制和超时机制 |
+
+## 🔥 新增：异步执行器 (v0.4.0+)
+
+Tokitai v0.4.0+ 引入了轻量级异步执行器包装器，优化 MCP 服务器性能：
+
+- **并发控制** - 限制同时执行的工具数量，防止服务器过载
+- **超时机制** - 自动终止执行时间过长的工具
+- **可选重试** - 配置重试策略（支持指数退避、超时重试）
+- **统计监控** - 实时跟踪执行器状态（P99 延迟、成功率）
+
+> **注意**: 这是 tokio 运行时的薄包装，不提供独立线程池。
+
+### 快速配置
+
+```toml
+[dependencies]
+tokitai = { version = "0.4.0", features = ["async"] }
+tokitai-mcp-server = { version = "0.4.0", features = ["async"] }
+```
+
+```rust
+use tokitai_mcp_server::{McpServerBuilder, McpServerConfig};
+
+let config = McpServerConfig::default()
+    .with_port(8080)
+    .with_async_params(
+        100,  // 最大并发
+        30,   // 超时 (秒)
+        3,    // 最大重试次数
+    );
+
+let server = McpServerBuilder::with_tool(MyTools::default())
+    .with_config(config)
+    .build();
+
+server.run().await.unwrap();
+```
+
+详细文档见 **[异步执行器指南](docs/ASYNC_USAGE.md)**。
 
 ## 📋 类型映射
 

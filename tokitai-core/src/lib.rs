@@ -137,6 +137,7 @@
 //! | Feature | Description |
 //! |---------|-------------|
 //! | `serde` (default) | Enable serde serialization and JSON support |
+//! | `async` | Enable async runtime support with thread pool |
 //!
 //! ## Requirements
 //!
@@ -1272,3 +1273,10 @@ mod tests {
         assert!(json.contains(r#""name":"test""#));
     }
 }
+
+// Async executor module (requires `async` feature)
+#[cfg(feature = "async")]
+pub mod executor;
+
+#[cfg(feature = "async")]
+pub use executor::{ExecutionError, ExecutionErrorKind, ToolExecutor, ExecutorStats};

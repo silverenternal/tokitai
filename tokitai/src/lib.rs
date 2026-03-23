@@ -246,5 +246,12 @@ pub use tokitai_macros::{
     tool_required, tool_transform, tool_type, tool_validate,
 };
 
+// Async executor (requires `async` feature)
+#[cfg(feature = "async")]
+pub use tokitai_core::executor;
+
+#[cfg(feature = "async")]
+pub use tokitai_core::{ExecutionError, ExecutionErrorKind, ToolExecutor, ExecutorStats};
+
 /// Library version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
