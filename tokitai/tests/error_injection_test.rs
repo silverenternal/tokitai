@@ -46,7 +46,7 @@ fn test_missing_required_param() {
     // 缺失必需参数 a
     let result = tools.call_tool("add", &json!({"b": 10}));
     assert!(result.is_err());
-    
+
     let err = result.unwrap_err();
     assert_eq!(err.kind, ToolErrorKind::ValidationError);
 }
@@ -118,7 +118,10 @@ fn test_null_for_optional_param() {
     let tools = ErrorTestTools;
 
     // null 作为可选参数 - 应该成功，被视为 None
-    let result = tools.call_tool("with_option", &json!({"required": "test", "optional": null}));
+    let result = tools.call_tool(
+        "with_option",
+        &json!({"required": "test", "optional": null}),
+    );
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), json!("test: None"));
 }
@@ -168,7 +171,7 @@ fn test_deeply_nested_json() {
     for _ in 0..100 {
         nested = json!({"nested": nested});
     }
-    
+
     // 尝试传入嵌套 JSON 作为参数
     let result = tools.call_tool("add", &nested);
     assert!(result.is_err());
@@ -184,7 +187,7 @@ fn test_unknown_tool() {
 
     let result = tools.call_tool("nonexistent_tool", &json!({}));
     assert!(result.is_err());
-    
+
     let err = result.unwrap_err();
     assert_eq!(err.kind, ToolErrorKind::NotFound);
 }

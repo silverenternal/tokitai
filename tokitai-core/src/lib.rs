@@ -340,11 +340,7 @@ impl ToolDefinition {
 
     /// Create a new tool definition (no_std version)
     #[cfg(not(feature = "serde"))]
-    pub fn new(
-        name: &'static str,
-        description: &'static str,
-        input_schema: &'static str,
-    ) -> Self {
+    pub fn new(name: &'static str, description: &'static str, input_schema: &'static str) -> Self {
         Self {
             name,
             description,
@@ -1017,7 +1013,9 @@ impl FromJsonValue for i64 {
         args.get(key)
             .ok_or_else(|| ToolError::validation_error(format!("缺少必需参数 '{}'", key)))?
             .as_i64()
-            .ok_or_else(|| ToolError::validation_error(format!("参数 '{}' 类型错误，期望 integer", key)))
+            .ok_or_else(|| {
+                ToolError::validation_error(format!("参数 '{}' 类型错误，期望 integer", key))
+            })
     }
 }
 
@@ -1029,7 +1027,9 @@ impl FromJsonValue for i32 {
             .ok_or_else(|| ToolError::validation_error(format!("缺少必需参数 '{}'", key)))?
             .as_i64()
             .map(|v| v as i32)
-            .ok_or_else(|| ToolError::validation_error(format!("参数 '{}' 类型错误，期望 integer", key)))
+            .ok_or_else(|| {
+                ToolError::validation_error(format!("参数 '{}' 类型错误，期望 integer", key))
+            })
     }
 }
 
@@ -1040,7 +1040,12 @@ impl FromJsonValue for u64 {
         args.get(key)
             .ok_or_else(|| ToolError::validation_error(format!("缺少必需参数 '{}'", key)))?
             .as_u64()
-            .ok_or_else(|| ToolError::validation_error(format!("参数 '{}' 类型错误，期望 unsigned integer", key)))
+            .ok_or_else(|| {
+                ToolError::validation_error(format!(
+                    "参数 '{}' 类型错误，期望 unsigned integer",
+                    key
+                ))
+            })
     }
 }
 
@@ -1052,7 +1057,12 @@ impl FromJsonValue for u32 {
             .ok_or_else(|| ToolError::validation_error(format!("缺少必需参数 '{}'", key)))?
             .as_u64()
             .map(|v| v as u32)
-            .ok_or_else(|| ToolError::validation_error(format!("参数 '{}' 类型错误，期望 unsigned integer", key)))
+            .ok_or_else(|| {
+                ToolError::validation_error(format!(
+                    "参数 '{}' 类型错误，期望 unsigned integer",
+                    key
+                ))
+            })
     }
 }
 
@@ -1063,7 +1073,9 @@ impl FromJsonValue for f64 {
         args.get(key)
             .ok_or_else(|| ToolError::validation_error(format!("缺少必需参数 '{}'", key)))?
             .as_f64()
-            .ok_or_else(|| ToolError::validation_error(format!("参数 '{}' 类型错误，期望 number", key)))
+            .ok_or_else(|| {
+                ToolError::validation_error(format!("参数 '{}' 类型错误，期望 number", key))
+            })
     }
 }
 
@@ -1075,7 +1087,9 @@ impl FromJsonValue for f32 {
             .ok_or_else(|| ToolError::validation_error(format!("缺少必需参数 '{}'", key)))?
             .as_f64()
             .map(|v| v as f32)
-            .ok_or_else(|| ToolError::validation_error(format!("参数 '{}' 类型错误，期望 number", key)))
+            .ok_or_else(|| {
+                ToolError::validation_error(format!("参数 '{}' 类型错误，期望 number", key))
+            })
     }
 }
 
@@ -1086,7 +1100,9 @@ impl FromJsonValue for bool {
         args.get(key)
             .ok_or_else(|| ToolError::validation_error(format!("缺少必需参数 '{}'", key)))?
             .as_bool()
-            .ok_or_else(|| ToolError::validation_error(format!("参数 '{}' 类型错误，期望 boolean", key)))
+            .ok_or_else(|| {
+                ToolError::validation_error(format!("参数 '{}' 类型错误，期望 boolean", key))
+            })
     }
 }
 
@@ -1098,7 +1114,9 @@ impl FromJsonValue for String {
             .ok_or_else(|| ToolError::validation_error(format!("缺少必需参数 '{}'", key)))?
             .as_str()
             .map(|s| s.to_string())
-            .ok_or_else(|| ToolError::validation_error(format!("参数 '{}' 类型错误，期望 string", key)))
+            .ok_or_else(|| {
+                ToolError::validation_error(format!("参数 '{}' 类型错误，期望 string", key))
+            })
     }
 }
 
@@ -1111,9 +1129,13 @@ pub fn from_json_value_str<'a>(
     key: &str,
 ) -> Result<&'a str, ToolError> {
     args.get(key)
-        .ok_or_else(|| ToolError::validation_error(format!("Missing required parameter '{}'", key)))?
+        .ok_or_else(|| {
+            ToolError::validation_error(format!("Missing required parameter '{}'", key))
+        })?
         .as_str()
-        .ok_or_else(|| ToolError::validation_error(format!("Parameter '{}' type error, expected string", key)))
+        .ok_or_else(|| {
+            ToolError::validation_error(format!("Parameter '{}' type error, expected string", key))
+        })
 }
 
 // ============== Option 实现 ==============
@@ -1132,7 +1154,8 @@ impl<T: FromJsonValue> FromJsonValue for Option<T> {
 impl<T: serde::de::DeserializeOwned> FromJsonValue for Vec<T> {
     #[inline(always)]
     fn from_json_value(args: &crate::serde_types::Value, key: &str) -> Result<Self, ToolError> {
-        let value = args.get(key)
+        let value = args
+            .get(key)
             .ok_or_else(|| ToolError::validation_error(format!("缺少必需参数 '{}'", key)))?;
         serde_json::from_value(value.clone())
             .map_err(|e| ToolError::validation_error(format!("参数 '{}' 类型错误：{}", key, e)))
@@ -1148,8 +1171,9 @@ pub fn from_json_value_generic<T: serde::de::DeserializeOwned>(
     args: &crate::serde_types::Value,
     key: &str,
 ) -> Result<T, ToolError> {
-    let value = args.get(key)
-        .ok_or_else(|| ToolError::validation_error(format!("Missing required parameter '{}'", key)))?;
+    let value = args.get(key).ok_or_else(|| {
+        ToolError::validation_error(format!("Missing required parameter '{}'", key))
+    })?;
     serde_json::from_value(value.clone())
         .map_err(|e| ToolError::validation_error(format!("Parameter '{}' type error: {}", key, e)))
 }
@@ -1159,10 +1183,12 @@ pub fn from_json_value_generic<T: serde::de::DeserializeOwned>(
 impl<V: serde::de::DeserializeOwned> FromJsonValue for std::collections::HashMap<String, V> {
     #[inline(always)]
     fn from_json_value(args: &crate::serde_types::Value, key: &str) -> Result<Self, ToolError> {
-        let value = args.get(key)
-            .ok_or_else(|| ToolError::validation_error(format!("Missing required parameter '{}'", key)))?;
-        serde_json::from_value(value.clone())
-            .map_err(|e| ToolError::validation_error(format!("Parameter '{}' type error: {}", key, e)))
+        let value = args.get(key).ok_or_else(|| {
+            ToolError::validation_error(format!("Missing required parameter '{}'", key))
+        })?;
+        serde_json::from_value(value.clone()).map_err(|e| {
+            ToolError::validation_error(format!("Parameter '{}' type error: {}", key, e))
+        })
     }
 }
 
@@ -1171,10 +1197,12 @@ impl<V: serde::de::DeserializeOwned> FromJsonValue for std::collections::HashMap
 impl<V: serde::de::DeserializeOwned> FromJsonValue for std::collections::BTreeMap<String, V> {
     #[inline(always)]
     fn from_json_value(args: &crate::serde_types::Value, key: &str) -> Result<Self, ToolError> {
-        let value = args.get(key)
-            .ok_or_else(|| ToolError::validation_error(format!("Missing required parameter '{}'", key)))?;
-        serde_json::from_value(value.clone())
-            .map_err(|e| ToolError::validation_error(format!("Parameter '{}' type error: {}", key, e)))
+        let value = args.get(key).ok_or_else(|| {
+            ToolError::validation_error(format!("Missing required parameter '{}'", key))
+        })?;
+        serde_json::from_value(value.clone()).map_err(|e| {
+            ToolError::validation_error(format!("Parameter '{}' type error: {}", key, e))
+        })
     }
 }
 

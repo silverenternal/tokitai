@@ -218,7 +218,9 @@
 //! - [`tokitai-macros`](https://crates.io/crates/tokitai-macros) - Procedural macros
 
 // Re-export core types (always available)
-pub use tokitai_core::{ParamType, ToolCaller, ToolDefinition, ToolError, ToolErrorKind, ToolProvider};
+pub use tokitai_core::{
+    ParamType, ToolCaller, ToolDefinition, ToolError, ToolErrorKind, ToolProvider,
+};
 
 // Re-export serde_json for convenience (users don't need to add extra dependency)
 pub use serde_json::{json, Map, Value};

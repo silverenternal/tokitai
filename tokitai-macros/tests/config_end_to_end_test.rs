@@ -92,9 +92,9 @@ fn test_config_tags() {
     let configs = tokitai::GLOBAL_CONFIG_REGISTRY.get("search");
 
     // 验证包含 Tags 配置
-    let has_tags = configs.iter().any(|c| {
-        matches!(c, ToolConfig::Tags(tags) if tags.contains(&"search".to_string()))
-    });
+    let has_tags = configs
+        .iter()
+        .any(|c| matches!(c, ToolConfig::Tags(tags) if tags.contains(&"search".to_string())));
     assert!(has_tags, "应该包含 Tags 配置");
 }
 
@@ -136,9 +136,9 @@ fn test_config_param_example() {
     let configs = tokitai::GLOBAL_CONFIG_REGISTRY.get("greet");
 
     // 验证包含 ParamExample 配置
-    let has_example = configs.iter().any(|c| {
-        matches!(c, ToolConfig::ParamExample { name, .. } if name == "name")
-    });
+    let has_example = configs
+        .iter()
+        .any(|c| matches!(c, ToolConfig::ParamExample { name, .. } if name == "name"));
     assert!(has_example, "应该包含 ParamExample 配置");
 }
 
@@ -201,9 +201,9 @@ fn test_config_multiple_methods() {
         .any(|c| matches!(c, ToolConfig::Desc(s) if s == "方法 2 配置描述"));
     assert!(has_desc2, "方法 2 应该包含 Desc 配置");
 
-    let has_tags2 = configs2.iter().any(|c| {
-        matches!(c, ToolConfig::Tags(tags) if tags.contains(&"custom".to_string()))
-    });
+    let has_tags2 = configs2
+        .iter()
+        .any(|c| matches!(c, ToolConfig::Tags(tags) if tags.contains(&"custom".to_string())));
     assert!(has_tags2, "方法 2 应该包含 Tags 配置");
 }
 
@@ -246,7 +246,7 @@ fn test_config_edge_cases() {
 
     // 验证有配置的方法
     assert!(tokitai::GLOBAL_CONFIG_REGISTRY.has_config("with_config_method"));
-    
+
     // 验证没有配置的方法
     assert!(!tokitai::GLOBAL_CONFIG_REGISTRY.has_config("no_config_method"));
 
@@ -259,9 +259,9 @@ fn test_config_edge_cases() {
         .any(|c| matches!(c, ToolConfig::Desc(s) if s == "有配置的方法"));
     assert!(has_desc);
 
-    let has_param_desc = configs.iter().any(|c| {
-        matches!(c, ToolConfig::ParamDesc { name, desc } if name == "x" && desc == "输入值")
-    });
+    let has_param_desc = configs.iter().any(
+        |c| matches!(c, ToolConfig::ParamDesc { name, desc } if name == "x" && desc == "输入值"),
+    );
     assert!(has_param_desc);
 
     // 注意：ParamExample 可能需要额外处理，这里只验证基本功能
@@ -311,9 +311,9 @@ fn test_config_with_deprecated() {
         .any(|c| matches!(c, ToolConfig::Desc(s) if s == "配置后的描述"));
     assert!(has_desc);
 
-    let has_tags = configs.iter().any(|c| {
-        matches!(c, ToolConfig::Tags(tags) if tags.contains(&"deprecated".to_string()))
-    });
+    let has_tags = configs
+        .iter()
+        .any(|c| matches!(c, ToolConfig::Tags(tags) if tags.contains(&"deprecated".to_string())));
     assert!(has_tags);
 }
 
@@ -325,10 +325,10 @@ fn test_config_with_deprecated() {
 fn test_registry_query() {
     // 使用之前定义的工具 - 注意测试执行顺序可能影响结果
     // 每个测试都应该独立，所以这里重新验证配置存在
-    
+
     // 验证 has_config 功能
     assert!(!tokitai::GLOBAL_CONFIG_REGISTRY.has_config("nonexistent"));
-    
+
     // 验证 get 返回空（对于不存在的配置）
     let nonexistent_configs = tokitai::GLOBAL_CONFIG_REGISTRY.get("nonexistent");
     assert!(nonexistent_configs.is_empty());
@@ -343,14 +343,14 @@ fn test_registry_clear() {
     // 创建一个临时工具用于测试清除功能
     #[derive(Default)]
     struct TempTools;
-    
+
     #[tool]
     impl TempTools {
         pub fn temp_method(&self) -> String {
             "temp".to_string()
         }
     }
-    
+
     config! {
         TempTools {
             temp_method: {
@@ -358,24 +358,21 @@ fn test_registry_clear() {
             }
         }
     }
-    
+
     // 触发配置初始化
     let _ = &*__CONFIG_INIT_TempTools;
-    
+
     // 验证配置存在
     assert!(tokitai::GLOBAL_CONFIG_REGISTRY.has_config("temp_method"));
-    
+
     // 清除特定配置
     tokitai::GLOBAL_CONFIG_REGISTRY.clear("temp_method");
     assert!(!tokitai::GLOBAL_CONFIG_REGISTRY.has_config("temp_method"));
-    
+
     // 重新配置
-    tokitai::GLOBAL_CONFIG_REGISTRY.configure(
-        "temp_method",
-        &[ToolConfig::desc("重新配置的描述")]
-    );
+    tokitai::GLOBAL_CONFIG_REGISTRY.configure("temp_method", &[ToolConfig::desc("重新配置的描述")]);
     assert!(tokitai::GLOBAL_CONFIG_REGISTRY.has_config("temp_method"));
-    
+
     // 清除所有配置
     tokitai::GLOBAL_CONFIG_REGISTRY.clear_all();
     assert!(!tokitai::GLOBAL_CONFIG_REGISTRY.has_config("temp_method"));

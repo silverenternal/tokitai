@@ -36,12 +36,12 @@ fn should_show_warnings() -> bool {
     if option_env!("TOKITAI_SHOW_WARNINGS").is_some() {
         return true;
     }
-    
+
     // 检查是否显式禁用了警告
     if option_env!("TOKITAI_QUIET").is_some() {
         return false;
     }
-    
+
     // 默认行为：显示警告
     // 用户可以通过设置 TOKITAI_QUIET=1 来禁用警告
     true
@@ -250,7 +250,10 @@ fn generate_for_impl(mut impl_item: ItemImpl, _attrs: ToolAttributes) -> TokenSt
                     "[tokitai] [W002] optional param `{}` lacks default/example",
                     display_name
                 );
-                eprintln!("  --> help: add `#[tool(default_{0} = \"null\")]`", display_name);
+                eprintln!(
+                    "  --> help: add `#[tool(default_{0} = \"null\")]`",
+                    display_name
+                );
             }
         }
 
