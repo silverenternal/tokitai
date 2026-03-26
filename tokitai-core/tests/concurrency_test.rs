@@ -34,7 +34,7 @@ fn test_concurrent_writes() {
                     let tool_name = format!("tool_{}_{}", i, j);
                     GLOBAL_CONFIG_REGISTRY.configure(
                         &tool_name,
-                        &vec![tokitai_core::ToolConfig::desc(format!("desc_{}", j))],
+                        &[tokitai_core::ToolConfig::desc(format!("desc_{}", j))],
                     );
                 }
             })
@@ -49,7 +49,7 @@ fn test_concurrent_writes() {
     // 验证所有配置都已写入
     // 注意：由于工具名不同，所有配置都应该存在
     // 我们验证注册表没有崩溃且可以访问
-    GLOBAL_CONFIG_REGISTRY.configure("test_key", &vec![tokitai_core::ToolConfig::desc("test")]);
+    GLOBAL_CONFIG_REGISTRY.configure("test_key", &[tokitai_core::ToolConfig::desc("test")]);
     assert!(GLOBAL_CONFIG_REGISTRY.has_config("test_key"));
 }
 
@@ -62,7 +62,7 @@ fn test_concurrent_reads() {
     for i in 0..50 {
         GLOBAL_CONFIG_REGISTRY.configure(
             &format!("{}tool_{}", prefix, i),
-            &vec![tokitai_core::ToolConfig::desc(format!("desc_{}", i))],
+            &[tokitai_core::ToolConfig::desc(format!("desc_{}", i))],
         );
     }
 
@@ -118,7 +118,10 @@ fn test_concurrent_read_write() {
     for j in 0..50 {
         GLOBAL_CONFIG_REGISTRY.configure(
             &format!("shared_tool_{}", j),
-            &vec![tokitai_core::ToolConfig::desc(format!("initial_desc_{}", j))],
+            &[tokitai_core::ToolConfig::desc(format!(
+                "initial_desc_{}",
+                j
+            ))],
         );
     }
 
@@ -136,7 +139,7 @@ fn test_concurrent_read_write() {
                 for j in 0..50 {
                     GLOBAL_CONFIG_REGISTRY.configure(
                         &format!("shared_tool_{}", j),
-                        &vec![tokitai_core::ToolConfig::desc(format!("writer_{}_desc", i))],
+                        &[tokitai_core::ToolConfig::desc(format!("writer_{}_desc", i))],
                     );
                     thread::sleep(Duration::from_micros(10));
                 }
@@ -187,7 +190,7 @@ fn test_concurrent_clear() {
     for i in 0..20 {
         GLOBAL_CONFIG_REGISTRY.configure(
             &format!("clear_test_{}", i),
-            &vec![tokitai_core::ToolConfig::desc("test")],
+            &[tokitai_core::ToolConfig::desc("test")],
         );
     }
 
@@ -224,7 +227,7 @@ fn test_concurrent_has_config() {
     for i in 0..30 {
         GLOBAL_CONFIG_REGISTRY.configure(
             &format!("{}{}", prefix, i),
-            &vec![tokitai_core::ToolConfig::desc("test")],
+            &[tokitai_core::ToolConfig::desc("test")],
         );
     }
 
@@ -289,7 +292,7 @@ fn test_lazylock_initialization() {
                 // 并发访问注册表
                 GLOBAL_CONFIG_REGISTRY.configure(
                     &format!("lazy_init_{}", i),
-                    &vec![tokitai_core::ToolConfig::desc("test")],
+                    &[tokitai_core::ToolConfig::desc("test")],
                 );
             })
         })
@@ -301,8 +304,11 @@ fn test_lazylock_initialization() {
 
     // 验证所有配置都已写入（由于工具名不同，所有配置都应该存在）
     for i in 0..num_threads {
-        assert!(GLOBAL_CONFIG_REGISTRY.has_config(&format!("lazy_init_{}", i)), 
-                "lazy_init_{} 应该存在", i);
+        assert!(
+            GLOBAL_CONFIG_REGISTRY.has_config(&format!("lazy_init_{}", i)),
+            "lazy_init_{} 应该存在",
+            i
+        );
     }
 }
 
@@ -317,7 +323,7 @@ fn test_stress_concurrent_access() {
     let barrier = Arc::new(std::sync::Barrier::new(num_threads));
 
     let handles: Vec<_> = (0..num_threads)
-        .map(|i| {
+        .map(|_i| {
             let barrier = Arc::clone(&barrier);
             thread::spawn(move || {
                 barrier.wait();
@@ -328,7 +334,7 @@ fn test_stress_concurrent_access() {
                             // 写入
                             GLOBAL_CONFIG_REGISTRY.configure(
                                 &format!("stress_tool_{}", j % 50),
-                                &vec![tokitai_core::ToolConfig::desc(format!("desc_{}", j))],
+                                &[tokitai_core::ToolConfig::desc(format!("desc_{}", j))],
                             );
                         }
                         1 => {
@@ -338,8 +344,8 @@ fn test_stress_concurrent_access() {
                         }
                         2 => {
                             // 检查存在
-                            let _exists =
-                                GLOBAL_CONFIG_REGISTRY.has_config(&format!("stress_tool_{}", j % 50));
+                            let _exists = GLOBAL_CONFIG_REGISTRY
+                                .has_config(&format!("stress_tool_{}", j % 50));
                         }
                         3 => {
                             // 偶尔清除
@@ -359,6 +365,6 @@ fn test_stress_concurrent_access() {
     }
 
     // 验证注册表仍然可用
-    GLOBAL_CONFIG_REGISTRY.configure("final_test", &vec![tokitai_core::ToolConfig::desc("final")]);
+    GLOBAL_CONFIG_REGISTRY.configure("final_test", &[tokitai_core::ToolConfig::desc("final")]);
     assert!(GLOBAL_CONFIG_REGISTRY.has_config("final_test"));
 }

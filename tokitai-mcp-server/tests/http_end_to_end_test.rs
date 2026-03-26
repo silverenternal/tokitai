@@ -80,9 +80,7 @@ fn test_server_builder_basic() {
 #[test]
 fn test_server_builder_with_port() {
     let calc = HttpTestCalculator;
-    let server = McpServerBuilder::with_tool(calc)
-        .with_port(9000)
-        .build();
+    let server = McpServerBuilder::with_tool(calc).with_port(9000).build();
 
     assert_eq!(server.config().port, 9000);
 }
@@ -246,14 +244,10 @@ fn test_multi_tool_provider_with_server() {
 #[test]
 fn test_server_config_isolation() {
     let calc1 = HttpTestCalculator;
-    let server1 = McpServerBuilder::with_tool(calc1)
-        .with_port(8001)
-        .build();
+    let server1 = McpServerBuilder::with_tool(calc1).with_port(8001).build();
 
     let calc2 = HttpTestCalculator;
-    let server2 = McpServerBuilder::with_tool(calc2)
-        .with_port(8002)
-        .build();
+    let server2 = McpServerBuilder::with_tool(calc2).with_port(8002).build();
 
     assert_eq!(server1.config().port, 8001);
     assert_eq!(server2.config().port, 8002);

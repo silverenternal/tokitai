@@ -24,7 +24,10 @@ impl RealWorldTools {
         action: String,
         payload: Option<String>,
     ) -> Result<String, tokitai::ToolError> {
-        Ok(format!("User {} performed {}: {:?}", user_id, action, payload))
+        Ok(format!(
+            "User {} performed {}: {:?}",
+            user_id, action, payload
+        ))
     }
 
     /// 计算统计数据

@@ -89,10 +89,10 @@ impl Parse for ConfigInput {
 
             while !method_content.is_empty() {
                 let key: Ident = method_content.parse()?;
-                
+
                 // 检查是新语法还是旧语法
                 let is_param_desc = method_content.peek(token::Colon);
-                
+
                 if is_param_desc {
                     // 旧语法或参数描述
                     method_content.parse::<token::Colon>()?;
@@ -127,7 +127,7 @@ impl Parse for ConfigInput {
                                 let param_content;
                                 syn::braced!(param_content in params_content);
 
-                                let (param_desc, param_example) = 
+                                let (param_desc, param_example) =
                                     parse_param_config(&param_content)?;
 
                                 params.insert(
@@ -151,7 +151,7 @@ impl Parse for ConfigInput {
                 } else {
                     // 新语法：param_name: "desc" 或 param_name { ... }
                     let key_str = key.to_string();
-                    
+
                     // 检查是否是特殊字段
                     if key_str == "desc" {
                         method_content.parse::<token::Colon>()?;
@@ -173,13 +173,13 @@ impl Parse for ConfigInput {
                     } else {
                         // 参数定义
                         let param_name = key_str;
-                        
+
                         // 支持两种形式：
                         // 1. param_name: "desc"
                         // 2. param_name { desc: "desc", example: "value" }
                         if method_content.peek(token::Colon) {
                             method_content.parse::<token::Colon>()?;
-                            
+
                             // 检查是否是字符串字面量（简单形式）
                             if let Ok(lit_str) = method_content.parse::<LitStr>() {
                                 params.insert(
@@ -193,7 +193,7 @@ impl Parse for ConfigInput {
                                 // 复杂形式：{ desc: "desc", example: "value" }
                                 let param_content;
                                 syn::braced!(param_content in method_content);
-                                let (param_desc, param_example) = 
+                                let (param_desc, param_example) =
                                     parse_param_config(&param_content)?;
                                 params.insert(
                                     param_name,
@@ -207,8 +207,7 @@ impl Parse for ConfigInput {
                             // param_name { ... } 形式
                             let param_content;
                             syn::braced!(param_content in method_content);
-                            let (param_desc, param_example) = 
-                                parse_param_config(&param_content)?;
+                            let (param_desc, param_example) = parse_param_config(&param_content)?;
                             params.insert(
                                 param_name,
                                 ParamConfig {
@@ -245,7 +244,9 @@ impl Parse for ConfigInput {
 }
 
 /// 解析参数配置
-fn parse_param_config(input: ParseStream) -> syn::Result<(Option<String>, Option<serde_json::Value>)> {
+fn parse_param_config(
+    input: ParseStream,
+) -> syn::Result<(Option<String>, Option<serde_json::Value>)> {
     let mut param_desc = None;
     let mut param_example = None;
 

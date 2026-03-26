@@ -198,20 +198,18 @@ fn test_multi_tool_collaboration() {
     let processor = DataProcessor;
 
     // 数据转换
-    let transform_result = processor
-        .call_tool("transform", &serde_json::json!({"data": "hello"}));
+    let transform_result = processor.call_tool("transform", &serde_json::json!({"data": "hello"}));
     assert!(transform_result.is_ok());
     assert_eq!(transform_result.unwrap(), serde_json::json!("HELLO"));
 
     // 数据验证
-    let validate_result = processor
-        .call_tool("validate", &serde_json::json!({"data": "test"}));
+    let validate_result = processor.call_tool("validate", &serde_json::json!({"data": "test"}));
     assert!(validate_result.is_ok());
     assert_eq!(validate_result.unwrap(), serde_json::json!(true));
 
     // 数据处理
-    let process_result = processor
-        .call_tool("process", &serde_json::json!({"input": "abc", "times": 2}));
+    let process_result =
+        processor.call_tool("process", &serde_json::json!({"input": "abc", "times": 2}));
     assert!(process_result.is_ok());
     assert_eq!(process_result.unwrap(), serde_json::json!("ABC"));
 }
@@ -298,7 +296,10 @@ fn test_large_data() {
 
     // 长字符串
     let long_string = "a".repeat(10000);
-    let result = tools.call_tool("process_text", &serde_json::json!({"text": long_string.clone()}));
+    let result = tools.call_tool(
+        "process_text",
+        &serde_json::json!({"text": long_string.clone()}),
+    );
     assert!(result.is_ok());
     let output = result.unwrap().as_str().unwrap().to_string();
     assert_eq!(output, long_string.to_uppercase());

@@ -37,10 +37,43 @@ fn extract_struct_schema(
 
     // 跳过基本类型和标准库类型
     let skip_types = [
-        "String", "str", "i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128",
-        "usize", "isize", "f32", "f64", "bool", "Option", "Vec", "HashMap", "BTreeMap", "Box",
-        "Rc", "Arc", "Cell", "RefCell", "Mutex", "RwLock", "DateTime", "NaiveDateTime",
-        "NaiveDate", "NaiveTime", "Uuid", "Url", "PathBuf", "Path", "Value",
+        "String",
+        "str",
+        "i8",
+        "i16",
+        "i32",
+        "i64",
+        "i128",
+        "u8",
+        "u16",
+        "u32",
+        "u64",
+        "u128",
+        "usize",
+        "isize",
+        "f32",
+        "f64",
+        "bool",
+        "Option",
+        "Vec",
+        "HashMap",
+        "BTreeMap",
+        "Box",
+        "Rc",
+        "Arc",
+        "Cell",
+        "RefCell",
+        "Mutex",
+        "RwLock",
+        "DateTime",
+        "NaiveDateTime",
+        "NaiveDate",
+        "NaiveTime",
+        "Uuid",
+        "Url",
+        "PathBuf",
+        "Path",
+        "Value",
     ];
     if skip_types.contains(&ident.as_str()) {
         return None;
@@ -241,11 +274,8 @@ pub fn generate_schema_json_with_deprecated_and_tags(config: &SchemaGenConfig) -
                 multiple_of,
                 ..
             } => {
-                if p.one_of.is_some() {
-                    let vals = p
-                        .one_of
-                        .as_ref()
-                        .unwrap()
+                if let Some(one_of) = &p.one_of {
+                    let vals = one_of
                         .iter()
                         .map(|s| serde_json::Value::String(s.clone()))
                         .collect();
@@ -279,11 +309,8 @@ pub fn generate_schema_json_with_deprecated_and_tags(config: &SchemaGenConfig) -
                 max_items,
                 ..
             } => {
-                if p.one_of.is_some() {
-                    let vals = p
-                        .one_of
-                        .as_ref()
-                        .unwrap()
+                if let Some(one_of) = &p.one_of {
+                    let vals = one_of
                         .iter()
                         .map(|s| serde_json::Value::String(s.clone()))
                         .collect();
@@ -618,7 +645,9 @@ pub fn generate_schema_for_type_with_default_and_example(
                 _ => {
                     // 【P1-1 改进】自定义类型 schema 生成
                     // 尝试从 serde derive 解析字段，如果失败则生成空 object
-                    if let Some(schema) = extract_struct_schema(ty, description.clone(), default_value.clone()) {
+                    if let Some(schema) =
+                        extract_struct_schema(ty, description.clone(), default_value.clone())
+                    {
                         return schema;
                     }
 

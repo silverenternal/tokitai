@@ -11,13 +11,13 @@ env:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v4
 
     - name: Install Rust toolchain
-      uses: dtolnay/rust-action@stable
+      uses: dtolnay/rust-toolchain@stable
 
     - name: Cache cargo registry
       uses: actions/cache@v3
@@ -35,13 +35,13 @@ jobs:
       run: cargo test --workspace --verbose
 
   clippy:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v4
 
     - name: Install Rust toolchain
-      uses: dtolnay/rust-action@stable
+      uses: dtolnay/rust-toolchain@stable
       with:
         components: clippy
 
@@ -49,27 +49,27 @@ jobs:
       run: cargo clippy --workspace --all-targets -- -D warnings
 
   fmt:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v4
 
     - name: Install Rust toolchain
-      uses: dtolnay/rust-action@stable
+      uses: dtolnay/rust-toolchain@stable
       with:
         components: rustfmt
 
     - name: Check formatting
-      run: cargo fmt --workspace -- --check
+      run: cargo fmt --all -- --check
 
   docs:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v4
 
     - name: Install Rust toolchain
-      uses: dtolnay/rust-action@stable
+      uses: dtolnay/rust-toolchain@stable
 
     - name: Check documentation
       run: cargo doc --workspace --no-deps
