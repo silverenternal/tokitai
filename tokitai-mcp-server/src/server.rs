@@ -16,6 +16,9 @@ use tower_http::{
 };
 use tracing::{info, warn};
 
+#[cfg(feature = "async")]
+use tokitai_core::executor::ToolExecutor;
+
 /// Server error types
 #[derive(Debug)]
 pub enum ServerError {
@@ -59,6 +62,18 @@ pub struct McpServerConfig {
     pub cors_enabled: bool,
     /// Enable request tracing
     pub tracing_enabled: bool,
+    /// Enable async execution with concurrency limiting
+    #[cfg(feature = "async")]
+    pub async_enabled: bool,
+    /// Maximum concurrent tool executions
+    #[cfg(feature = "async")]
+    pub max_concurrent: usize,
+    /// Default timeout for tool execution (seconds)
+    #[cfg(feature = "async")]
+    pub timeout_secs: u64,
+    /// Maximum retries for failed tool executions
+    #[cfg(feature = "async")]
+    pub max_retries: u32,
 }
 
 impl Default for McpServerConfig {
@@ -68,6 +83,14 @@ impl Default for McpServerConfig {
             port: 8080,
             cors_enabled: true,
             tracing_enabled: true,
+            #[cfg(feature = "async")]
+            async_enabled: true,
+            #[cfg(feature = "async")]
+            max_concurrent: 100,
+            #[cfg(feature = "async")]
+            timeout_secs: 30,
+            #[cfg(feature = "async")]
+            max_retries: 0,
         }
     }
 }
@@ -91,6 +114,33 @@ impl McpServerConfig {
     /// Set tracing enabled
     pub fn with_tracing(mut self, enabled: bool) -> Self {
         self.tracing_enabled = enabled;
+        self
+    }
+
+    /// Set async execution parameters
+    ///
+    /// # Arguments
+    ///
+    /// * `max_concurrent` - Maximum concurrent tool executions
+    /// * `timeout_secs` - Default timeout for tool execution in seconds
+    /// * `max_retries` - Maximum retries for failed executions
+    #[cfg(feature = "async")]
+    pub fn with_async_params(
+        mut self,
+        max_concurrent: usize,
+        timeout_secs: u64,
+        max_retries: u32,
+    ) -> Self {
+        self.max_concurrent = max_concurrent.max(1);
+        self.timeout_secs = timeout_secs.max(1);
+        self.max_retries = max_retries;
+        self
+    }
+
+    /// Enable or disable async execution
+    #[cfg(feature = "async")]
+    pub fn with_async(mut self, enabled: bool) -> Self {
+        self.async_enabled = enabled;
         self
     }
 
@@ -342,9 +392,18 @@ where
                 .init();
         }
 
+        #[cfg(feature = "async")]
+        let executor = ToolExecutor::builder()
+            .with_max_concurrent(self.config.max_concurrent)
+            .with_default_timeout(std::time::Duration::from_secs(self.config.timeout_secs))
+            .with_retry_policy(tokitai_core::executor::RetryPolicy::with_retries(self.config.max_retries))
+            .build();
+
         let state = Arc::new(AppStateWithProvider {
             registry: ToolRegistry::new(self.tools.clone()),
-            tool_provider: self.tool_provider.clone(), // 现在只是克隆 Arc，不是克隆 T
+            tool_provider: self.tool_provider.clone(),
+            #[cfg(feature = "async")]
+            executor,
         });
 
         // Build router
@@ -373,6 +432,16 @@ where
         info!("  GET  /tools  - List available tools");
         info!("  POST /call   - Call a tool");
         info!("  GET  /health - Health check");
+
+        #[cfg(feature = "async")]
+        {
+            info!(
+                "Async execution enabled: max concurrent={}, timeout={}s, max retries={}",
+                self.config.max_concurrent,
+                self.config.timeout_secs,
+                self.config.max_retries
+            );
+        }
 
         let listener = tokio::net::TcpListener::bind(addr)
             .await
@@ -405,6 +474,8 @@ where
 struct AppStateWithProvider<T> {
     registry: ToolRegistry,
     tool_provider: Arc<T>,
+    #[cfg(feature = "async")]
+    executor: ToolExecutor,
 }
 
 /// MCP Server (只读模式 - 不支持工具调用)
@@ -595,18 +666,55 @@ where
 
     info!("Found tool: {} - {}", tool.name, tool.description);
 
-    // Call the actual tool
-    match state
-        .tool_provider
-        .call_tool(&request.name, &request.arguments)
+    #[cfg(feature = "async")]
     {
-        Ok(result) => {
-            info!("Tool executed successfully: {}", request.name);
-            Ok(Json(ToolCallResponse::success(result)))
+        // Use executor for async execution with timeout and concurrency control
+        let executor = state.executor.clone();
+        let tool_provider = state.tool_provider.clone();
+        let tool_name = request.name.clone();
+        let tool_args = request.arguments.clone();
+
+        match executor
+            .execute_with_timeout(
+                async move {
+                    match tool_provider.call_tool(&tool_name, &tool_args) {
+                        Ok(result) => Ok(result),
+                        Err(e) => Err(tokitai_core::executor::ExecutionError {
+                            kind: tokitai_core::executor::ExecutionErrorKind::Internal,
+                            message: e.to_string(),
+                        }),
+                    }
+                },
+                std::time::Duration::from_secs(state.executor.default_timeout().as_secs()),
+            )
+            .await
+        {
+            Ok(result) => {
+                info!("Tool executed successfully: {}", request.name);
+                Ok(Json(ToolCallResponse::success(result)))
+            }
+            Err(e) => {
+                warn!("Tool execution failed: {} - {}", request.name, e);
+                Ok(Json(ToolCallResponse::error(format!("{}", e))))
+            }
         }
-        Err(e) => {
-            warn!("Tool execution failed: {} - {}", request.name, e);
-            Ok(Json(ToolCallResponse::error(format!("{}", e))))
+    }
+
+    #[cfg(not(feature = "async"))]
+    {
+        // Call the actual tool (synchronous fallback)
+        match state
+            .tool_provider
+            .call_tool(&request.name, &request.arguments)
+        {
+            Ok(result) => {
+                info!("Tool executed successfully: {}", request.name);
+                Ok(Json(ToolCallResponse::success(result)))
+            }
+            Err(e) => {
+                warn!("Tool execution failed: {} - {}", request.name, e);
+                Ok(Json(ToolCallResponse::error(format!("{}", e))))
+            }
         }
     }
 }

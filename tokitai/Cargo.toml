@@ -54,6 +54,9 @@ serde = ["tokitai-core/serde", "dep:serde", "dep:serde_json"]
 # runtime: 异步运行时支持
 runtime = ["std", "async-trait", "log"]
 
+# async: 异步执行器支持（带线程池）
+async = ["runtime", "tokitai-core/async", "tokio"]
+
 # mcp: MCP 协议支持
 mcp = ["runtime"]
 
