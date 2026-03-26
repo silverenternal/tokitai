@@ -16,9 +16,17 @@ rust-version = "1.80"
 serde = { version = "1.0", features = ["derive"], optional = true }
 serde_json = { version = "1.0", optional = true }
 
+# Async runtime support
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "sync", "time", "task"], optional = true }
+tokio-util = { version = "0.7", features = ["rt"], optional = true }
+parking_lot = "0.12"
+futures-util = { version = "0.3", optional = true }
+
 [dev-dependencies]
 serial_test = "3.0"
+futures-util = "0.3"
 
 [features]
 default = ["serde"]
 serde = ["dep:serde", "dep:serde_json"]
+async = ["dep:tokio", "serde", "dep:futures-util", "dep:tokio-util"]
