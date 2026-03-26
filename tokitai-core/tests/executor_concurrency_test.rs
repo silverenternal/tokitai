@@ -260,6 +260,7 @@ async fn test_try_execute_queue_full() {
 async fn test_cancellation_propagation() {
     let executor = ToolExecutor::default();
     let cancel_token = executor.cancellation_token();
+    let executor_for_cancel = executor.clone();
 
     let handle = tokio::spawn(async move {
         executor.execute(async move {
@@ -272,7 +273,7 @@ async fn test_cancellation_propagation() {
     });
 
     tokio::time::sleep(Duration::from_millis(50)).await;
-    executor.cancel_all();
+    executor_for_cancel.cancel_all();
 
     let result = handle.await.unwrap();
     assert!(result.is_err());
@@ -315,7 +316,7 @@ async fn test_semaphore_no_leak() {
         .with_max_concurrent(10)
         .build();
 
-    let initial_permits = executor.semaphore.available_permits();
+    let initial_permits = executor.available_permits();
 
     // 并发执行 1000 个任务（不是串行！）
     let mut handles = Vec::new();
@@ -337,7 +338,7 @@ async fn test_semaphore_no_leak() {
     assert!(results.iter().all(|r| r.is_ok()), "所有任务应该成功完成");
 
     // 验证所有许可已归还
-    let final_permits = executor.semaphore.available_permits();
+    let final_permits = executor.available_permits();
     assert_eq!(
         initial_permits, final_permits,
         "信号量许可泄漏！初始：{}, 最终：{}",
@@ -396,7 +397,7 @@ async fn test_batch_bounded_concurrency() {
 /// 测试 9: 验证真正的优先级调度（使用优先级等待队列）
 #[tokio::test]
 async fn test_true_priority_scheduling() {
-    use tokio::sync::Barrier;
+    use tokio::sync::{Barrier, Mutex};
 
     let executor = ToolExecutor::builder()
         .with_max_concurrent(1)  // 只有 1 个并发

@@ -54,8 +54,6 @@ use std::fmt;
 #[cfg(feature = "async")]
 use tokio::sync::Semaphore;
 #[cfg(feature = "async")]
-use tokio::time::timeout;
-#[cfg(feature = "async")]
 use tokio_util::sync::CancellationToken;
 
 /// Priority wait queue for true priority scheduling
@@ -773,6 +771,7 @@ impl Clone for ToolExecutor {
             shutdown: self.shutdown.clone(),
             queue_semaphore: self.queue_semaphore.clone(),
             cancel_token: self.cancel_token.clone(),
+            priority_queue: self.priority_queue.clone(),
             priority_support: self.priority_support,
         }
     }
@@ -801,6 +800,8 @@ impl ToolExecutor {
             future,
             timeout: None,
             retry_policy: None,
+            cancel_token: None,
+            priority: Priority::default(),
             _phantom: std::marker::PhantomData,
         }
     }
@@ -869,7 +870,7 @@ impl ToolExecutor {
         // Acquire queue permit first (backpressure)
         // This permit is held until task COMPLETION, not just until execution starts
         let _queue_permit = if let Some(ref queue_sem) = self.queue_semaphore {
-            Some(queue_sem.acquire_owned().await.map_err(|_| {
+            Some(Arc::clone(queue_sem).acquire_owned().await.map_err(|_| {
                 ExecutionError {
                     kind: ExecutionErrorKind::Shutdown,
                     message: "Executor queue is shutting down".to_string(),
@@ -906,7 +907,7 @@ impl ToolExecutor {
                                 }
                                 Ok(Err(_)) | Err(_) => {
                                     // Channel closed or timeout, try to acquire normally
-                                    break self.semaphore.acquire_owned().await.map_err(|_| {
+                                    break self.semaphore.clone().acquire_owned().await.map_err(|_| {
                                         ExecutionError {
                                             kind: ExecutionErrorKind::Shutdown,
                                             message: "Executor is shutting down".to_string(),
@@ -918,7 +919,7 @@ impl ToolExecutor {
                     }
                 }
             } else {
-                self.semaphore.acquire_owned().await.map_err(|_| {
+                self.semaphore.clone().acquire_owned().await.map_err(|_| {
                     ExecutionError {
                         kind: ExecutionErrorKind::Shutdown,
                         message: "Executor is shutting down".to_string(),
@@ -927,7 +928,7 @@ impl ToolExecutor {
             }
         } else {
             // No priority support - use default semaphore
-            self.semaphore.acquire_owned().await.map_err(|_| {
+            self.semaphore.clone().acquire_owned().await.map_err(|_| {
                 ExecutionError {
                     kind: ExecutionErrorKind::Shutdown,
                     message: "Executor is shutting down".to_string(),
@@ -943,6 +944,9 @@ impl ToolExecutor {
         let start_time = std::time::Instant::now();
         let mut attempts = 0;
 
+        // Pin the future so it can be polled across retry attempts
+        let mut pinned_future = Box::pin(future);
+
         loop {
             // Check cancellation before each attempt
             if let Some(ref token) = cancel_token {
@@ -955,13 +959,13 @@ impl ToolExecutor {
             }
 
             // Execute with timeout and handle result uniformly
-            let result: Result<T, ExecutionError> = match tokio::time::timeout(timeout_duration, &future).await {
+            let result: Result<T, ExecutionError> = match tokio::time::timeout(timeout_duration, pinned_future.as_mut()).await {
                 Ok(Ok(value)) => {
                     let duration_ms = start_time.elapsed().as_millis() as u64;
                     self.stats.record_success(duration_ms);
                     return Ok(value);
                 }
-                Ok(Err(e)) => Err(e.into()),
+                Ok(Err(e)) => Err(Into::<ExecutionError>::into(e)),
                 Err(_) => Err(ExecutionError {
                     kind: ExecutionErrorKind::Timeout,
                     message: format!("Task timed out after {:?}", timeout_duration),
@@ -969,7 +973,10 @@ impl ToolExecutor {
             };
 
             // Unified retry logic
-            let error = result.unwrap_err();
+            let error = match result {
+                Err(e) => e,
+                Ok(_) => unreachable!("Ok case already handled above"),
+            };
             if retry_policy.should_retry(&error) && attempts < retry_policy.max_retries {
                 attempts += 1;
                 self.stats.record_retry();
@@ -1034,7 +1041,7 @@ impl ToolExecutor {
 
         // Try to acquire queue permit (non-blocking)
         let queue_permit = if let Some(ref queue_sem) = self.queue_semaphore {
-            Some(queue_sem.try_acquire_owned().map_err(|_| {
+            Some(Arc::clone(queue_sem).try_acquire_owned().map_err(|_| {
                 ExecutionError {
                     kind: ExecutionErrorKind::QueueFull,
                     message: "Executor queue is full".to_string(),
@@ -1061,12 +1068,16 @@ impl ToolExecutor {
         T: Send + 'static,
         E: Into<ExecutionError> + fmt::Debug + Send + 'static,
     {
-        let future = async {
+        let future = async move {
             let handle = tokio::task::spawn_blocking(f);
-            handle.await.map_err(|_| ExecutionError {
-                kind: ExecutionErrorKind::Panic,
-                message: "Task panicked".to_string(),
-            })?
+            match handle.await {
+                Ok(Ok(val)) => Ok(val),
+                Ok(Err(e)) => Err(Into::<ExecutionError>::into(e)),
+                Err(_) => Err(ExecutionError {
+                    kind: ExecutionErrorKind::Panic,
+                    message: "Task panicked".to_string(),
+                }),
+            }
         };
         self.execute_simple(future).await
     }
@@ -1258,7 +1269,7 @@ impl ToolExecutor {
         T: Send + 'static,
         E: Into<ExecutionError> + fmt::Debug + Send + 'static,
     {
-        use futures_util::stream::{StreamExt, stream::iter};
+        use futures_util::stream::{StreamExt, iter};
 
         let stream = iter(futures)
             .map(|future| {
@@ -1269,16 +1280,7 @@ impl ToolExecutor {
             })
             .buffer_unordered(max_concurrent);
 
-        stream.collect().await
-            .into_iter()
-            .map(|r| match r {
-                Ok(result) => result,
-                Err(join_err) => Err(ExecutionError {
-                    kind: ExecutionErrorKind::Cancelled,
-                    message: format!("Task cancelled: {}", join_err),
-                }),
-            })
-            .collect()
+        stream.collect::<Vec<_>>().await
     }
 
     /// Get the default timeout
@@ -1318,6 +1320,11 @@ impl ToolExecutor {
     /// Check if executor has been cancelled
     pub fn is_cancelled(&self) -> bool {
         self.cancel_token.is_cancelled()
+    }
+
+    /// Get available execution permits (for monitoring/testing)
+    pub fn available_permits(&self) -> usize {
+        self.semaphore.available_permits()
     }
 }
 
@@ -1575,7 +1582,7 @@ mod tests {
         }
 
         // Verify all tasks completed
-        let results = futures::future::join_all(handles).await;
+        let results = futures_util::future::join_all(handles).await;
         let success_count = results.iter().filter(|r| {
             matches!(r, Ok(Ok(_)))
         }).count();
