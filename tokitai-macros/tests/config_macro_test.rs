@@ -3,8 +3,8 @@
 //! 运行测试：cargo test -p tokitai-macros --test config_macro_test --features serde
 
 #![cfg(feature = "serde")]
+#![allow(non_snake_case, non_upper_case_globals)]
 
-use tokitai::ToolCaller;
 use tokitai::{config, tool, ToolConfig};
 
 // ============================================================================

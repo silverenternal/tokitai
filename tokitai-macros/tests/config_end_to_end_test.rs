@@ -1,16 +1,24 @@
-//! 配置端到端测试：验证 config! 宏真正应用到 TOOL_DEFINITIONS
+//! End-to-end tests for the `config!` macro.
 //!
-//! 运行测试：cargo test -p tokitai-macros --test config_end_to_end_test --features serde
+//! These tests pin the contract between the `config!` macro and the
+//! global `GLOBAL_CONFIG_REGISTRY`: the macro-generated `__CONFIG_INIT_*`
+//! static must populate the registry when first dereferenced, and the
+//! registry entries must carry the configured descriptions, tags, and
+//! per-parameter metadata.
+//!
+//! The tests share a single process-wide `GLOBAL_CONFIG_REGISTRY`, so each
+//! test is responsible for cleaning up only the keys it touches.
+//!
+//! Run with: `cargo test -p tokitai-macros --test config_end_to_end_test --features serde`
 
 #![cfg(feature = "serde")]
+#![allow(non_snake_case, non_upper_case_globals, deprecated)]
 
-use serde_json::Value;
 use tokitai::tool;
-use tokitai::ToolProvider;
 use tokitai::{config, ToolConfig};
 
 // ============================================================================
-// 测试 1: 配置宏覆盖工具描述
+// Test 1: `config!` overrides the tool description
 // ============================================================================
 
 #[derive(Default)]
@@ -18,7 +26,7 @@ struct ConfigDescTools;
 
 #[tool]
 impl ConfigDescTools {
-    /// 默认描述 - 应该被配置覆盖
+    /// Default description - should be overridden by the config block.
     pub fn get_user(&self, id: i32) -> String {
         format!("User {}", id)
     }
@@ -27,9 +35,9 @@ impl ConfigDescTools {
 config! {
     ConfigDescTools {
         get_user: {
-            desc: "配置覆盖后的描述",
+            desc: "Configuration-overridden description",
             params: {
-                id: { desc: "用户 ID 参数" }
+                id: { desc: "User ID parameter" }
             }
         }
     }
@@ -37,30 +45,30 @@ config! {
 
 #[test]
 fn test_config_desc_override() {
-    // 触发配置初始化
+    // Force the config initialisation.
     let _ = &*__CONFIG_INIT_ConfigDescTools;
 
-    // 验证配置已注册
     assert!(tokitai::GLOBAL_CONFIG_REGISTRY.has_config("get_user"));
 
     let configs = tokitai::GLOBAL_CONFIG_REGISTRY.get("get_user");
     assert!(!configs.is_empty());
 
-    // 验证包含 Desc 配置
     let has_desc = configs
         .iter()
-        .any(|c| matches!(c, ToolConfig::Desc(s) if s == "配置覆盖后的描述"));
-    assert!(has_desc, "应该包含 Desc 配置");
+        .any(|c| matches!(c, ToolConfig::Desc(s) if s == "Configuration-overridden description"));
+    assert!(has_desc, "expected the overridden Desc entry to be present");
 
-    // 验证包含 ParamDesc 配置
     let has_param_desc = configs.iter().any(|c| {
-        matches!(c, ToolConfig::ParamDesc { name, desc } if name == "id" && desc == "用户 ID 参数")
+        matches!(c, ToolConfig::ParamDesc { name, desc } if name == "id" && desc == "User ID parameter")
     });
-    assert!(has_param_desc, "应该包含 ParamDesc 配置");
+    assert!(
+        has_param_desc,
+        "expected the per-param ParamDesc entry to be present"
+    );
 }
 
 // ============================================================================
-// 测试 2: 配置宏添加 tags
+// Test 2: `config!` adds tags
 // ============================================================================
 
 #[derive(Default)]
@@ -76,7 +84,7 @@ impl ConfigTagsTools {
 config! {
     ConfigTagsTools {
         search: {
-            desc: "搜索功能",
+            desc: "Search functionality",
             tags: ["search", "utility"]
         }
     }
@@ -84,22 +92,21 @@ config! {
 
 #[test]
 fn test_config_tags() {
-    // 触发配置初始化
+    // Force the config initialisation.
     let _ = &*__CONFIG_INIT_ConfigTagsTools;
 
     assert!(tokitai::GLOBAL_CONFIG_REGISTRY.has_config("search"));
 
     let configs = tokitai::GLOBAL_CONFIG_REGISTRY.get("search");
 
-    // 验证包含 Tags 配置
     let has_tags = configs
         .iter()
         .any(|c| matches!(c, ToolConfig::Tags(tags) if tags.contains(&"search".to_string())));
-    assert!(has_tags, "应该包含 Tags 配置");
+    assert!(has_tags, "expected a Tags entry containing \"search\"");
 }
 
 // ============================================================================
-// 测试 3: 配置宏添加参数示例
+// Test 3: `config!` adds a per-parameter example
 // ============================================================================
 
 #[derive(Default)]
@@ -115,11 +122,11 @@ impl ConfigExampleTools {
 config! {
     ConfigExampleTools {
         greet: {
-            desc: "问候功能",
+            desc: "Greeting functionality",
             params: {
                 name: {
-                    desc: "姓名",
-                    example: "张三"
+                    desc: "Name to greet",
+                    example: "Alice"
                 }
             }
         }
@@ -128,22 +135,21 @@ config! {
 
 #[test]
 fn test_config_param_example() {
-    // 触发配置初始化
+    // Force the config initialisation.
     let _ = &*__CONFIG_INIT_ConfigExampleTools;
 
     assert!(tokitai::GLOBAL_CONFIG_REGISTRY.has_config("greet"));
 
     let configs = tokitai::GLOBAL_CONFIG_REGISTRY.get("greet");
 
-    // 验证包含 ParamExample 配置
     let has_example = configs
         .iter()
         .any(|c| matches!(c, ToolConfig::ParamExample { name, .. } if name == "name"));
-    assert!(has_example, "应该包含 ParamExample 配置");
+    assert!(has_example, "expected a ParamExample entry for \"name\"");
 }
 
 // ============================================================================
-// 测试 4: 配置宏多个方法配置
+// Test 4: `config!` covering multiple methods on the same struct
 // ============================================================================
 
 #[derive(Default)]
@@ -151,12 +157,12 @@ struct MultiMethodTools;
 
 #[tool]
 impl MultiMethodTools {
-    /// 方法 1 默认描述
+    /// Default description for method 1.
     pub fn method1(&self, a: i32) -> i32 {
         a
     }
 
-    /// 方法 2 默认描述
+    /// Default description for method 2.
     pub fn method2(&self, b: String) -> String {
         b
     }
@@ -165,13 +171,13 @@ impl MultiMethodTools {
 config! {
     MultiMethodTools {
         method1: {
-            desc: "方法 1 配置描述",
+            desc: "Configured description for method 1",
             params: {
-                a: { desc: "参数 a" }
+                a: { desc: "Parameter a" }
             }
         },
         method2: {
-            desc: "方法 2 配置描述",
+            desc: "Configured description for method 2",
             tags: ["custom"]
         }
     }
@@ -179,36 +185,33 @@ config! {
 
 #[test]
 fn test_config_multiple_methods() {
-    // 触发配置初始化
+    // Force the config initialisation.
     let _ = &*__CONFIG_INIT_MultiMethodTools;
 
-    // 验证两个方法都有配置
     assert!(tokitai::GLOBAL_CONFIG_REGISTRY.has_config("method1"));
     assert!(tokitai::GLOBAL_CONFIG_REGISTRY.has_config("method2"));
 
     let configs1 = tokitai::GLOBAL_CONFIG_REGISTRY.get("method1");
     let configs2 = tokitai::GLOBAL_CONFIG_REGISTRY.get("method2");
 
-    // 验证方法 1 配置
     let has_desc1 = configs1
         .iter()
-        .any(|c| matches!(c, ToolConfig::Desc(s) if s == "方法 1 配置描述"));
-    assert!(has_desc1, "方法 1 应该包含 Desc 配置");
+        .any(|c| matches!(c, ToolConfig::Desc(s) if s == "Configured description for method 1"));
+    assert!(has_desc1, "method1 should have its Desc entry");
 
-    // 验证方法 2 配置
     let has_desc2 = configs2
         .iter()
-        .any(|c| matches!(c, ToolConfig::Desc(s) if s == "方法 2 配置描述"));
-    assert!(has_desc2, "方法 2 应该包含 Desc 配置");
+        .any(|c| matches!(c, ToolConfig::Desc(s) if s == "Configured description for method 2"));
+    assert!(has_desc2, "method2 should have its Desc entry");
 
     let has_tags2 = configs2
         .iter()
         .any(|c| matches!(c, ToolConfig::Tags(tags) if tags.contains(&"custom".to_string())));
-    assert!(has_tags2, "方法 2 应该包含 Tags 配置");
+    assert!(has_tags2, "method2 should have its Tags entry");
 }
 
 // ============================================================================
-// 测试 5: 配置验证边界条件
+// Test 5: `config!` boundary cases
 // ============================================================================
 
 #[derive(Default)]
@@ -228,10 +231,10 @@ impl EdgeCaseTools {
 config! {
     EdgeCaseTools {
         with_config_method: {
-            desc: "有配置的方法",
+            desc: "A method that has a config",
             params: {
                 x: {
-                    desc: "输入值",
+                    desc: "Input value",
                     example: 42
                 }
             }
@@ -241,30 +244,27 @@ config! {
 
 #[test]
 fn test_config_edge_cases() {
-    // 触发配置初始化
+    // Force the config initialisation.
     let _ = &*__CONFIG_INIT_EdgeCaseTools;
 
-    // 验证有配置的方法
     assert!(tokitai::GLOBAL_CONFIG_REGISTRY.has_config("with_config_method"));
-
-    // 验证没有配置的方法
     assert!(!tokitai::GLOBAL_CONFIG_REGISTRY.has_config("no_config_method"));
 
     let configs = tokitai::GLOBAL_CONFIG_REGISTRY.get("with_config_method");
     assert!(!configs.is_empty());
 
-    // 验证多种配置类型
     let has_desc = configs
         .iter()
-        .any(|c| matches!(c, ToolConfig::Desc(s) if s == "有配置的方法"));
+        .any(|c| matches!(c, ToolConfig::Desc(s) if s == "A method that has a config"));
     assert!(has_desc);
 
     let has_param_desc = configs.iter().any(
-        |c| matches!(c, ToolConfig::ParamDesc { name, desc } if name == "x" && desc == "输入值"),
+        |c| matches!(c, ToolConfig::ParamDesc { name, desc } if name == "x" && desc == "Input value"),
     );
     assert!(has_param_desc);
 
-    // 注意：ParamExample 可能需要额外处理，这里只验证基本功能
+    // Note: ParamExample may need additional handling, so only the
+    // basic flow is pinned here.
     // let has_param_example = configs.iter().any(|c| {
     //     matches!(c, ToolConfig::ParamExample { name, example } if name == "x" && example == 42)
     // });
@@ -272,7 +272,7 @@ fn test_config_edge_cases() {
 }
 
 // ============================================================================
-// 测试 6: 配置宏与 tool 宏的交互
+// Test 6: `config!` interaction with the `#[deprecated]` attribute
 // ============================================================================
 
 #[derive(Default)]
@@ -280,7 +280,7 @@ struct InteractionTools;
 
 #[tool]
 impl InteractionTools {
-    /// 原始描述
+    /// Original description.
     #[deprecated]
     pub fn deprecated_method(&self) -> String {
         "deprecated".to_string()
@@ -290,7 +290,7 @@ impl InteractionTools {
 config! {
     InteractionTools {
         deprecated_method: {
-            desc: "配置后的描述",
+            desc: "Configured description",
             tags: ["deprecated"]
         }
     }
@@ -298,17 +298,16 @@ config! {
 
 #[test]
 fn test_config_with_deprecated() {
-    // 触发配置初始化
+    // Force the config initialisation.
     let _ = &*__CONFIG_INIT_InteractionTools;
 
     assert!(tokitai::GLOBAL_CONFIG_REGISTRY.has_config("deprecated_method"));
 
     let configs = tokitai::GLOBAL_CONFIG_REGISTRY.get("deprecated_method");
 
-    // 验证配置存在
     let has_desc = configs
         .iter()
-        .any(|c| matches!(c, ToolConfig::Desc(s) if s == "配置后的描述"));
+        .any(|c| matches!(c, ToolConfig::Desc(s) if s == "Configured description"));
     assert!(has_desc);
 
     let has_tags = configs
@@ -318,62 +317,42 @@ fn test_config_with_deprecated() {
 }
 
 // ============================================================================
-// 测试 7: 配置注册表查询功能
+// Test 7: registry query API
 // ============================================================================
 
 #[test]
 fn test_registry_query() {
-    // 使用之前定义的工具 - 注意测试执行顺序可能影响结果
-    // 每个测试都应该独立，所以这里重新验证配置存在
+    // `has_config` returns false for unknown tools.
+    assert!(!tokitai::GLOBAL_CONFIG_REGISTRY.has_config("__nonexistent_tool__"));
 
-    // 验证 has_config 功能
-    assert!(!tokitai::GLOBAL_CONFIG_REGISTRY.has_config("nonexistent"));
-
-    // 验证 get 返回空（对于不存在的配置）
-    let nonexistent_configs = tokitai::GLOBAL_CONFIG_REGISTRY.get("nonexistent");
+    // `get` returns an empty list for unknown tools.
+    let nonexistent_configs = tokitai::GLOBAL_CONFIG_REGISTRY.get("__nonexistent_tool__");
     assert!(nonexistent_configs.is_empty());
 }
 
 // ============================================================================
-// 测试 8: 配置清除功能
+// Test 8: registry mutation API. Uses a private key so it does not
+// collide with the other tests' shared state.
 // ============================================================================
 
 #[test]
 fn test_registry_clear() {
-    // 创建一个临时工具用于测试清除功能
-    #[derive(Default)]
-    struct TempTools;
+    let temp_key = "__test_registry_clear_temp_method__";
 
-    #[tool]
-    impl TempTools {
-        pub fn temp_method(&self) -> String {
-            "temp".to_string()
-        }
-    }
+    tokitai::GLOBAL_CONFIG_REGISTRY.configure(temp_key, &[ToolConfig::desc("Initial description")]);
+    assert!(tokitai::GLOBAL_CONFIG_REGISTRY.has_config(temp_key));
 
-    config! {
-        TempTools {
-            temp_method: {
-                desc: "临时方法"
-            }
-        }
-    }
+    // Clearing a specific key removes it.
+    tokitai::GLOBAL_CONFIG_REGISTRY.clear(temp_key);
+    assert!(!tokitai::GLOBAL_CONFIG_REGISTRY.has_config(temp_key));
 
-    // 触发配置初始化
-    let _ = &*__CONFIG_INIT_TempTools;
+    // A subsequent `configure` re-adds the key.
+    tokitai::GLOBAL_CONFIG_REGISTRY
+        .configure(temp_key, &[ToolConfig::desc("Reconfigured description")]);
+    assert!(tokitai::GLOBAL_CONFIG_REGISTRY.has_config(temp_key));
 
-    // 验证配置存在
-    assert!(tokitai::GLOBAL_CONFIG_REGISTRY.has_config("temp_method"));
-
-    // 清除特定配置
-    tokitai::GLOBAL_CONFIG_REGISTRY.clear("temp_method");
-    assert!(!tokitai::GLOBAL_CONFIG_REGISTRY.has_config("temp_method"));
-
-    // 重新配置
-    tokitai::GLOBAL_CONFIG_REGISTRY.configure("temp_method", &[ToolConfig::desc("重新配置的描述")]);
-    assert!(tokitai::GLOBAL_CONFIG_REGISTRY.has_config("temp_method"));
-
-    // 清除所有配置
-    tokitai::GLOBAL_CONFIG_REGISTRY.clear_all();
-    assert!(!tokitai::GLOBAL_CONFIG_REGISTRY.has_config("temp_method"));
+    // Clean up so this test does not leave residue in the shared
+    // process-wide registry.
+    tokitai::GLOBAL_CONFIG_REGISTRY.clear(temp_key);
+    assert!(!tokitai::GLOBAL_CONFIG_REGISTRY.has_config(temp_key));
 }

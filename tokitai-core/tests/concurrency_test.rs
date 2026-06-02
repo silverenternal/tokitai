@@ -104,7 +104,12 @@ fn test_concurrent_reads() {
     // Verify data consistency - with no concurrent writes, data should remain unchanged
     for i in 0..50 {
         let configs = GLOBAL_CONFIG_REGISTRY.get(&format!("{}tool_{}", prefix, i));
-        assert!(!configs.is_empty(), "configuration for {}tool_{} should exist", prefix, i);
+        assert!(
+            !configs.is_empty(),
+            "configuration for {}tool_{} should exist",
+            prefix,
+            i
+        );
     }
 }
 
@@ -176,7 +181,11 @@ fn test_concurrent_read_write() {
     for j in 0..50 {
         let configs = GLOBAL_CONFIG_REGISTRY.get(&format!("shared_tool_{}", j));
         // Since writes occurred, the configuration should exist (possibly from any writer)
-        assert!(!configs.is_empty(), "shared_tool_{} should have a configuration", j);
+        assert!(
+            !configs.is_empty(),
+            "shared_tool_{} should have a configuration",
+            j
+        );
     }
 }
 

@@ -35,7 +35,9 @@ impl AdvancedTools {
     ) -> String {
         format!(
             "Processed user {} ({}): tag count = {}",
-            user_id, name, tags.len()
+            user_id,
+            name,
+            tags.len()
         )
     }
 

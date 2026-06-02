@@ -285,7 +285,10 @@ impl OllamaClient {
             req = req.header("Authorization", format!("Bearer {}", api_key));
         }
 
-        let response = req.send().await.map_err(|e| format!("Request failed: {}", e))?;
+        let response = req
+            .send()
+            .await
+            .map_err(|e| format!("Request failed: {}", e))?;
 
         // Check the response status
         let status = response.status();
@@ -408,7 +411,9 @@ async fn main() -> Result<(), String> {
                 }
             }
             Err(_) => {
-                println!("Ollama local service is not running, falling back to offline demo mode\n");
+                println!(
+                    "Ollama local service is not running, falling back to offline demo mode\n"
+                );
                 run_offline_demo().await.map_err(|e| e.to_string())?;
                 return Ok(());
             }
