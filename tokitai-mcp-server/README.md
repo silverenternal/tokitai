@@ -4,21 +4,21 @@
 [![Documentation](https://docs.rs/tokitai-mcp-server/badge.svg)](https://docs.rs/tokitai-mcp-server)
 [![License](https://img.shields.io/crates/l/tokitai-mcp-server)](../LICENSE)
 
-## 🎯 MCP 服务器脚手架
+## MCP Server Scaffolding
 
-Tokitai MCP Server 提供了基于 MCP (Model Context Protocol) 协议的服务器实现，让你能够快速构建 AI 可调用的工具服务器。
+Tokitai MCP Server provides a server implementation built on the MCP (Model Context Protocol) specification, letting you stand up an AI-callable tool server in just a few lines of code.
 
-## ✨ 核心特性
+## Core Features
 
-- **零运行时开销** - 工具定义在编译期生成
-- **类型安全** - Rust 类型系统确保 AI 参数与函数签名匹配
-- **MCP 兼容** - 完整支持 MCP 协议规范
-- **易于使用** - 几行代码即可启动服务器
-- **HTTP 支持** - 可选的 HTTP 服务器，支持 RESTful API
+- **Zero runtime overhead** — tool definitions are generated at compile time.
+- **Type safety** — Rust's type system ensures AI-supplied arguments match your function signatures.
+- **MCP compliant** — full support for the MCP protocol specification.
+- **Easy to use** — boot a server in just a few lines of code.
+- **HTTP support** — optional HTTP server with a RESTful API.
 
-## 🚀 快速开始
+## Quick Start
 
-### 1. 添加依赖
+### 1. Add the Dependencies
 
 ```toml
 [dependencies]
@@ -27,7 +27,7 @@ tokitai-mcp-server = "0.5.0"
 tokio = { version = "1", features = ["full"] }
 ```
 
-### 2. 定义工具
+### 2. Define Your Tools
 
 ```rust
 use tokitai::tool;
@@ -37,14 +37,14 @@ struct Calculator;
 
 #[tool]
 impl Calculator {
-    /// 两个数相加
+    /// Add two numbers
     pub fn add(&self, a: i32, b: i32) -> i32 {
         a + b
     }
 }
 ```
 
-### 3. 创建并运行服务器
+### 3. Build and Run the Server
 
 ```rust
 use tokitai_mcp_server::McpServerBuilder;
@@ -59,17 +59,17 @@ async fn main() {
 }
 ```
 
-### 4. 从 AI 客户端调用
+### 4. Call the Server from an AI Client
 
 ```python
-# Python MCP 客户端示例
+# Example Python MCP client
 import requests
 
-# 获取工具列表
+# Fetch the list of available tools
 response = requests.get("http://127.0.0.1:8080/tools")
 tools = response.json()
 
-# 调用工具
+# Invoke a tool
 response = requests.post(
     "http://127.0.0.1:8080/call",
     json={"name": "add", "arguments": {"a": 10, "b": 20}}
@@ -78,15 +78,15 @@ result = response.json()
 print(result["result"])  # 30
 ```
 
-## 📚 核心类型
+## Core Types
 
-| 类型 | 说明 |
-|------|------|
-| [`McpServer`] | MCP 服务器核心类型 |
-| [`McpServerBuilder`] | 流式构建器，用于创建服务器 |
-| [`MultiToolProvider`] | 多工具提供者，支持注册多个工具集 |
+| Type | Description |
+|------|-------------|
+| [`McpServer`] | The core MCP server type. |
+| [`McpServerBuilder`] | A fluent builder used to construct a server. |
+| [`MultiToolProvider`] | A multi-tool provider that aggregates several tool sets. |
 
-## 🏗️ 使用多工具提供者
+## Using `MultiToolProvider`
 
 ```rust
 use tokitai::tool;
@@ -112,43 +112,43 @@ impl Greeter {
     }
 }
 
-// 组合多个工具集
+// Compose several tool sets into one provider
 let mut provider = MultiToolProvider::new();
 provider.add(Calculator::default());
 provider.add(Greeter::default());
 ```
 
-## 📋 API 端点
+## API Endpoints
 
-| 端点 | 方法 | 说明 |
-|------|------|------|
-| `/tools` | GET | 获取所有可用工具的定义 |
-| `/call` | POST | 调用指定工具 |
-| `/health` | GET | 健康检查端点 |
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/tools` | GET | Return the definitions of every available tool. |
+| `/call`  | POST | Invoke a named tool with a JSON arguments object. |
+| `/health` | GET | Liveness check endpoint. |
 
-## ⚙️ 配置选项
+## Configuration Options
 
-使用 `McpServerBuilder` 配置服务器：
+Use `McpServerBuilder` to configure the server:
 
 ```rust
 let server = McpServerBuilder::with_tool(my_tool)
-    .with_port(8080)           // 设置监听端口
-    .with_host("0.0.0.0")      // 设置监听地址
+    .with_port(8080)           // set the listening port
+    .with_host("0.0.0.0")      // set the bind address
     .build();
 ```
 
-## 🎛️ Features
+## Features
 
-| Feature | 说明 |
-|---------|------|
-| `default` | 默认配置 |
+| Feature | Description |
+|---------|-------------|
+| `default` | Default configuration. |
 
-## ⚙️ 要求
+## Requirements
 
-- **Rust 版本**: 1.80+
+- **Rust version**: 1.80+
 - **Edition**: 2021
 
-## 📄 许可证
+## License
 
 Licensed under either of:
 
@@ -157,20 +157,20 @@ Licensed under either of:
 
 at your option.
 
-## 📦 相关 Crate
+## Related Crates
 
-| Crate | Crates.io | 说明 |
-|-------|-----------|------|
-| `tokitai` | [![crates.io](https://img.shields.io/crates/v/tokitai.svg)](https://crates.io/crates/tokitai) | 主 crate，包含运行时支持 |
-| `tokitai-core` | [![crates.io](https://img.shields.io/crates/v/tokitai-core.svg)](https://crates.io/crates/tokitai-core) | 核心类型和 trait |
-| `tokitai-macros` | [![crates.io](https://img.shields.io/crates/v/tokitai-macros.svg)](https://crates.io/crates/tokitai-macros) | 过程宏实现 |
+| Crate | Crates.io | Description |
+|-------|-----------|-------------|
+| `tokitai` | [![crates.io](https://img.shields.io/crates/v/tokitai.svg)](https://crates.io/crates/tokitai) | Main crate, bundling runtime support. |
+| `tokitai-core` | [![crates.io](https://img.shields.io/crates/v/tokitai-core.svg)](https://crates.io/crates/tokitai-core) | Core types and traits. |
+| `tokitai-macros` | [![crates.io](https://img.shields.io/crates/v/tokitai-macros.svg)](https://crates.io/crates/tokitai-macros) | Procedural macro implementation. |
 
-## 📚 文档
+## Documentation
 
-- **[API 文档](https://docs.rs/tokitai-mcp-server)** - 完整的 API 参考
-- **[快速开始](../docs/quickstart.md)** - 5 分钟入门教程
-- **[MCP 架构](../docs/MCP_ARCHITECTURE.md)** - MCP 协议设计说明
+- **[API Reference](https://docs.rs/tokitai-mcp-server)** — complete API documentation.
+- **[Quick Start](../docs/quickstart.md)** — five-minute getting-started tutorial.
+- **[MCP Architecture](../docs/MCP_ARCHITECTURE.md)** — notes on the MCP protocol design.
 
 ---
 
-**Happy Coding!** 🦀
+**Happy Coding!**

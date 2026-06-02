@@ -1,8 +1,8 @@
-//! MCP (Model Context Protocol) 支持
+//! MCP (Model Context Protocol) support
 //!
-//! 提供与 MCP 兼容的工具定义格式和服务器运行时。
+//! Provides an MCP-compatible tool definition format and server runtime.
 //!
-//! # 快速开始
+//! # Quick Start
 //!
 //! ```rust,ignore
 //! use tokitai::{tool, mcp::McpServer};
@@ -17,7 +17,7 @@
 //!     }
 //! }
 //!
-//! // 创建 MCP 服务器
+//! // Create an MCP server
 //! let server = Calculator::new_mcp_server();
 //! ```
 
@@ -105,7 +105,7 @@ impl McpToolResponse {
 }
 
 // ============================================================================
-// MCP Server Trait - 核心抽象
+// MCP Server Trait - core abstraction
 // ============================================================================
 
 /// MCP server trait
@@ -150,7 +150,7 @@ pub trait McpServer: Sized + Send + Sync {
 }
 
 // ============================================================================
-// 为所有 #[tool] 类型自动实现 McpServer
+// Auto-impl McpServer for all #[tool] types
 // ============================================================================
 
 /// MCP server wrapper
@@ -195,7 +195,7 @@ where
     }
 
     async fn call_tool(&self, name: &str, arguments: &serde_json::Value) -> McpToolResponse {
-        // 使用 ToolCaller trait 的 call_tool 方法
+        // Use the ToolCaller trait's call_tool method
         match self.inner.call_tool(name, arguments) {
             Ok(result) => McpToolResponse::success(result),
             Err(e) => McpToolResponse::error(format!("{}", e)),
@@ -204,7 +204,7 @@ where
 }
 
 // ============================================================================
-// 宏辅助：为 #[tool] 类型生成 McpServer 实现
+// Macro helper: generate McpServer impl for #[tool] types
 // ============================================================================
 
 /// Macro that generates an `McpServer` implementation for a type
@@ -231,7 +231,7 @@ macro_rules! impl_mcp_server {
 }
 
 // ============================================================================
-// MCP HTTP 服务器（可选功能，需要 http-server feature）
+// MCP HTTP server (optional, requires the http-server feature)
 // ============================================================================
 
 /// MCP HTTP server configuration
@@ -332,13 +332,13 @@ where
 
         let app_state = Arc::new(AppState::new(to_mcp_tools(T::tool_definitions())));
 
-        // 定义处理器
+        // Define handlers
         async fn list_tools_handler(State(state): State<Arc<AppState>>) -> Json<Vec<McpTool>> {
             Json(state.tools.clone())
         }
 
         async fn call_tool_handler(Json(_request): Json<McpToolCall>) -> Json<McpToolResponse> {
-            // 在实际应用中，这里会调用具体的工具实现
+            // In a real application, this would call the concrete tool implementation
             Json(McpToolResponse::error("Tool execution requires concrete implementation. Use examples/mcp_http_server.rs for a complete example."))
         }
 
@@ -378,7 +378,7 @@ impl AppState {
 }
 
 // ============================================================================
-// SSE (Server-Sent Events) 支持
+// SSE (Server-Sent Events) support
 // ============================================================================
 
 /// MCP SSE message

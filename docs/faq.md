@@ -17,7 +17,7 @@ have a question, the answer is almost certainly here.
 2. **The LLM always sends `null` for my `Option<T>` parameter.** [Why → §4.2](#42-why-does-the-llm-always-send-null-for-an-optiont-parameter)
 3. **My async tool fails to compile with "future is not `Send`".** [Why → §4.3](#43-why-does-my-async-tool-fail-to-compile-with-future-is-not-send)
 4. **I get `TOOL_DEFINITIONS` from older code — the macro has changed.** [Fix → §3.1](#31-error-rust-cannot-find-value-tool_definitions-in-this-scope)
-5. **I get `compile_error!: Generic methods are not supported`.** [Fix → §3.2](#32-error-compile_error--generic-methods-不是受支持)
+5. **I get `compile_error!: Generic methods are not supported`.** [Fix → §3.2](#32-error-compile_error--tool-method-name-uses-unsupported-generic-parameters)
 6. **`#[openapi]` says it cannot find the spec file at compile time.** [Fix → §3.6](#36-error-openapi-could-not-read-spec-file-path)
 7. **`#[rate_limit]` blocks my Tokio worker.** [Why → §4.4](#44-why-does-rate_limit-block-my-tokio-worker)
 8. **The body of my `#[delegate]` method gets rejected.** [Fix → §3.4](#34-error-delegate-is-meant-to-be-applied-to-a-method-signature-no-body)
@@ -78,7 +78,7 @@ pub struct Weather;
 
 #[tool]
 impl Weather {
-    #[tool(name = "fetch_weather", desc = "从外部 API 拉取天气")]
+    #[tool(name = "fetch_weather", desc = "Fetch weather from external API")]
     pub fn get_weather(&self, city: String) -> String { city }
 }
 
@@ -103,14 +103,14 @@ pub struct Tools;
 
 #[tool]
 impl Tools {
-    // ❌ ERROR: `Generic methods are not supported`
+    // ERROR: `Generic methods are not supported`
     // pub fn process<T: serde::Serialize>(&self, v: T) -> String { ... }
 
-    // ✅ Concrete-typed wrappers:
+    // Concrete-typed wrappers:
     pub fn process_string(&self, v: String) -> String { v }
     pub fn process_json(&self, v: serde_json::Value) -> String { v.to_string() }
 
-    // ✅ Generic helper stays non-public:
+    // Generic helper stays non-public:
     fn process_inner<T: serde::Serialize>(&self, v: &T) -> String {
         serde_json::to_string(v).unwrap_or_default()
     }
@@ -275,7 +275,7 @@ pub struct InnerClient;
 
 pub struct Wrapper { pub client: InnerClient }
 
-#[wrap(client = InnerClient, methods = [ping])]   // ✅ listed
+#[wrap(client = InnerClient, methods = [ping])]   // listed
 impl Wrapper {
     pub fn ping(&self) -> bool { true }
     pub fn health(&self) -> bool { true }         // not listed → not a tool
@@ -374,9 +374,9 @@ pub struct Wrapper { pub inner: Inner }
 
 impl Wrapper {
     #[delegate(to = "self.inner")]
-    pub fn ping(&self) -> bool;     // ✅ signature only
+    pub fn ping(&self) -> bool;     // signature only
 
-    // ❌ ERROR: body present.
+    // ERROR: body present.
     // #[delegate(to = "self.inner")]
     // pub fn ping(&self) -> bool { false }
 }
@@ -593,14 +593,14 @@ a method. See the v0.4 changelog entry in [`CHANGELOG.md`](../CHANGELOG.md).
 **Fix**: switch to the method form.
 
 ```rust
-// ❌ old (pre-0.4)
+// old (pre-0.4)
 let tools = MyTools::TOOL_DEFINITIONS;
 
-// ✅ new (0.4+)
+// new (0.4+)
 let tools = MyTools::tool_definitions();
 ```
 
-### 3.2 `error: compile_error! 工具方法 <name> 使用了泛型参数，这不被支持。`
+### 3.2 `error: compile_error! tool method <name> uses unsupported generic parameters`
 
 **Cause**: `#[tool]` does not support generic methods. See
 [`reference/tool.md` §Errors](reference/tool.md#errors).
@@ -612,7 +612,7 @@ use tokitai::tool;
 
 #[tool]
 impl Tools {
-    // ❌ pub fn process<T: serde::Serialize>(&self, v: T) -> String { ... }
+    // pub fn process<T: serde::Serialize>(&self, v: T) -> String { ... }
 
     pub fn process_string(&self, v: String) -> String { v }
     pub fn process_json(&self, v: serde_json::Value) -> String { v.to_string() }
@@ -649,10 +649,10 @@ impl Inner { pub fn ping(&self) -> bool { true } }
 pub struct W { pub inner: Inner }
 
 impl W {
-    // ❌ #[delegate(to = "self.inner")]
+    // #[delegate(to = "self.inner")]
     // pub fn ping(&self) -> bool { false }
 
-    // ✅
+    //
     #[delegate(to = "self.inner")]
     pub fn ping(&self) -> bool;
 }
@@ -672,7 +672,7 @@ pub struct Inner;
 
 pub struct W { pub client: Inner }
 
-#[wrap(client = Inner, methods = [ping])]   // ✅ both present, non-empty
+#[wrap(client = Inner, methods = [ping])]   // both present, non-empty
 impl W {
     pub fn ping(&self) -> bool { true }
 }
@@ -832,7 +832,7 @@ use tokitai::tool;
 #[tool]
 impl Calc {
     #[tool(context = "async")]
-    pub async fn add(&self, a: i32, b: i32) -> i32 { a + b }   // ✅ matches
+    pub async fn add(&self, a: i32, b: i32) -> i32 { a + b }   // matches
 }
 ```
 
@@ -921,7 +921,7 @@ use tokitai::tool;
 use std::sync::{Arc, Mutex};
 
 #[derive(Default)]
-pub struct State { pub count: Mutex<u32> }   // ✅ Send + Sync
+pub struct State { pub count: Mutex<u32> }   // Send + Sync
 
 #[tool]
 impl Counter {
@@ -1042,9 +1042,9 @@ pub struct Service;
 
 #[tool]
 impl Service {
-    // ❌ pub fn maybe(&self) -> Option<i32> { Some(42) }
+    // pub fn maybe(&self) -> Option<i32> { Some(42) }
 
-    // ✅ shape that the dispatcher knows:
+    // shape that the dispatcher knows:
     pub fn maybe(&self) -> i32 { 42 }
 }
 ```

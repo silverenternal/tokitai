@@ -5,12 +5,12 @@
 [![License](https://img.shields.io/crates/l/tokitai)](../LICENSE)
 [![Build Status](https://img.shields.io/github/actions/workflow/status/silverenternal/tokitai/ci.yml)](https://github.com/silverenternal/tokitai/actions)
 
-## 🎯 一行贴纸，让 AI 调用你的 Rust 代码
+## One attribute, and your Rust code is AI-callable
 
 ```rust
 use tokitai::tool;
 
-#[tool]  // ← 就这一行！
+#[tool]  // <- this is the only line you need!
 impl MyTools {
     pub fn add(&self, a: i32, b: i32) -> i32 {
         a + b
@@ -18,26 +18,26 @@ impl MyTools {
 }
 ```
 
-**编译期生成** · **零运行时侵入** · **类型安全**
+**Compile-time generation** · **Zero runtime intrusion** · **Type-safe by construction**
 
 ---
 
-**编译期 AI 工具定义 · 零运行时侵入 · 魔法贴纸式集成**
+**Compile-time AI tool definitions · Zero runtime footprint · Magic-sticker integration**
 
-Tokitai 是一个零运行时依赖的过程宏库，只需一个 `#[tool]` 属性，即可将你的 Rust 方法自动转换为 AI 可调用的工具。所有工具定义在编译期生成，类型错误在编译时暴露。
+Tokitai is a procedural-macro library with zero runtime dependencies. A single `#[tool]` attribute turns your Rust methods into AI-callable tools, and every tool definition is generated at compile time so type errors surface during compilation.
 
-## 🚀 5 分钟快速开始
+## 5-minute quick start
 
-### 1. 添加依赖
+### 1. Add the dependency
 
 ```toml
 [dependencies]
 tokitai = "0.5.0"
 ```
 
-就这一行！所有必需的依赖（serde、serde_json、thiserror）都会自动包含。
+That's it. All required dependencies (serde, serde_json, thiserror) are pulled in automatically.
 
-### 2. 定义工具
+### 2. Define your tools
 
 ```rust
 use tokitai::tool;
@@ -47,20 +47,20 @@ struct Calculator;
 
 #[tool]
 impl Calculator {
-    /// 两个数相加
+    /// Add two numbers
     pub fn add(&self, a: i32, b: i32) -> i32 {
         a + b
     }
 }
 ```
 
-### 3. 获取工具定义
+### 3. Get the tool definitions
 
 ```rust
 let tools = Calculator::tool_definitions();
 ```
 
-### 4. 处理 AI 调用
+### 4. Handle an AI call
 
 ```rust
 use tokitai::json;
@@ -70,64 +70,70 @@ let result = calc.call_tool("add", &json!({"a": 10, "b": 20}))?;
 println!("{}", result);  // 30
 ```
 
-## ✨ 核心特性
+## Core features
 
-| 特性 | 说明 |
-|------|------|
-| **零依赖侵入** | 用户只需添加 `tokitai = "0.5.0"` |
-| **编译期生成** | 工具定义在编译期生成，类型错误早发现 |
-| **单一属性** | 只需 `#[tool]`，无需多个标签 |
-| **类型安全** | Rust 类型自动映射到 JSON Schema |
-| **供应商中立** | 支持任何 AI/LLM 提供商 |
+| Feature | Description |
+|---------|-------------|
+| **Zero dependency footprint** | Add only `tokitai = "0.5.0"` |
+| **Compile-time generation** | Tool definitions are generated during compilation, so type errors surface early |
+| **One attribute** | Just `#[tool]` — no chain of annotations to remember |
+| **Type-safe by construction** | Rust types are mapped to JSON Schema automatically |
+| **Provider-agnostic** | Works with any AI / LLM provider |
 
-## 📋 类型映射
+## Type mapping
 
-| Rust 类型 | JSON Schema |
+| Rust type | JSON Schema |
 |-----------|-------------|
 | `String`, `&str` | `string` |
-| `i32`, `i64`, `u32` 等 | `integer` |
+| `i32`, `i64`, `u32`, ... | `integer` |
 | `f32`, `f64` | `number` |
 | `bool` | `boolean` |
 | `Vec<T>` | `array` |
-| 自定义 struct | `object` |
+| `Option<T>` | optional `T` |
+| user-defined `struct` | `object` |
 
-## 🔧 常用属性
+## Common attributes
 
 ```rust
 #[tool]
 impl MyTools {
-    /// 自定义名称
+    /// Custom name
     #[tool(name = "custom_name")]
     pub fn my_func(&self) {}
 
-    /// 自定义描述
-    #[tool(desc = "自定义描述")]
+    /// Custom description
+    #[tool(desc = "Custom description")]
     pub fn another_func(&self) {}
 
-    /// 参数级别属性
+    /// Per-parameter attributes
     pub fn process(
         &self,
-        #[tool(desc = "参数描述", default = "null")]
+        #[tool(desc = "Parameter description", default = "null")]
         options: Option<String>
     ) {}
 }
 ```
 
-## 📚 文档
+## Wrap features (v0.5+)
 
-- **[5 分钟快速开始](docs/quickstart.md)** - 详细入门教程
-- **[高级用法](docs/ADVANCED_USAGE.md)** - 高级功能和最佳实践
-- **[类型系统](docs/USAGE.md)** - Rust 类型到 JSON Schema 的映射
-- **[AI 集成](docs/AI_INTEGRATION.md)** - 与 AI 提供商集成的指南
-- **[架构说明](docs/ARCHITECTURE.md)** - 项目架构和设计
-- **[API 文档](https://docs.rs/tokitai)** - 完整的 API 参考
+In addition to the core `#[tool]` macro, the workspace ships a family of **auto-wrapping** macros that turn existing clients, OpenAPI specs, and resilience policies into tools with a single attribute: `#[wrap]`, `#[openapi]` / `#[openapi_op]`, `#[delegate]`, `#[retry]`, `#[rate_limit]`, and `#[circuit_breaker]`. See the [Wrap architecture](../docs/wrap-architecture.md) and the [Wrap cheatsheet](../docs/wrap-cheatsheet.md) for the full picture, and the workspace [README](../README.md#wrap-features-v05) for the at-a-glance summary.
 
-## ⚙️ 要求
+## Documentation
 
-- **Rust 版本**: 1.80+
+- **[5-minute quick start](../docs/quickstart.md)** — a more detailed getting-started walkthrough
+- **[Advanced usage](../docs/ADVANCED_USAGE.md)** — advanced features and best practices
+- **[Type system](../docs/USAGE.md)** — how Rust types map to JSON Schema
+- **[AI integration](../docs/AI_INTEGRATION.md)** — integrating with AI providers
+- **[Architecture](../docs/ARCHITECTURE.md)** — project structure and design
+- **[Wrap architecture](../docs/wrap-architecture.md)** — the auto-wrapping macros
+- **[API reference](https://docs.rs/tokitai)** — full API documentation
+
+## Requirements
+
+- **Rust version**: 1.80+
 - **Edition**: 2021
 
-## 📄 许可证
+## License
 
 Licensed under either of:
 
@@ -136,35 +142,36 @@ Licensed under either of:
 
 at your option.
 
-## 🤝 贡献
+## Contributing
 
-除非你明确声明其他许可，否则你为本 crate 提交的所有贡献都将按上述两种方式之一授权，无需额外条款或条件。
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in this crate by you, as defined in the Apache-2.0 license, shall be dual-licensed as above, without any additional terms or conditions.
 
-## 📦 子 crate
+## Sub-crates
 
-Tokitai 由三个 crate 组成：
+Tokitai is shipped as three crates:
 
-| Crate | Crates.io | 说明 |
+| Crate | Crates.io | Role |
 |-------|-----------|------|
-| `tokitai` | [![crates.io](https://img.shields.io/crates/v/tokitai.svg)](https://crates.io/crates/tokitai) | 主 crate，包含运行时支持 |
-| `tokitai-core` | [![crates.io](https://img.shields.io/crates/v/tokitai-core.svg)](https://crates.io/crates/tokitai-core) | 核心类型和 trait（零依赖） |
-| `tokitai-macros` | [![crates.io](https://img.shields.io/crates/v/tokitai-macros.svg)](https://crates.io/crates/tokitai-macros) | 过程宏实现 |
+| `tokitai` | [![crates.io](https://img.shields.io/crates/v/tokitai.svg)](https://crates.io/crates/tokitai) | Main crate, includes the runtime support |
+| `tokitai-core` | [![crates.io](https://img.shields.io/crates/v/tokitai-core.svg)](https://crates.io/crates/tokitai-core) | Core types and traits (zero dependencies) |
+| `tokitai-macros` | [![crates.io](https://img.shields.io/crates/v/tokitai-macros.svg)](https://crates.io/crates/tokitai-macros) | Procedural-macro implementation |
 
-**99% 的用户只需要：**
+**For 99% of users, this is all you need:**
+
 ```toml
 [dependencies]
 tokitai = "0.5.0"
 ```
 
-## 📝 示例
+## Examples
 
-更多示例见 [examples 目录](../examples/)：
+More examples live under the [examples directory](../examples/):
 
-- `basic_usage.rs` - 基础使用示例
-- `quick_chat.rs` - 交互式数学计算器
-- `version_management.rs` - 版本管理属性演示
-- `ollama_integration.rs` - Ollama AI 集成
+- `basic_usage.rs` — basic usage
+- `quick_chat.rs` — interactive math calculator
+- `version_management.rs` — version-management attributes
+- `ollama_integration.rs` — Ollama AI integration
 
 ---
 
-**Happy Coding!** 🦀
+**Happy coding!**

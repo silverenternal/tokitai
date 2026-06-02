@@ -1,4 +1,4 @@
-//! 5 分钟快速开始
+//! 5-minute quick start
 //!
 //! ```bash
 //! cargo run --example basic_usage
@@ -27,7 +27,7 @@ impl Calculator {
     /// Divides two numbers
     pub fn divide(&self, dividend: i32, divisor: i32) -> Result<i32, String> {
         if divisor == 0 {
-            Err("除数不能为零".to_string())
+            Err("divisor cannot be zero".to_string())
         } else {
             Ok(dividend / divisor)
         }
@@ -40,9 +40,9 @@ pub struct WeatherService;
 #[tool]
 impl WeatherService {
     /// Get weather information for a specified city
-    #[tool(name = "get_weather", desc = "获取城市天气预报")]
+    #[tool(name = "get_weather", desc = "Get weather forecast for a city")]
     pub fn get_weather(&self, city: String) -> String {
-        format!("{} 的天气：晴朗，温度 25°C", city)
+        format!("Weather in {}: clear, temperature 25C", city)
     }
 }
 
@@ -50,7 +50,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     init_console();
     println!("=== Tokitai Basic Usage Example ===\n");
 
-    // 1. 获取工具定义（发送给 AI）
+    // 1. Get tool definitions (send to AI)
     println!("1. Get Tool Definitions (send to AI)");
     let tools = Calculator::tool_definitions();
     println!("   Tool count: {}", tools.len());
@@ -59,7 +59,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     println!();
 
-    // 2. 调用工具（模拟 AI 请求）
+    // 2. Call tools (simulate AI request)
     println!("2. Call Tools (simulate AI request)");
     let calc = Calculator;
 
@@ -70,7 +70,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("   multiply(5, 6) = {}", result);
     println!();
 
-    // 3. 错误处理
+    // 3. Error handling
     println!("3. Error Handling");
     match calc.call_tool("divide", &tokitai::json!({"dividend": 10, "divisor": 0})) {
         Ok(_) => println!("   Should not succeed"),
@@ -78,7 +78,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     println!();
 
-    // 4. 自定义工具属性
+    // 4. Custom tool attributes
     println!("4. Custom Tool Attributes");
     let weather = WeatherService;
     let weather_tools = WeatherService::tool_definitions();
@@ -86,26 +86,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("   - {} (custom name): {}", tool.name, tool.description);
     }
 
-    let result = weather.call_tool("get_weather", &tokitai::json!({"city": "北京"}))?;
-    println!("   get_weather(北京) = {}", result);
+    let result = weather.call_tool("get_weather", &tokitai::json!({"city": "Beijing"}))?;
+    println!("   get_weather(Beijing) = {}", result);
     println!();
 
-    // 5. 模拟完整的 AI 对话流程
+    // 5. Simulate a complete AI conversation flow
     println!("5. Complete AI Conversation Flow");
     simulate_ai_conversation()?;
 
     Ok(())
 }
 
-/// 模拟完整的 AI 对话流程
+/// Simulate a complete AI conversation flow
 fn simulate_ai_conversation() -> Result<(), Box<dyn std::error::Error>> {
     let calc = Calculator;
 
-    // 步骤 1: 发送工具定义给 AI
+    // Step 1: send tool definitions to the AI
     let tools = Calculator::tool_definitions();
     println!("   [Send to AI] Tool definitions: {} tools", tools.len());
 
-    // 步骤 2: 模拟 AI 返回的工具调用
+    // Step 2: simulate the tool call returned by the AI
     let ai_tool_call = tokitai::json!({
         "tool_name": "add",
         "arguments": {
@@ -119,7 +119,7 @@ fn simulate_ai_conversation() -> Result<(), Box<dyn std::error::Error>> {
         ai_tool_call["tool_name"], ai_tool_call["arguments"]
     );
 
-    // 步骤 3: 执行工具调用
+    // Step 3: execute the tool call
     let result = calc.call_tool(
         ai_tool_call["tool_name"].as_str().unwrap(),
         &ai_tool_call["arguments"],
@@ -127,7 +127,7 @@ fn simulate_ai_conversation() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("   [Execute Result] {}", result);
 
-    // 步骤 4: 返回结果给 AI
+    // Step 4: return the result to the AI
     println!("   [Return to AI] Result: {}", result);
 
     Ok(())

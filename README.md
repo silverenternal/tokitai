@@ -1,20 +1,20 @@
 # Tokitai
 
-> **📌 推荐版本: 0.5.0** (released 2026-06-02). 见 [CHANGELOG](CHANGELOG.md#050---2026-06-02) 和 [v0.4 → v0.5 迁移指南](docs/migration/v0.4-to-v0.5.md)。
+> **Current version: 0.5.0** (released 2026-06-02). See [CHANGELOG](CHANGELOG.md#050---2026-06-02) and the [v0.4 to v0.5 migration guide](docs/migration/v0.4-to-v0.5.md).
 
 [![Crates.io](https://img.shields.io/crates/v/tokitai.svg)](https://crates.io/crates/tokitai)
 [![Documentation](https://docs.rs/tokitai/badge.svg)](https://docs.rs/tokitai)
 [![License](https://img.shields.io/crates/l/tokitai)](LICENSE)
 [![Build Status](https://img.shields.io/github/actions/workflow/status/silverenternal/tokitai/ci.yml)](https://github.com/silverenternal/tokitai/actions)
 
-> **🧭 设计理念**: Tokitai 本身是**进程内 (in-process)** 工具调用 — 编译期生成类型安全的 `__call_*` 包装函数,`call_tool` 在你的 Rust 进程内存里直接 dispatch,**零网络、零序列化到 `serde_json::Value` 之后的 IPC 往返**。MCP / HTTP / stdio 等网络协议只是众多**可选的进程外 (out-of-process) 包装**之一,不是核心。
+> **Design philosophy**: Tokitai is fundamentally an **in-process** tool-calling library. It generates type-safe `__call_*` wrapper functions at compile time, and `call_tool` dispatches them directly inside your Rust process's memory — **no network, no IPC round-trip, no serialization back to `serde_json::Value`**. Wire protocols like MCP, HTTP, and stdio are simply **optional out-of-process wrappers** built on top of that core, not the core itself.
 
-## 🎯 一行贴纸，让 AI 调用你的 Rust 代码
+## One attribute, and your Rust code is AI-callable
 
 ```rust
 use tokitai::tool;
 
-#[tool]  // ← 就这一行！
+#[tool]  // <- this is the only line you need!
 impl MyTools {
     pub fn add(&self, a: i32, b: i32) -> i32 {
         a + b
@@ -22,29 +22,29 @@ impl MyTools {
 }
 ```
 
-**编译期生成** · **零运行时侵入** · **类型安全**
+**Compile-time generation** · **Zero runtime intrusion** · **Type-safe by construction**
 
 ---
 
-**编译期 AI 工具定义 · 最小运行时依赖 · 魔法贴纸式集成**
+**Compile-time AI tool definitions · Minimal runtime footprint · Magic-sticker integration**
 
-Tokitai 是一个过程宏库，只需一个 `#[tool]` 属性，即可将你的 Rust 方法自动转换为 AI 可调用的工具。所有工具定义在编译期生成，类型错误在编译时暴露。运行时仅需最小依赖（serde + serde_json），无额外开销。
+Tokitai is a procedural-macro library. A single `#[tool]` attribute turns your Rust methods into AI-callable tools. Every tool definition is generated at compile time, so type errors surface during compilation rather than at runtime. The runtime surface stays minimal (serde + serde_json) with no extra overhead.
 
-## 🚀 5 分钟快速开始
+## 5-minute quick start
 
-### 1. 添加依赖
+### 1. Add the dependency
 
 ```toml
 [dependencies]
 tokitai = "0.5.0"
-tokitai-mcp-server = "0.5"  # 可选：MCP 服务器脚手架
+tokitai-mcp-server = "0.5"  # optional: MCP server scaffolding
 tokio = { version = "1", features = ["full"] }
 serde_json = "1.0"
 ```
 
-就这一行！所有必需的依赖（serde、serde_json、thiserror）都会自动包含。
+That's it. All required dependencies (serde, serde_json, thiserror) are pulled in automatically.
 
-### 2. 定义工具
+### 2. Define your tools
 
 ```rust
 use tokitai::tool;
@@ -54,20 +54,20 @@ struct Calculator;
 
 #[tool]
 impl Calculator {
-    /// 两个数相加
+    /// Add two numbers
     pub fn add(&self, a: i32, b: i32) -> i32 {
         a + b
     }
 }
 ```
 
-### 3. 获取工具定义
+### 3. Get the tool definitions
 
 ```rust
-let tools = Calculator::tool_definitions();  // v0.4.0+ 使用方法而非常量
+let tools = Calculator::tool_definitions();  // v0.4.0+ returns a method, not a constant
 ```
 
-### 4. 处理 AI 调用
+### 4. Handle an AI call
 
 ```rust
 use tokitai::json;
@@ -77,7 +77,7 @@ let result = calc.call_tool("add", &json!({"a": 10, "b": 20}))?;
 println!("{}", result);  // 30
 ```
 
-### 5. 快速启动 MCP HTTP 服务器
+### 5. Spin up an MCP HTTP server in seconds
 
 ```rust
 use tokitai_mcp_server::McpServerBuilder;
@@ -92,16 +92,16 @@ async fn main() {
 }
 ```
 
-然后从任何 MCP 客户端调用：
+Then call it from any MCP client:
 
 ```python
 import requests
 
-# 获取工具列表
+# List available tools
 response = requests.get("http://127.0.0.1:8080/tools")
 tools = response.json()
 
-# 调用工具
+# Call a tool
 response = requests.post(
     "http://127.0.0.1:8080/call",
     json={"name": "add", "arguments": {"a": 10, "b": 20}}
@@ -110,130 +110,131 @@ result = response.json()
 print(result["result"])  # 30
 ```
 
-### 运行示例
+### Run the examples
 
 ```bash
-# 基础使用示例
+# Basic usage
 cargo run --example basic_usage
 
-# MCP 服务器示例
+# MCP server demo
 cargo run --example mcp_builder_demo -p tokitai-mcp-server
 
-# 多工具聊天
+# Multi-tool chat
 cargo run --example multi_tool_chat
 
-# 端到端回归测试
+# End-to-end regression test
 cargo run --example dev_assistant
 ```
 
-## 📚 完整文档
+## Documentation
 
-- **[5 分钟快速开始](docs/quickstart.md)** - 详细入门教程
-- **[高级用法](docs/ADVANCED_USAGE.md)** - 高级功能和最佳实践
-- **[类型系统](docs/USAGE.md)** - Rust 类型到 JSON Schema 的映射
-- **[AI 集成](docs/AI_INTEGRATION.md)** - 与 AI 提供商集成的指南
-- **[架构说明](docs/ARCHITECTURE.md)** - 项目架构和设计
-- **[Wrap 架构](docs/wrap-architecture.md)** - `#[wrap]` / `#[openapi]` / `#[delegate]` / `#[retry]` 等自动包裹宏
-- **[Wrap 速查表](docs/wrap-cheatsheet.md)** - Wrap 功能一页速查
-- **[Cross-Language SDK Guide](docs/CROSS_LANGUAGE.md)** - HTTP+JSON protocol and SDK quickstarts for Python, JS/TS, Go, curl
-- **[API 文档](https://docs.rs/tokitai)** - 完整的 API 参考
+- **[5-minute quick start](docs/quickstart.md)** — a more detailed getting-started walkthrough
+- **[Advanced usage](docs/ADVANCED_USAGE.md)** — advanced features and best practices
+- **[Type system](docs/USAGE.md)** — how Rust types map to JSON Schema
+- **[AI integration](docs/AI_INTEGRATION.md)** — integrating with AI providers
+- **[Architecture](docs/ARCHITECTURE.md)** — project structure and design
+- **[Wrap architecture](docs/wrap-architecture.md)** — the auto-wrapping macros: `#[wrap]`, `#[openapi]`, `#[delegate]`, `#[retry]`, and friends
+- **[Wrap cheatsheet](docs/wrap-cheatsheet.md)** — one-page reference for the Wrap family
+- **[Cross-language SDK guide](docs/CROSS_LANGUAGE.md)** — the HTTP+JSON protocol plus quickstarts for Python, JS/TS, Go, and curl
+- **[API reference](https://docs.rs/tokitai)** — full API documentation
 
-## ✨ 核心特性
+## Core features
 
-| 特性 | 说明 |
-|------|------|
-| **最小依赖侵入** | 用户只需添加 `tokitai = "0.5"`，运行时仅需 serde + serde_json |
-| **编译期生成** | 工具定义在编译期生成，类型错误早发现 |
-| **单一属性** | 只需 `#[tool]`，无需多个标签 |
-| **类型安全** | Rust 类型自动映射到 JSON Schema |
-| **供应商中立** | 支持任何 AI/LLM 提供商 |
+| Feature | Description |
+|---------|-------------|
+| **Minimal dependency footprint** | Add only `tokitai = "0.5"`; the runtime needs just serde + serde_json |
+| **Compile-time generation** | Tool definitions are generated during compilation, so type errors surface early |
+| **One attribute** | Just `#[tool]` — no chain of annotations to remember |
+| **Type-safe by construction** | Rust types are mapped to JSON Schema automatically |
+| **Provider-agnostic** | Works with any AI / LLM provider |
 
-## 🧩 Wrap 特性（v0.5+）
+## Wrap features (v0.5+)
 
-除了核心的 `#[tool]` 宏，Tokitai 还提供一组**自动包裹**宏，用于把已有客户端 / OpenAPI 规约 / 弹性策略直接暴露为工具：
+In addition to the core `#[tool]` macro, Tokitai ships a family of **auto-wrapping** macros that turn existing clients, OpenAPI specs, and resilience policies into tools with a single attribute:
 
-| 宏 | 用途 |
-|----|------|
-| `#[wrap]` | 用白名单方式挑选第三方客户端的方法，生成 `new(client)` 构造器 |
-| `#[openapi]` / `#[openapi_op]` | 读取 OpenAPI 3 规约，按 `operationId` 把整组 HTTP 接口暴露为工具 |
-| `#[delegate]` | 无需手写 `match` 分发，把内层方法直接转发为工具 |
-| `#[retry]` | 在工具体内插入指数退避重试循环 |
-| `#[rate_limit]` | 在工具调用前插入无锁令牌桶限流 |
-| `#[circuit_breaker]` | 三态熔断器，v1 仅观察、不熔断 |
+| Macro | Purpose |
+|-------|---------|
+| `#[wrap]` | Whitelist-pick methods from a third-party client and generate a `new(client)` constructor |
+| `#[openapi]` / `#[openapi_op]` | Read an OpenAPI 3 spec and expose the matching `operationId`s as a batch of HTTP tools |
+| `#[delegate]` | Forward inner methods as tools without writing a hand-rolled `match` dispatcher |
+| `#[retry]` | Inject an exponential-backoff retry loop inside the tool body |
+| `#[rate_limit]` | Apply a lock-free token-bucket rate limiter before the tool body runs |
+| `#[circuit_breaker]` | Three-state circuit breaker; v1 is observe-only and does not yet trip |
 
-完整说明见 [Wrap 架构](docs/wrap-architecture.md) 与 [Wrap 速查表](docs/wrap-cheatsheet.md)；
-各宏的逐项参数见 `docs/reference/` 下的同名页面。
+For the full picture see [Wrap architecture](docs/wrap-architecture.md) and the [Wrap cheatsheet](docs/wrap-cheatsheet.md).
+Per-macro argument lists live under `docs/reference/` (one file per macro).
 
-## 📋 类型映射
+## Type mapping
 
-| Rust 类型 | JSON Schema |
+| Rust type | JSON Schema |
 |-----------|-------------|
 | `String`, `&str` | `string` |
-| `i32`, `i64`, `u32` 等 | `integer` |
+| `i32`, `i64`, `u32`, ... | `integer` |
 | `f32`, `f64` | `number` |
 | `bool` | `boolean` |
 | `Vec<T>` | `array` |
-| `Option<T>` | 可选 `T` |
-| 自定义 struct | `object` |
+| `Option<T>` | optional `T` |
+| user-defined `struct` | `object` |
 
-## 🔧 常用属性
+## Common attributes
 
 ```rust
 #[tool]
 impl MyTools {
-    /// 自定义名称
+    /// Custom name
     #[tool(name = "custom_name")]
     pub fn my_func(&self) {}
 
-    /// 自定义描述
-    #[tool(desc = "自定义描述")]
+    /// Custom description
+    #[tool(desc = "Custom description")]
     pub fn another_func(&self) {}
 
-    /// 参数级别属性
+    /// Per-parameter attributes
     pub fn process(
         &self,
-        #[tool(desc = "参数描述", default = "null")] 
+        #[tool(desc = "Parameter description", default = "null")]
         options: Option<String>
     ) {}
 }
 ```
 
-完整属性列表见 [高级用法](docs/ADVANCED_USAGE.md)。
+For the full attribute reference see [Advanced usage](docs/ADVANCED_USAGE.md).
 
-## ⚡ 性能
+## Performance
 
-| 操作 | 时间 |
-|------|------|
-| 宏编译时间 | < 50ms |
-| 工具定义生成 | 编译期零开销 |
-| `call_tool` 调用 | < 1μs |
+| Operation | Cost |
+|-----------|------|
+| Macro compile time | < 50 ms |
+| Tool definition generation | Zero runtime cost (done at compile time) |
+| `call_tool` invocation | < 1 μs |
 
-> 基准测试环境：Rust 1.75, M1 Pro, 16GB RAM
+> Benchmark environment: Rust 1.75, M1 Pro, 16 GB RAM.
 >
-> 运行基准测试：`cargo bench --bench macro_bench`
+> Run the benchmarks with `cargo bench --bench macro_bench`.
 
-## 📦 项目结构
+## Project layout
 
-Tokitai 由三个 crate 组成：
+Tokitai is shipped as three crates:
 
-| Crate | 说明 |
+| Crate | Role |
 |-------|------|
-| `tokitai` | 主 crate，包含运行时支持 |
-| `tokitai-core` | 核心类型和 trait（零依赖） |
-| `tokitai-macros` | 过程宏实现 |
+| `tokitai` | Main crate, includes the runtime support |
+| `tokitai-core` | Core types and traits (zero dependencies) |
+| `tokitai-macros` | Procedural-macro implementation |
 
-**99% 的用户只需要：**
+**For 99% of users, this is all you need:**
+
 ```toml
 [dependencies]
 tokitai = "0.5.0"
 ```
 
-## ⚙️ 要求
+## Requirements
 
-- **Rust 版本**: 1.80+
+- **Rust version**: 1.80+
 - **Edition**: 2021
 
-## 📄 许可证
+## License
 
 Licensed under either of:
 
@@ -242,36 +243,38 @@ Licensed under either of:
 
 at your option.
 
-## 🤝 贡献
+## Contributing
 
-除非你明确声明其他许可，否则你为本 crate 提交的所有贡献都将按上述两种方式之一授权，无需额外条款或条件。
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in this crate by you, as defined in the Apache-2.0 license, shall be dual-licensed as above, without any additional terms or conditions.
 
-## 📝 示例
+## Examples
 
-更多示例见 [examples 目录](examples/)：
+More examples live under the [examples directory](examples/):
 
-- `basic_usage.rs` - 基础使用示例
-- `advanced_types.rs` - 高级类型和功能完整演示
-- `mcp_server_demo.rs` - MCP 服务器示例
-- `mcp_http_server.rs` - HTTP 服务器示例
-- `ollama_integration.rs` - Ollama AI 集成
-- `dev_assistant.rs` - 端到端集成示例：文件/代码搜索 + Git + 计算器（v0.5 起作为下游回归测试）
-- `multi_tool_chat.rs` - 多工具聊天
-- `param_attrs.rs` - 参数级属性演示
-- `validate_transform_alias.rs` - 验证 / 转换 / 别名演示
-- `debug_tools.rs` - 调试工具
-- `wrap_openapi.rs` - `#[openapi]` 文档示例（仅文档用）
-- `runtime_agnostic.rs` - 运行时无关的 async executor 桥接
-- `database_tool/` - 真实示例：Tokitai + MCP HTTP + SQLite (sqlx)
-- `starter_project/` - 可复制的入门模板
+- `basic_usage.rs` — basic usage
+- `advanced_types.rs` — advanced types and features, end to end
+- `mcp_server_demo.rs` — MCP server example
+- `mcp_http_server.rs` — HTTP server example
+- `ollama_integration.rs` — Ollama AI integration
+- `dev_assistant.rs` — end-to-end integration: file / code search + Git + calculator (downstream regression test since v0.5)
+- `multi_tool_chat.rs` — multi-tool chat
+- `param_attrs.rs` — per-parameter attributes
+- `validate_transform_alias.rs` — validation / transformation / aliases
+- `debug_tools.rs` — debugging utilities
+- `wrap_openapi.rs` — `#[openapi]` documentation example (docs-only)
+- `runtime_agnostic.rs` — runtime-agnostic async executor bridge
+- `database_tool/` — realistic example: Tokitai + MCP HTTP + SQLite (sqlx)
+- `starter_project/` — copy-paste-ready starter template
 
-> 占位 `#[wrap]` / `#[delegate]` / `#[retry]` / `#[rate_limit]` / `#[circuit_breaker]`
-> 示例 (`wrap_native.rs` / `delegate_method.rs` / `resilient_tool.rs`) 已移至
-> [`examples/deprecated/`](examples/deprecated/)，对应属性尚未在 0.5.0 中开放。
+> Placeholder examples for `#[wrap]` / `#[delegate]` / `#[retry]` /
+> `#[rate_limit]` / `#[circuit_breaker]`
+> (`wrap_native.rs` / `delegate_method.rs` / `resilient_tool.rs`) have been
+> moved to [`examples/deprecated/`](examples/deprecated/); the corresponding
+> attributes are not yet exposed in 0.5.0.
 
-### 🌐 Cross-Language SDK（HTTP+JSON 客户端参考实现）
+### Cross-language SDK (HTTP+JSON client references)
 
-`tokitai-mcp-server` 暴露的 HTTP+JSON 协议可以用任何语言调用；参考实现：
+The HTTP+JSON protocol served by `tokitai-mcp-server` is callable from any language. Reference implementations:
 
 - Python — [`examples/py/`](examples/py/) — async client on `httpx`; `pip install -e .`
 - JavaScript / TypeScript — [`examples/js/`](examples/js/) — zero-runtime-dep `fetch` client for Node 18+, browsers, Deno, Bun; `npm install && npm start`
@@ -283,14 +286,14 @@ Start the server in a separate terminal with
 `http://127.0.0.1:8080`); the SDKs above will talk to it out of the
 box. Override the host with `BASE_URL` (curl), an env var (Go), or the
 constructor argument (Python, JS). Full protocol spec and per-language
-quickstarts in [Cross-Language SDK Guide](docs/CROSS_LANGUAGE.md).
+quickstarts in [Cross-language SDK guide](docs/CROSS_LANGUAGE.md).
 
-## 🔒 API 稳定承诺
+## API stability
 
-Tokitai 遵循 [语义化版本](https://semver.org/)，详细的 API 稳定政策见 [API 稳定承诺](docs/API_STABILITY.md)。
+Tokitai follows [Semantic Versioning](https://semver.org/). For the full stability policy see [API stability](docs/API_STABILITY.md).
 
-**当前状态**: v0.5.x 系列 - 核心 API 已稳定，v1.0.0 计划中。
+**Current status**: the v0.5.x series — core API is stable, v1.0.0 is on the roadmap.
 
 ---
 
-**Happy Coding!** 🦀
+**Happy coding!**

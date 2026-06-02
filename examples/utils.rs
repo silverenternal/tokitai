@@ -1,20 +1,20 @@
-//! 示例通用工具函数
+//! Example common utility functions
 
-/// 初始化控制台 UTF-8 编码（仅 Windows）
+/// Initialize console UTF-8 encoding (Windows only)
 ///
-/// 在 Windows 上设置控制台输出代码页为 UTF-8，确保中文正常显示
+/// On Windows, set the console output code page to UTF-8 to ensure proper text display
 #[cfg(windows)]
 pub fn init_console() {
     use std::io::{self, Write};
     use windows_sys::Win32::System::Console::{SetConsoleCP, SetConsoleOutputCP};
 
     unsafe {
-        // 设置输入和输出代码页为 UTF-8
+        // Set input and output code page to UTF-8
         SetConsoleCP(65001);
         SetConsoleOutputCP(65001);
     }
 
-    // 刷新 stdout 确保设置生效
+    // Flush stdout to ensure the settings take effect
     let _ = io::stdout().flush();
 }
 

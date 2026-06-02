@@ -4,52 +4,52 @@
 [![Documentation](https://docs.rs/tokitai-core/badge.svg)](https://docs.rs/tokitai-core)
 [![License](https://img.shields.io/crates/l/tokitai-core)](../LICENSE)
 
-## 🎯 核心类型定义
+## Core Type Definitions
 
-Tokitai Core 提供了 Tokitai AI 工具集成系统的基础类型和 trait。所有工具信息在编译期生成，确保零运行时开销和最大的类型安全。
+Tokitai Core provides the foundational types and traits that underpin the Tokitai AI tool integration system. All tool metadata is generated at compile time, which guarantees zero runtime overhead and maximum type safety.
 
-## ✨ 核心特性
+## Core Features
 
-- **零运行时依赖** - 核心类型依赖最小化
-- **类型安全** - 编译期工具定义防止运行时错误
-- **Serde 集成** - 通过 `serde` 特性提供可选的序列化支持
+- **Zero runtime dependencies** — the core types are kept as lean as possible.
+- **Type-safe** — tool definitions are produced at compile time, eliminating a class of runtime errors.
+- **Serde integration** — optional serialization support is available behind the `serde` feature.
 
-## 📦 核心类型
+## Core Types
 
-| 类型 | 说明 |
-|------|------|
-| [`ToolDefinition`] | 工具定义，包含名称、描述和输入 schema |
-| [`ToolParameter`] | 工具的参数定义 |
-| [`ParamType`] | JSON Schema 类型枚举 |
-| [`ToolError`] | 工具调用错误类型 |
-| [`ToolErrorKind`] | 错误分类枚举 |
-| [`ToolProvider`] | 工具提供者 trait（由 `#[tool]` 宏自动实现） |
+| Type | Description |
+|------|-------------|
+| [`ToolDefinition`] | A tool definition, including name, description, and input schema. |
+| [`ToolParameter`] | Definition of a tool parameter. |
+| [`ParamType`] | Enumeration of JSON Schema types. |
+| [`ToolError`] | Error type returned by tool invocations. |
+| [`ToolErrorKind`] | Enumeration used to classify errors. |
+| [`ToolProvider`] | Trait implemented by tool providers (auto-implemented by the `#[tool]` macro). |
 
-## 🚀 快速开始
+## Quick Start
 
-### 添加依赖
+### Add the Dependency
 
 ```toml
 [dependencies]
 tokitai-core = "0.5"
 ```
 
-### 基本使用
+### Basic Usage
 
 ```rust
 use tokitai_core::ToolDefinition;
 
-// 创建工具定义
+// Create a tool definition
 let tool = ToolDefinition::new(
     "add",
-    "两个数相加",
+    "Add two numbers",
     r#"{"type":"object","properties":{"a":{"type":"integer"},"b":{"type":"integer"}},"required":["a","b"]}"#
 );
 
 assert_eq!(tool.name, "add");
-assert_eq!(tool.description, "两个数相加");
+assert_eq!(tool.description, "Add two numbers");
 
-// 启用 serde 特性时，可转换为 JSON
+// When the `serde` feature is enabled, the definition can be serialized to JSON.
 #[cfg(feature = "serde")]
 {
     let json = tool.to_json().unwrap();
@@ -57,18 +57,18 @@ assert_eq!(tool.description, "两个数相加");
 }
 ```
 
-## 📋 类型映射
+## Type Mapping
 
-[`ParamType`] 枚举将 Rust 类型映射到 JSON Schema 类型：
+The [`ParamType`] enum maps Rust types to their JSON Schema counterparts:
 
-| Rust 类型 | JSON Schema 类型 | `ParamType` 变体 |
-|-----------|------------------|------------------|
+| Rust type | JSON Schema type | `ParamType` variant |
+|-----------|------------------|---------------------|
 | `String`, `&str` | `string` | `ParamType::String` |
 | `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64` | `integer` | `ParamType::Integer` |
 | `f32`, `f64` | `number` | `ParamType::Number` |
 | `bool` | `boolean` | `ParamType::Boolean` |
 | `Vec<T>` | `array` | `ParamType::Array` |
-| 自定义 struct | `object` | `ParamType::Object` |
+| Custom struct | `object` | `ParamType::Object` |
 
 ```rust
 use tokitai_core::ParamType;
@@ -80,57 +80,57 @@ assert_eq!(ParamType::from_rust_type("bool"), Some(ParamType::Boolean));
 assert_eq!(ParamType::from_rust_type("Vec<i32>"), Some(ParamType::Array));
 ```
 
-## 🔧 错误处理
+## Error Handling
 
-[`ToolError`] 类型为工具调用提供结构化错误处理：
+The [`ToolError`] type provides structured error reporting for tool invocations:
 
 ```rust
 use tokitai_core::{ToolError, ToolErrorKind};
 
-// 创建不同类型的错误
-let validation_err = ToolError::validation_error("缺少必需参数 'city'");
+// Build different kinds of errors
+let validation_err = ToolError::validation_error("missing required parameter 'city'");
 assert_eq!(validation_err.kind, ToolErrorKind::ValidationError);
 
-let not_found_err = ToolError::not_found("工具 'unknown_tool' 未找到");
+let not_found_err = ToolError::not_found("tool 'unknown_tool' not found");
 assert_eq!(not_found_err.kind, ToolErrorKind::NotFound);
 
-let internal_err = ToolError::internal_error("连接超时");
+let internal_err = ToolError::internal_error("connection timed out");
 assert_eq!(internal_err.kind, ToolErrorKind::InternalError);
 ```
 
-### 错误类型
+### Error Variants
 
-| 变体 | 值 | 说明 |
-|------|-----|------|
-| `ToolErrorKind::ValidationError` | 0 | 参数验证失败 |
-| `ToolErrorKind::NotFound` | 1 | 工具未找到 |
-| `ToolErrorKind::InternalError` | 2 | 内部错误 |
-| `ToolErrorKind::TypeError` | 3 | 类型错误 |
+| Variant | Value | Description |
+|---------|-------|-------------|
+| `ToolErrorKind::ValidationError` | 0 | Parameter validation failed. |
+| `ToolErrorKind::NotFound` | 1 | The requested tool was not found. |
+| `ToolErrorKind::InternalError` | 2 | An internal error occurred. |
+| `ToolErrorKind::TypeError` | 3 | A type error occurred. |
 
-## 🏗️ ToolProvider Trait
+## The `ToolProvider` Trait
 
-[`ToolProvider`] trait 由 `#[tool]` 宏自动实现：
+The [`ToolProvider`] trait is automatically implemented by the `#[tool]` macro:
 
 ```rust
 use tokitai_core::ToolProvider;
 
-// 在你的类型上使用 #[tool] 宏后：
+// Once you have applied `#[tool]` to your type:
 // struct Calculator;
 // #[tool] impl Calculator { ... }
 
-// 获取所有工具定义
+// Retrieve every tool definition
 let tools = Calculator::tool_definitions();
 
-// 获取工具数量
+// Count the registered tools
 let count = Calculator::tool_count();
 
-// 查找特定工具
+// Look up a specific tool by name
 let tool = Calculator::find_tool("add");
 ```
 
-## 📐 JSON Schema 宏
+## The `json_schema!` Macro
 
-`json_schema!` 宏帮助在编译期生成 JSON Schema 字符串：
+The `json_schema!` macro helps you build JSON Schema strings at compile time:
 
 ```rust,ignore
 use tokitai_core::json_schema;
@@ -138,24 +138,24 @@ use tokitai_core::json_schema;
 const SCHEMA: &str = json_schema!({
     "city": {
         type: String,
-        description: "城市名称",
+        description: "Name of the city",
         required: true,
     }
 });
 ```
 
-## 🎛️ Features
+## Features
 
-| Feature | 说明 |
-|---------|------|
-| `serde` (默认启用) | 启用 serde 序列化和 JSON 支持 |
+| Feature | Description |
+|---------|-------------|
+| `serde` (enabled by default) | Enables serde-based serialization and JSON support. |
 
-## ⚙️ 要求
+## Requirements
 
-- **Rust 版本**: 1.80+
+- **Rust version**: 1.80+
 - **Edition**: 2021
 
-## 📄 许可证
+## License
 
 Licensed under either of:
 
@@ -164,23 +164,23 @@ Licensed under either of:
 
 at your option.
 
-## 🤝 贡献
+## Contributing
 
-除非你明确声明其他许可，否则你为本 crate 提交的所有贡献都将按上述两种方式之一授权，无需额外条款或条件。
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in this crate by you, as defined in the Apache-2.0 license, shall be dual-licensed as above, without any additional terms or conditions.
 
-## 📦 相关 Crate
+## Related Crates
 
-| Crate | Crates.io | 说明 |
-|-------|-----------|------|
-| `tokitai` | [![crates.io](https://img.shields.io/crates/v/tokitai.svg)](https://crates.io/crates/tokitai) | 主 crate，包含运行时支持 |
-| `tokitai-macros` | [![crates.io](https://img.shields.io/crates/v/tokitai-macros.svg)](https://crates.io/crates/tokitai-macros) | 过程宏实现 |
+| Crate | Crates.io | Description |
+|-------|-----------|-------------|
+| `tokitai` | [![crates.io](https://img.shields.io/crates/v/tokitai.svg)](https://crates.io/crates/tokitai) | Main crate, bundling runtime support. |
+| `tokitai-macros` | [![crates.io](https://img.shields.io/crates/v/tokitai-macros.svg)](https://crates.io/crates/tokitai-macros) | Procedural macro implementation. |
 
-## 📚 文档
+## Documentation
 
-- **[API 文档](https://docs.rs/tokitai-core)** - 完整的 API 参考
-- **[使用指南](../docs/USAGE.md)** - 详细使用说明
-- **[架构设计](../docs/ARCHITECTURE.md)** - 内部设计说明
+- **[API Reference](https://docs.rs/tokitai-core)** — complete API documentation.
+- **[Usage Guide](../docs/USAGE.md)** — detailed walk-throughs.
+- **[Architecture](../docs/ARCHITECTURE.md)** — internal design notes.
 
 ---
 
-**Happy Coding!** 🦀
+**Happy Coding!**

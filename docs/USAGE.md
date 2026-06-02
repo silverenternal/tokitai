@@ -1,23 +1,23 @@
-# Tokitai 使用指南
+# Tokitai Usage Guide
 
-**版本**: 0.5.0 | **最后更新**: 2026-06-02
+**Version**: 0.5.0 | **Last updated**: 2026-06-02
 
-## 目录
+## Table of Contents
 
-1. [快速开始](#快速开始)
-2. [安装配置](#安装配置)
-3. [基础用法](#基础用法)
-4. [高级特性](#高级特性)
-5. [工具描述三种方式](#工具描述三种方式)
-6. [API 参考](#api-参考)
-7. [故障排除](#故障排除)
-8. [最佳实践](#最佳实践)
+1. [Quickstart](#quickstart)
+2. [Installation and configuration](#installation-and-configuration)
+3. [Basic usage](#basic-usage)
+4. [Advanced features](#advanced-features)
+5. [Three ways to describe a tool](#three-ways-to-describe-a-tool)
+6. [API reference](#api-reference)
+7. [Troubleshooting](#troubleshooting)
+8. [Best practices](#best-practices)
 
 ---
 
-## 快速开始
+## Quickstart
 
-### 1. 添加依赖
+### 1. Add the dependency
 
 ```toml
 [dependencies]
@@ -26,39 +26,39 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 ```
 
-### 2. 定义工具
+### 2. Define a tool
 
 ```rust
 use tokitai::tool;
 
 pub struct Calculator;
 
+/// Add two numbers
 #[tool]
 impl Calculator {
-    /// 两个数相加
     pub fn add(&self, a: i32, b: i32) -> i32 {
         a + b
     }
 }
 ```
 
-### 3. 使用工具
+### 3. Use the tool
 
 ```rust
 let calc = Calculator::default();
 
-// 获取工具定义（发送给 AI）
+// Get the tool definitions (to send to the AI)
 let tools = Calculator::tool_definitions();
 
-// 调用工具（接收 AI 的请求）
+// Invoke the tool (in response to an AI request)
 let result = calc.call_tool("add", &serde_json::json!({"a": 10, "b": 20}))?;
 ```
 
 ---
 
-## 安装配置
+## Installation and configuration
 
-### 标准安装
+### Standard installation
 
 ```toml
 [dependencies]
@@ -67,7 +67,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 ```
 
-### 最小化安装
+### Minimal installation
 
 ```toml
 [dependencies]
@@ -76,28 +76,28 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 ```
 
-### Features 说明
+### Feature flags
 
-| Feature | 描述 | 依赖 |
-|---------|------|------|
-| `default` | 启用完整运行时 | `serde`, `serde_json`, `thiserror` |
-| `serde` | serde 序列化支持 | `serde`, `serde_json` |
+| Feature | Description | Dependencies |
+|---------|-------------|--------------|
+| `default` | Enables the full runtime | `serde`, `serde_json`, `thiserror` |
+| `serde` | serde serialization support | `serde`, `serde_json` |
 
-### 依赖版本要求
+### Dependency version requirements
 
-| 依赖 | 最低版本 | 推荐版本 |
-|------|---------|---------|
+| Dependency | Minimum | Recommended |
+|------------|---------|-------------|
 | Rust | 1.56.0 | 1.75.0+ |
 | serde | 1.0 | 1.0.130+ |
 | serde_json | 1.0 | 1.0.70+ |
 
 ---
 
-## 基础用法
+## Basic usage
 
-### 自动注册方法
+### Automatic method registration
 
-在 `impl` 块上使用 `#[tool]` 宏，所有 `pub` 方法会自动注册为工具：
+Annotate the `impl` block with `#[tool]` and every `pub` method is registered as a tool:
 
 ```rust
 use tokitai::tool;
@@ -106,30 +106,30 @@ pub struct WeatherService;
 
 #[tool]
 impl WeatherService {
-    /// 获取指定城市的天气
+    /// Get the weather for the specified city
     pub fn get_weather(&self, city: String) -> String {
-        format!("{} 的天气：晴朗", city)
+        format!("Weather for {}: clear skies", city)
     }
 }
 ```
 
-### 自定义工具属性
+### Custom tool attributes
 
-使用 `#[tool(name = "...", desc = "...")]` 自定义工具名称和描述：
+Use `#[tool(name = "...", desc = "...")]` to override the tool's name and description:
 
 ```rust
 #[tool]
 impl WeatherService {
-    #[tool(name = "fetch_weather", desc = "从外部 API 获取天气数据")]
+    #[tool(name = "fetch_weather", desc = "Fetch weather data from an external API")]
     pub fn get_weather(&self, city: String) -> String {
-        // 调用外部 API...
+        // Call external API...
     }
 }
 ```
 
-### 排除方法
+### Excluding methods
 
-使用 `#[tool(skip)]` 排除内部方法：
+Use `#[tool(skip)]` to keep internal helpers out of the tool surface:
 
 ```rust
 #[tool]
@@ -140,15 +140,15 @@ impl WeatherService {
 
     #[tool(skip)]
     fn fetch_from_api(&self, city: &str) -> String {
-        // 内部实现，不暴露给 AI
+        // Internal helper, not exposed to the AI
         "API response".to_string()
     }
 }
 ```
 
-### 支持的方法签名
+### Supported method signatures
 
-#### 同步方法
+#### Synchronous methods
 
 ```rust
 #[tool]
@@ -159,56 +159,56 @@ impl Calculator {
 }
 ```
 
-#### 异步方法
+#### Asynchronous methods
 
 ```rust
 #[tool]
 impl Database {
     pub async fn query(&self, sql: String) -> Result<Vec<Row>, DbError> {
-        // 异步数据库查询...
+        // Async database query...
     }
 }
 ```
 
-**注意**: 异步方法需要使用 `call_tool().await` 调用。
+**Note**: asynchronous methods must be awaited with `call_tool().await`.
 
-#### 返回 Result
+#### Returning a `Result`
 
 ```rust
 #[tool]
 impl Parser {
     pub fn parse(&self, input: String) -> Result<Data, ParseError> {
-        // 可能失败的操作...
+        // An operation that may fail...
     }
 }
 ```
 
 ---
 
-## 高级特性
+## Advanced features
 
-### 参数类型详解
+### Parameter types in detail
 
-#### 基本类型
+#### Primitive types
 
-| Rust 类型 | JSON Schema | 示例值 |
-|-----------|-------------|--------|
+| Rust type | JSON Schema | Example value |
+|-----------|-------------|---------------|
 | `String`, `&str` | `string` | `"hello"` |
 | `i8`..=`i128` | `integer` | `42` |
 | `u8`..=`u128` | `integer` | `42` |
 | `f32`, `f64` | `number` | `3.14` |
 | `bool` | `boolean` | `true` |
 
-#### 复合类型
+#### Composite types
 
-| Rust 类型 | JSON Schema | 示例值 |
-|-----------|-------------|--------|
+| Rust type | JSON Schema | Example value |
+|-----------|-------------|---------------|
 | `Vec<T>` | `array` | `[1, 2, 3]` |
-| `Option<T>` | 可选参数 | `null` 或值 |
+| `Option<T>` | optional parameter | `null` or a value |
 | `HashMap<K, V>` | `object` | `{"key": "value"}` |
-| 自定义类型 | `object` | `{"field": "value"}` |
+| Custom type | `object` | `{"field": "value"}` |
 
-#### 自定义类型
+#### Custom types
 
 ```rust
 use serde::{Deserialize, Serialize};
@@ -222,48 +222,48 @@ pub struct Location {
 #[tool]
 impl MapService {
     pub fn get_weather_at(&self, location: Location) -> String {
-        format!("位置 ({}, {}) 的天气", location.latitude, location.longitude)
+        format!("Weather at ({}, {})", location.latitude, location.longitude)
     }
 }
 ```
 
-### 可选参数
+### Optional parameters
 
 ```rust
 #[tool]
 impl SearchEngine {
-    /// 搜索文档
+    /// Search documents
     pub fn search(
         &self,
         query: String,
-        limit: Option<i32>,  // 可选参数
-        offset: Option<i32>, // 可选参数
+        limit: Option<i32>,  // optional parameter
+        offset: Option<i32>, // optional parameter
     ) -> Vec<Document> {
         // ...
     }
 }
 ```
 
-### 获取工具定义
+### Retrieving tool definitions
 
 ```rust
 use tokitai::ToolProvider;
 
-// 获取所有工具定义（v0.5.0+ 现在是方法而非常量）
+// Get all tool definitions (in v0.5.0+ this is a method, not a constant)
 let tools = Calculator::tool_definitions();
 
-// 获取工具数量
+// Count the tools
 let count = Calculator::tool_count();
 
-// 查找特定工具
+// Look up a specific tool
 if let Some(tool) = Calculator::find_tool("add") {
-    println!("找到工具：{}", tool.name);
+    println!("Found tool: {}", tool.name);
 }
 ```
 
-### 工具调用
+### Invoking a tool
 
-#### 同步调用
+#### Synchronous call
 
 ```rust
 use serde_json::json;
@@ -272,14 +272,14 @@ let calc = Calculator::default();
 let result = calc.call_tool("add", &json!({"a": 10, "b": 20}));
 ```
 
-#### 异步调用
+#### Asynchronous call
 
 ```rust
 let calc = Calculator::default();
 let result = calc.call_tool("query", &json!({"sql": "SELECT *"})).await;
 ```
 
-#### 错误处理
+#### Error handling
 
 ```rust
 use tokitai::ToolError;
@@ -298,13 +298,13 @@ match calc.call_tool("divide", &json!({"a": 10, "b": 0})) {
 
 ---
 
-## API 参考
+## API reference
 
-### 核心类型
+### Core types
 
 #### `ToolDefinition`
 
-工具定义结构体，包含工具的元信息。
+The tool-definition struct; carries a tool's metadata.
 
 ```rust
 pub struct ToolDefinition {
@@ -314,26 +314,26 @@ pub struct ToolDefinition {
 }
 ```
 
-**方法**:
+**Methods**:
 
-| 方法 | 描述 |
-|------|------|
-| `new(name, description, input_schema)` | 创建新的工具定义 |
-| `to_json()` | 转换为 JSON 字符串（需要 `serde` 特性） |
-| `to_value()` | 转换为 JSON Value（需要 `serde` 特性） |
+| Method | Description |
+|--------|-------------|
+| `new(name, description, input_schema)` | Create a new tool definition |
+| `to_json()` | Serialize to a JSON string (requires the `serde` feature) |
+| `to_value()` | Convert to a `serde_json::Value` (requires the `serde` feature) |
 
 #### `ToolProvider`
 
-工具提供者 trait，由 `#[tool]` 宏自动实现。
+The provider trait. Automatically implemented by the `#[tool]` macro.
 
 ```rust
 pub trait ToolProvider {
     fn tool_definitions() -> &'static [ToolDefinition];
-    
+
     fn tool_count() -> usize {
         Self::tool_definitions().len()
     }
-    
+
     fn find_tool(name: &str) -> Option<&'static ToolDefinition> {
         Self::tool_definitions()
             .iter()
@@ -344,7 +344,7 @@ pub trait ToolProvider {
 
 #### `ToolError`
 
-工具调用错误类型。
+The tool-call error type.
 
 ```rust
 pub struct ToolError {
@@ -353,43 +353,43 @@ pub struct ToolError {
 }
 ```
 
-**错误类型**:
+**Error variants**:
 
-| 变体 | 值 | 描述 |
-|------|-----|------|
+| Variant | Value | Description |
+|---------|-------|-------------|
 | `ToolErrorKind::ValidationError` | 0 | Validation failed |
 | `ToolErrorKind::NotFound` | 1 | Tool not found |
 | `ToolErrorKind::InternalError` | 2 | Internal error |
 | `ToolErrorKind::TypeError` | 3 | Type error |
 
-### 宏属性
+### Macro attributes
 
-#### `#[tool]` (impl 块级别)
+#### `#[tool]` (impl-block level)
 
-应用于 `impl` 块，启用工具注册。
+Apply to an `impl` block to enable tool registration.
 
 ```rust
 #[tool]
 impl MyStruct {
-    // 所有 pub 方法自动注册为工具
+    // All pub methods are automatically registered as tools
 }
 ```
 
-#### `#[tool(name = "...", desc = "...")]` (方法级别)
+#### `#[tool(name = "...", desc = "...")]` (method level)
 
-自定义工具名称和描述。
+Override the tool's name and description.
 
 ```rust
 #[tool]
 impl MyStruct {
-    #[tool(name = "custom_name", desc = "自定义描述")]
+    #[tool(name = "custom_name", desc = "Custom description")]
     pub fn my_method(&self) {}
 }
 ```
 
-#### `#[tool(skip)]` (方法级别)
+#### `#[tool(skip)]` (method level)
 
-排除方法，不注册为工具。
+Exclude a method so it is not registered as a tool.
 
 ```rust
 #[tool]
@@ -401,22 +401,22 @@ impl MyStruct {
 
 ---
 
-## 工具描述三种方式
+## Three ways to describe a tool
 
-Tokitai v0.5.0 支持三种灵活的工具描述方式：
+Tokitai v0.5.0 supports three flexible ways to describe a tool:
 
-### 方式 1：文档注释（推荐）
+### Method 1: doc comments (recommended)
 
-最简单的方式，使用 Rust 标准文档注释：
+The simplest approach — use standard Rust doc comments:
 
 ```rust
 #[tool]
 impl MyService {
-    /// 获取用户信息
+    /// Get user information
     ///
     /// # Parameters
-    /// - `id`: 用户 ID
-    /// - `include_profile`: 是否包含详细信息
+    /// - `id`: user ID
+    /// - `include_profile`: whether to include the full profile
     pub fn get_user(
         &self,
         id: i32,
@@ -427,24 +427,24 @@ impl MyService {
 }
 ```
 
-**优点**:
-- ✅ 标准 Rust 风格
-- ✅ IDE 友好
-- ✅ 无需额外学习
+**Pros**:
+- Standard Rust style
+- IDE-friendly
+- Zero learning curve
 
-**缺点**:
-- ❌ 描述不能包含特殊字符（如引号）
-- ❌ 无法添加 tags 等元数据
+**Cons**:
+- The description cannot contain special characters (such as quotes)
+- Cannot attach tags or other metadata
 
-### 方式 2：`#[tool]` 属性覆盖
+### Method 2: `#[tool]` attribute overrides
 
-更精确的控制：
+Finer-grained control:
 
 ```rust
 #[tool]
 impl MyService {
     #[tool(
-        desc = "从数据库获取用户详细信息",
+        desc = "Fetch detailed user information from the database",
         tags = ["user", "read", "database"],
         group = "user_service",
         cache = "ttl=300"
@@ -453,10 +453,10 @@ impl MyService {
         // ...
     }
 
-    /// 更新用户资料
+    /// Update a user's profile
     ///
-    /// @param id 用户 ID
-    /// @param nickname 用户昵称
+    /// @param id user ID
+    /// @param nickname display name
     #[tool(
         example_id = "12345",
         min_length_nickname = 2,
@@ -473,36 +473,36 @@ impl MyService {
 }
 ```
 
-**优点**:
-- ✅ 支持 tags、group 等元数据
-- ✅ 参数级精确控制
-- ✅ 支持验证规则
+**Pros**:
+- Supports tags, groups, and other metadata
+- Per-parameter control
+- Supports validation rules
 
-**缺点**:
-- ❌ 代码稍显冗长
+**Cons**:
+- A bit more verbose
 
-### 方式 3：`tokitai!` 配置宏
+### Method 3: the `tokitai!` configuration macro
 
-批量集中管理：
+Centralized, batch configuration:
 
 ```rust
-// 原有代码完全不变
+// Original code stays untouched
 impl MyService {
-    /// 默认描述
+    /// Default description
     pub fn get_user(&self, id: i32) -> User {
-        // ...原有业务逻辑
+        // ...original business logic
     }
 }
 
-// 在入口处统一配置
+// Configure everything in one place at the entry point
 tokitai::config! {
     MyService {
         get_user: {
-            desc: "配置覆盖的描述",
+            desc: "Configuration-overridden description",
             tags = ["user", "read"],
             params: {
                 id: {
-                    desc: "用户唯一标识",
+                    desc: "Unique user identifier",
                     example: "1001"
                 }
             }
@@ -511,47 +511,47 @@ tokitai::config! {
 }
 ```
 
-**优点**:
-- ✅ 原有代码 0 修改
-- ✅ 集中管理所有工具
-- ✅ 支持条件编译
+**Pros**:
+- Zero changes to existing code
+- Centralized management of all tools
+- Supports conditional compilation
 
-**缺点**:
-- ❌ 需要额外配置文件
+**Cons**:
+- Requires an additional configuration block
 
-## 优先级
+## Precedence
 
-三种方式可以混合使用，优先级如下：
+The three approaches can be mixed. Precedence is as follows:
 
-1. `#[tool(desc = "...")]` > 文档注释
-2. `tokitai!` 配置 > `#[tool]` 属性
-3. 参数级：`#[tool(xxx_param = "...")]` > 默认推断
+1. `#[tool(desc = "...")]` > doc comments
+2. `tokitai!` config > `#[tool]` attributes
+3. Per-parameter: `#[tool(xxx_param = "...")]` > inferred defaults
 
-## 最佳实践
+## Best practices
 
-- **简单场景**: 使用文档注释
-- **复杂参数**: 使用 `#[tool(...)]` 参数级属性
-- **批量管理**: 使用 `tokitai!` 配置宏
+- **Simple cases**: use doc comments
+- **Complex parameters**: use `#[tool(...)]` per-parameter attributes
+- **Batch management**: use the `tokitai!` configuration macro
 
 ---
 
-## 故障排除
+## Troubleshooting
 
-### 编译错误
+### Compilation errors
 
-#### 错误：泛型方法不支持
+#### Error: generic methods are not supported
 
 ```
 error: Generic methods are not supported
   = help: Remove generic parameters or use concrete types
 ```
 
-**原因**: `#[tool]` 宏不支持泛型方法。
+**Cause**: the `#[tool]` macro does not support generic methods.
 
-**解决方案**: 使用具体类型替代泛型。
+**Fix**: replace the generic parameters with concrete types.
 
 ```rust
-// ❌ 错误
+// Does not compile
 #[tool]
 impl MyTools {
     pub fn process<T: Serialize>(&self, data: T) -> String {
@@ -559,28 +559,28 @@ impl MyTools {
     }
 }
 
-// ✅ 正确
+// Compiles
 #[tool]
 impl MyTools {
     pub fn process_string(&self, data: String) -> String {
         // ...
     }
-    
+
     pub fn process_json(&self, data: serde_json::Value) -> String {
         // ...
     }
 }
 ```
 
-#### 错误：缺少 serde 特性
+#### Error: missing `serde` feature
 
 ```
 error[E0433]: failed to resolve: use of undeclared crate or module `serde_json`
 ```
 
-**原因**: 未启用 `serde` 特性。
+**Cause**: the `serde` feature is not enabled.
 
-**解决方案**: 在 `Cargo.toml` 中启用特性。
+**Fix**: enable the feature in `Cargo.toml`.
 
 ```toml
 [dependencies]
@@ -588,17 +588,17 @@ tokitai = { version = "0.5.0", features = ["serde"] }
 serde_json = "1.0"
 ```
 
-### 运行时错误
+### Runtime errors
 
-#### 错误：异步方法在没有运行时的情况下调用
+#### Error: async method called without a runtime
 
 ```
 Error: async tool calls require a tokio runtime
 ```
 
-**原因**: 异步工具方法需要 tokio 运行时。
+**Cause**: async tool methods need a tokio runtime.
 
-**解决方案**: 使用 `#[tokio::main]` 或 `tokio::runtime::Runtime`。
+**Fix**: use `#[tokio::main]` or `tokio::runtime::Runtime`.
 
 ```rust
 #[tokio::main]
@@ -608,28 +608,28 @@ async fn main() {
 }
 ```
 
-#### Error: Tool not found
+#### Error: tool not found
 
 ```
 Error: Tool not found: unknown_tool
 ```
 
-**原因**: 调用了不存在的工具名称。
+**Cause**: you called a tool that does not exist.
 
-**解决方案**: 检查工具名称是否正确。
+**Fix**: double-check the tool name.
 
 ```rust
-// 打印所有可用工具
+// Print all available tools
 for tool in MyTools::tool_definitions() {
-    println!("可用工具：{}", tool.name);
+    println!("Available tool: {}", tool.name);
 }
 ```
 
-### 常见问题
+### Common questions
 
-#### Q: 如何调试工具调用？
+#### Q: How do I debug a tool call?
 
-**A**: 启用日志记录：
+**A**: enable logging:
 
 ```rust
 // Cargo.toml
@@ -643,75 +643,75 @@ fn main() {
 }
 ```
 
-#### Q: 如何查看宏生成的代码？
+#### Q: How do I see the macro-generated code?
 
-**A**: 使用 `cargo expand`:
+**A**: use `cargo expand`:
 
 ```bash
 cargo install cargo-expand
 cargo expand --example basic_usage
 ```
 
-#### Q: 支持哪些 AI 平台？
+#### Q: Which AI platforms are supported?
 
-**A**: Tokitai 生成的工具定义是通用的，兼容任何支持 Function Calling 的 AI 平台：
+**A**: the tool definitions Tokitai generates are vendor-neutral. They are compatible with any AI platform that supports function calling, including:
 
-- Ollama (本地/云端)
+- Ollama (local or cloud)
 - Claude
 - GPT-4
-- 其他 OpenAI 兼容平台
+- Any other OpenAI-compatible platform
 
 ---
 
-## 最佳实践
+## Best practices
 
-### 1. 工具命名
+### 1. Tool naming
 
-- 使用动词 + 名词格式：`get_weather`, `create_user`, `delete_file`
-- 避免缩写，除非是通用缩写
-- 保持命名一致性
+- Use verb + noun: `get_weather`, `create_user`, `delete_file`
+- Avoid abbreviations unless they are well established
+- Keep naming consistent
 
-### 2. 文档注释
+### 2. Doc comments
 
-为每个工具方法添加清晰的文档注释：
+Write clear doc comments for every tool method:
 
 ```rust
 #[tool]
 impl Calculator {
-    /// 计算两个整数的和，返回结果
+    /// Add two integers and return the result.
     ///
-    /// # 参数
-    /// - `a`: 第一个整数
-    /// - `b`: 第二个整数
+    /// # Parameters
+    /// - `a`: the first integer
+    /// - `b`: the second integer
     ///
-    /// # 返回
-    /// 返回两个整数的和
+    /// # Returns
+    /// The sum of the two integers
     pub fn add(&self, a: i32, b: i32) -> i32 {
         a + b
     }
 }
 ```
 
-### 3. 错误处理
+### 3. Error handling
 
-使用 `Result` 类型返回可能的错误：
+Return a `Result` for fallible operations:
 
 ```rust
 #[tool]
 impl FileService {
     pub fn read_file(&self, path: String) -> Result<String, String> {
         std::fs::read_to_string(&path)
-            .map_err(|e| format!("读取文件失败：{}", e))
+            .map_err(|e| format!("Failed to read file: {}", e))
     }
 }
 ```
 
-### 4. 工具分组
+### 4. Grouping tools
 
-将相关工具组织在同一个 struct 中：
+Organize related tools into the same struct:
 
 ```rust
-// 用户管理工具
+// User-management tools
 pub struct UserService { /* ... */ }
 
 #[tool]
@@ -722,27 +722,27 @@ impl UserService {
 }
 ```
 
-### 5. 性能考虑
+### 5. Performance considerations
 
-- 工具方法应尽量轻量，避免长时间阻塞
-- 对于耗时操作，使用异步方法
-- 考虑使用缓存减少重复计算
-
----
-
-## 示例代码
-
-更多示例请查看：
-
-- [`examples/basic_usage.rs`](../examples/basic_usage.rs) - 基础使用示例
-- [`examples/ollama_integration.rs`](../examples/ollama_integration.rs) - Ollama AI 集成
-- [`examples/starter_project/`](../examples/starter_project/) - 完整项目模板
+- Keep tool methods lightweight; avoid long blocking operations
+- Use async methods for slow I/O
+- Cache results when the same computation is repeated
 
 ---
 
-## 相关链接
+## Example code
 
-- [README](../README.md) - 项目主页
-- [AI 集成指南](AI_INTEGRATION.md) - 与 AI 平台集成
-- [架构设计](ARCHITECTURE.md) - 内部设计说明
-- [API 文档](https://docs.rs/tokitai) - Rust API 参考
+More examples:
+
+- [`examples/basic_usage.rs`](../examples/basic_usage.rs) - Basic usage
+- [`examples/ollama_integration.rs`](../examples/ollama_integration.rs) - Ollama integration
+- [`examples/starter_project/`](../examples/starter_project/) - Full project template
+
+---
+
+## Related links
+
+- [README](../README.md) - Project home
+- [AI integration guide](AI_INTEGRATION.md) - Integrating with AI platforms
+- [Architecture](ARCHITECTURE.md) - Internal design notes
+- [API documentation](https://docs.rs/tokitai) - Rust API reference

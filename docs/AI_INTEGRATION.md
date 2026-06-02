@@ -1,80 +1,80 @@
-# Tokitai AI 集成指南
+# Tokitai AI Integration Guide
 
-**版本**: 0.5.0 | **最后更新**: 2026-06-02
+**Version**: 0.5.0 | **Last updated**: 2026-06-02
 
-## 目录
+## Table of Contents
 
-1. [概述](#概述)
-2. [与 Ollama 集成](#与-ollama-集成)
-3. [与其他 AI 平台集成](#与其他-ai-平台集成)
-4. [完整工作流程](#完整工作流程)
-5. [故障排除](#故障排除)
-
----
-
-## 概述
-
-Tokitai 的核心设计理念是**供应商中立**。宏生成的工具定义可以被发送给任何支持工具/函数调用的 AI 平台。
-
-### 工作流程
-
-```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│  获取工具定义  │ ──> │  发送给 AI   │ ──> │  接收调用请求 │
-│  (编译期生成) │     │  (JSON 格式)  │     │  (解析参数)   │
-└─────────────┘     └─────────────┘     └─────────────┘
-                                              │
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│  返回最终响应  │ <── │  执行工具    │ <── │  调用 Rust   │
-│  (给 AI)      │     │  (获取结果)  │     │  (执行业务)  │
-└─────────────┘     └─────────────┘     └─────────────┘
-```
+1. [Overview](#overview)
+2. [Integrating with Ollama](#integrating-with-ollama)
+3. [Integrating with other AI platforms](#integrating-with-other-ai-platforms)
+4. [End-to-end workflow](#end-to-end-workflow)
+5. [Troubleshooting](#troubleshooting)
 
 ---
 
-## 与 Ollama 集成
+## Overview
 
-### 前置要求
+Tokitai is designed to be **vendor-neutral**. The tool definitions produced by its macros can be sent to any AI platform that supports tools or function calling.
 
-1. **安装 Ollama**
+### Workflow
+
+```
++--------------------+   +--------------------+   +--------------------+
+|  Get tool defs     |-->|  Send to AI        |-->|  Receive call req. |
+|  (compile-time)    |   |  (JSON format)     |   |  (parse arguments) |
++--------------------+   +--------------------+   +--------------------+
+                                                       |
++--------------------+   +--------------------+   +--------------------+
+|  Return final resp.|<--|  Execute tool      |<--|  Call into Rust    |
+|  (to AI)           |   |  (get result)      |   |  (run business)    |
++--------------------+   +--------------------+   +--------------------+
+```
+
+---
+
+## Integrating with Ollama
+
+### Prerequisites
+
+1. **Install Ollama**
    ```bash
-   # macOS/Linux
+   # macOS / Linux
    curl -fsSL https://ollama.ai/install.sh | sh
-   
-   # Windows: 访问 https://ollama.ai 下载安装程序
+
+   # Windows: download the installer from https://ollama.ai
    ```
 
-2. **拉取模型**
+2. **Pull a model**
    ```bash
    ollama pull llama2
-   # 或者
+   # or
    ollama pull mistral
-   # 或者（支持工具调用的模型）
+   # or (a model that supports tool calling)
    ollama pull llama3.1
    ```
 
-3. **启动服务**
+3. **Start the server**
    ```bash
    ollama serve
    ```
 
-### 完整示例
+### Full example
 
 ```rust
 use tokitai::tool;
 use tokitai::ToolProvider;
 use serde_json::json;
 
-// 1. 定义工具
+// 1. Define a tool
 #[tool]
 impl Calculator {
-    /// 两个数相加
+    /// Add two numbers
     pub fn add(&self, a: i32, b: i32) -> i32 {
         a + b
     }
 }
 
-// 2. 转换工具定义为 Ollama 格式
+// 2. Convert tool definitions into the Ollama format
 fn convert_to_ollama_format(tools: &[ToolDefinition]) -> Vec<Value> {
     tools.iter().map(|tool| {
         json!({
@@ -88,7 +88,7 @@ fn convert_to_ollama_format(tools: &[ToolDefinition]) -> Vec<Value> {
     }).collect()
 }
 
-// 3. 发送请求到 Ollama
+// 3. Send a request to Ollama
 async fn chat_with_ollama(messages: Vec<Message>, tools: Vec<Value>) -> Result<Message, Error> {
     let client = reqwest::Client::new();
     let response = client
@@ -103,33 +103,33 @@ async fn chat_with_ollama(messages: Vec<Message>, tools: Vec<Value>) -> Result<M
         .await?
         .json::<OllamaResponse>()
         .await?;
-    
+
     Ok(response.message)
 }
 
-// 4. 处理工具调用
+// 4. Handle the tool call
 async fn handle_tool_call(assistant: &Assistant, call: &ToolCall) -> Value {
     assistant.call_tool(&call.function.name, &call.function.arguments).await
 }
 ```
 
-### 运行示例
+### Running the example
 
 ```bash
-# 运行完整的 Ollama 集成示例
+# Run the full Ollama integration example
 cargo run --example ollama_integration
 ```
 
 ---
 
-## 与其他 AI 平台集成
+## Integrating with other AI platforms
 
 ### Claude API
 
 ```rust
 use serde_json::json;
 
-// 转换工具定义为 Claude 格式
+// Convert tool definitions into the Claude format
 fn convert_to_claude_format(tools: &[ToolDefinition]) -> Vec<Value> {
     tools.iter().map(|tool| {
         json!({
@@ -140,7 +140,7 @@ fn convert_to_claude_format(tools: &[ToolDefinition]) -> Vec<Value> {
     }).collect()
 }
 
-// 发送请求到 Claude
+// Send a request to Claude
 async fn chat_with_claude(messages: Vec<Message>, tools: Vec<Value>) -> Result<Message, Error> {
     let client = reqwest::Client::new();
     let response = client
@@ -156,7 +156,7 @@ async fn chat_with_claude(messages: Vec<Message>, tools: Vec<Value>) -> Result<M
         .await?
         .json::<ClaudeResponse>()
         .await?;
-    
+
     Ok(response.content)
 }
 ```
@@ -166,7 +166,7 @@ async fn chat_with_claude(messages: Vec<Message>, tools: Vec<Value>) -> Result<M
 ```rust
 use serde_json::json;
 
-// 转换工具定义为 OpenAI 格式
+// Convert tool definitions into the OpenAI format
 fn convert_to_openai_format(tools: &[ToolDefinition]) -> Vec<Value> {
     tools.iter().map(|tool| {
         json!({
@@ -180,7 +180,7 @@ fn convert_to_openai_format(tools: &[ToolDefinition]) -> Vec<Value> {
     }).collect()
 }
 
-// 发送请求到 OpenAI
+// Send a request to OpenAI
 async fn chat_with_openai(messages: Vec<Message>, tools: Vec<Value>) -> Result<Message, Error> {
     let client = reqwest::Client::new();
     let response = client
@@ -195,7 +195,7 @@ async fn chat_with_openai(messages: Vec<Message>, tools: Vec<Value>) -> Result<M
         .await?
         .json::<OpenAIResponse>()
         .await?;
-    
+
     Ok(response.choices[0].message.clone())
 }
 ```
@@ -212,14 +212,14 @@ impl Calculator {
     }
 }
 
-// 转换为 MCP 格式
+// Convert to the MCP format
 let mcp_tools = mcp::to_mcp_tools(&Calculator::tool_definitions());
 
-// MCP 工具格式
+// MCP tool format
 // [
 //   {
 //     "name": "add",
-//     "description": "两个数相加",
+//     "description": "Add two numbers",
 //     "input_schema": {"type": "object", "properties": {...}}
 //   }
 // ]
@@ -227,36 +227,36 @@ let mcp_tools = mcp::to_mcp_tools(&Calculator::tool_definitions());
 
 ---
 
-## 完整工作流程
+## End-to-end workflow
 
-### 步骤 1: 准备工具定义
+### Step 1: prepare the tool definitions
 
 ```rust
 use tokitai::{tool, ToolProvider};
 
 #[tool]
 impl WeatherService {
-    /// 获取指定城市的天气
+    /// Get the weather for the specified city
     pub fn get_weather(&self, city: String) -> String {
-        // 业务逻辑...
+        // business logic...
     }
 }
 
 let tools = WeatherService::tool_definitions();
-println!("工具数量：{}", tools.len());
+println!("Number of tools: {}", tools.len());
 ```
 
-### 步骤 2: 发送给 AI
+### Step 2: send them to the AI
 
 ```rust
 let system_message = Message {
     role: "system".to_string(),
-    content: "你是一个有帮助的助手。使用可用的工具来回答用户的问题。".to_string(),
+    content: "You are a helpful assistant. Use the available tools to answer the user's questions.".to_string(),
 };
 
 let user_message = Message {
     role: "user".to_string(),
-    content: "北京今天的天气怎么样？".to_string(),
+    content: "What's the weather in Beijing today?".to_string(),
 };
 
 let tools_json = tools.iter().map(|t| {
@@ -273,7 +273,7 @@ let tools_json = tools.iter().map(|t| {
 let response = call_ai_api(vec![system_message, user_message], tools_json).await?;
 ```
 
-### 步骤 3: 执行工具调用
+### Step 3: execute the tool call
 
 ```rust
 let assistant = WeatherService;
@@ -283,16 +283,16 @@ if let Some(tool_calls) = response.tool_calls {
         let result = assistant
             .call_tool(&call.function.name, &call.function.arguments)
             .await?;
-        
-        println!("工具 {} 返回：{}", call.function.name, result);
+
+        println!("Tool {} returned: {}", call.function.name, result);
     }
 }
 ```
 
-### 步骤 4: 返回结果给 AI
+### Step 4: return the result to the AI
 
 ```rust
-// 添加工具调用结果到消息历史
+// Append the tool calls to the message history
 messages.push(Message {
     role: "assistant".to_string(),
     content: "".to_string(),
@@ -307,50 +307,50 @@ for (call, result) in tool_calls.iter().zip(results.iter()) {
     });
 }
 
-// 获取最终回复
+// Get the final reply
 let final_response = call_ai_api(messages, None).await?;
-println!("AI 回复：{}", final_response.content);
+println!("AI reply: {}", final_response.content);
 ```
 
 ---
 
-## 故障排除
+## Troubleshooting
 
-### Ollama 服务未运行
+### Ollama server is not running
 
 ```bash
-# 检查服务状态
+# Check the server status
 curl http://localhost:11434/api/tags
 
-# 启动服务
+# Start the server
 ollama serve
 ```
 
-### 模型不支持工具调用
+### The model does not support tool calling
 
-某些模型可能不支持工具调用功能。使用以下模型：
+Some models do not support tool calling. Use one of these instead:
 
-- ✅ Ollama: `llama3.1`, `mistral`, `mixtral`
-- ✅ Claude: `claude-3-*` 系列
-- ✅ GPT: `gpt-3.5-turbo`, `gpt-4-*` 系列
+- Ollama: `llama3.1`, `mistral`, `mixtral`
+- Claude: `claude-3-*` family
+- GPT: `gpt-3.5-turbo`, `gpt-4-*` family
 
-### 工具定义格式错误
+### Malformed tool definition
 
-确保 JSON Schema 格式正确：
+Make sure the JSON Schema is well formed:
 
 ```rust
-// 正确的格式
+// Correct format
 {"type":"object","properties":{"a":{"type":"integer","description":""},"b":{"type":"integer","description":""}},"required":["a","b"]}
 
-// 检查工具定义
+// Inspect a tool definition
 for tool in Calculator::tool_definitions() {
     println!("{}: {}", tool.name, tool.input_schema);
 }
 ```
 
-### 参数类型不匹配
+### Parameter type mismatch
 
-确保 Rust 类型与 JSON 类型匹配：
+Make sure the Rust type matches the JSON type:
 
 | Rust | JSON |
 |------|------|
@@ -362,16 +362,16 @@ for tool in Calculator::tool_definitions() {
 
 ---
 
-## 示例代码
+## Example code
 
-- [`examples/ollama_integration.rs`](../examples/ollama_integration.rs) - 完整的 Ollama 集成示例
-- [`examples/multi_tool_chat.rs`](../examples/multi_tool_chat.rs) - 多工具协作示例
+- [`examples/ollama_integration.rs`](../examples/ollama_integration.rs) - Full Ollama integration
+- [`examples/multi_tool_chat.rs`](../examples/multi_tool_chat.rs) - Multi-tool collaboration
 
 ---
 
-## 参考资源
+## References
 
-- [Ollama API 文档](https://github.com/ollama/ollama/blob/main/docs/api.md)
-- [Claude API 文档](https://docs.anthropic.com/claude/docs)
-- [OpenAI Function Calling](https://platform.openai.com/docs/guides/function-calling)
-- [MCP 协议](https://modelcontextprotocol.io/)
+- [Ollama API documentation](https://github.com/ollama/ollama/blob/main/docs/api.md)
+- [Claude API documentation](https://docs.anthropic.com/claude/docs)
+- [OpenAI function calling](https://platform.openai.com/docs/guides/function-calling)
+- [MCP protocol](https://modelcontextprotocol.io/)

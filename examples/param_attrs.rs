@@ -1,45 +1,45 @@
-//! 参数属性示例
+//! Parameter attribute example
 //!
-//! 演示 Tokitai v0.3.4 支持的三种工具描述方式：
-//! 1. 文档注释自动提取
-//! 2. #[tool] 属性覆盖
-//! 3. tokitai! 配置宏
+//! Demonstrates the three tool-description styles supported by Tokitai v0.3.4+:
+//! 1. Automatic extraction from doc comments
+//! 2. Override via `#[tool]` attributes
+//! 3. `tokitai!` configuration macro
 //!
-//! 运行：cargo run --example param_attrs
+//! Run with: `cargo run --example param_attrs`
 
 use serde_json::Value;
 use tokitai::tool;
 use tokitai::ToolProvider;
 
-/// 参数属性测试工具集
+/// Parameter attribute test tools
 pub struct ParamTools;
 
 #[tool]
 impl ParamTools {
-    /// 方式 1：文档注释（最简单）
+    /// Style 1: doc comments (simplest)
     ///
-    /// @param name 用户姓名
-    /// @param age 用户年龄
+    /// @param name user's name
+    /// @param age user's age
     pub fn method_with_doc(&self, name: String, age: i32) -> String {
         format!("{} is {} years old", name, age)
     }
 
-    /// 方式 2：#[tool] 属性覆盖方法描述
+    /// Style 2: `#[tool]` attribute override for the method description
     #[tool(
-        desc = "自定义方法描述",
+        desc = "Custom method description",
         tags = ["demo", "test"]
     )]
     pub fn method_with_custom_desc(&self, name: String, age: i32) -> String {
         format!("{} is {} years old", name, age)
     }
 
-    /// 方式 3：参数级属性
+    /// Style 3: parameter-level attributes
     ///
-    /// @param name 用户姓名
-    /// @param age 用户年龄
-    /// @param email 邮箱地址
+    /// @param name user's name
+    /// @param age user's age
+    /// @param email email address
     #[tool(
-        example_name = "张三",
+        example_name = "Alice",
         min_length_name = 1,
         max_length_name = 50,
         min_age = 0,
@@ -57,11 +57,11 @@ impl ParamTools {
 }
 
 fn main() {
-    println!("=== 参数属性示例 ===\n");
+    println!("=== Parameter Attribute Example ===\n");
 
     for tool in ParamTools::tool_definitions() {
-        println!("方法：{}", tool.name);
-        println!("描述：{}\n", tool.description);
+        println!("Method: {}", tool.name);
+        println!("Description: {}\n", tool.description);
         println!("Schema: {}\n", pretty_json(&tool.input_schema));
     }
 }

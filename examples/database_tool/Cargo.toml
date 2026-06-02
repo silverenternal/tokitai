@@ -1,6 +1,6 @@
 [package]
 name = "database_tool"
-version = "0.5.0"
+version = "0.5.1"
 edition = "2021"
 publish = false
 description = "Real-world example: Tokitai MCP server wired to a SQLite database via sqlx."

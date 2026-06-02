@@ -1,191 +1,191 @@
-# 贡献指南
+# Contributing Guide
 
-感谢你考虑为 Tokitai 做出贡献！
+Thanks for considering contributing to Tokitai!
 
-## 快速导航
+## Quick Navigation
 
-- [报告 Bug](#报告-bug)
-- [功能建议](#功能建议)
-- [开发环境设置](#开发环境设置)
-- [提交代码](#提交代码)
-- [代码风格](#代码风格)
-- [测试](#测试)
-- [文档](#文档)
+- [Reporting Bugs](#reporting-bugs)
+- [Feature Suggestions](#feature-suggestions)
+- [Development Environment Setup](#development-environment-setup)
+- [Submitting Code](#submitting-code)
+- [Code Style](#code-style)
+- [Testing](#testing)
+- [Documentation](#documentation)
 
 ---
 
-## 报告 Bug
+## Reporting Bugs
 
-我们使用 GitHub Issues 来追踪 Bug。
+We use GitHub Issues to track bugs.
 
-### 提交 Bug 报告前请检查
+### Before Submitting a Bug Report
 
-1. 搜索现有 Issues，确认没有重复报告
-2. 确认 Bug 在最新版本中仍然存在
-3. 准备最小可复现代码示例
+1. Search existing Issues to make sure it hasn't already been reported
+2. Confirm the bug still exists in the latest version
+3. Prepare a minimal reproducible code example
 
-### Bug 报告模板
+### Bug Report Template
 
 ```markdown
-**描述问题**
-简明扼要地描述问题是什么。
+**Describe the problem**
+Briefly describe what the problem is.
 
-**复现步骤**
-1. 创建项目...
-2. 添加代码...
-3. 运行 `cargo run`...
-4. 看到错误...
+**Steps to reproduce**
+1. Create a project...
+2. Add the code...
+3. Run `cargo run`...
+4. See the error...
 
-**期望行为**
-清晰描述你期望发生什么。
+**Expected behavior**
+Clearly describe what you expected to happen.
 
-**实际行为**
-描述实际发生了什么。
+**Actual behavior**
+Describe what actually happened.
 
-**环境信息**
-- Rust 版本：`rustc --version`
-- Tokitai 版本：`cargo tree | grep tokitai`
-- 操作系统：Windows/Linux/macOS
+**Environment information**
+- Rust version: `rustc --version`
+- Tokitai version: `cargo tree | grep tokitai`
+- Operating system: Windows/Linux/macOS
 
-**代码示例**
+**Code example**
 ```rust
-// 最小可复现代码
+// Minimal reproducible code
 ```
 
-**附加信息**
-任何截图、日志或其他相关信息。
+**Additional information**
+Any screenshots, logs, or other relevant information.
 ```
 
 ---
 
-## 功能建议
+## Feature Suggestions
 
-我们欢迎功能建议！请创建一个 Issue 并包含：
+We welcome feature suggestions! Please open an Issue that includes:
 
-1. **功能描述**：简明扼要地描述你的建议
-2. **使用场景**：描述这个功能的使用场景
-3. **替代方案**：描述你考虑过的其他解决方案
-4. **额外信息**：任何相关的代码示例或参考资料
+1. **Feature description**: Briefly describe your suggestion
+2. **Use case**: Describe the scenario in which this feature would be used
+3. **Alternatives considered**: Describe any other solutions you have considered
+4. **Additional information**: Any relevant code examples or references
 
 ---
 
-## 开发环境设置
+## Development Environment Setup
 
-### 1. 克隆仓库
+### 1. Clone the Repository
 
 ```bash
 git clone https://github.com/silverenternal/tokitai.git
 cd tokitai
 ```
 
-### 2. 安装 Rust 工具链
+### 2. Install the Rust Toolchain
 
 ```bash
-# 安装 rustup（如果尚未安装）
+# Install rustup (if you haven't already)
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
-# 安装最新稳定版 Rust
+# Install the latest stable Rust
 rustup update stable
 
-# 验证安装
+# Verify the installation
 rustc --version
 cargo --version
 ```
 
-### 3. 安装开发工具（推荐）
+### 3. Install Development Tools (Recommended)
 
 ```bash
-# 代码格式化
+# Code formatter
 rustup component add rustfmt
 
-# Clippy linting
+# Clippy lints
 rustup component add clippy
 
-# 查看宏展开
+# View macro expansions
 cargo install cargo-expand
 
-# 文档生成
+# Documentation generator
 cargo install cargo-doc
 ```
 
-### 4. 构建项目
+### 4. Build the Project
 
 ```bash
-# 构建整个 workspace
+# Build the entire workspace
 cargo build --workspace
 
-# 运行测试
+# Run the tests
 cargo test --workspace
 
-# 运行 Clippy
+# Run Clippy
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
 ---
 
-## 提交代码
+## Submitting Code
 
-### 1. 创建分支
+### 1. Create a Branch
 
 ```bash
 git checkout -b feature/your-feature-name
-# 或
+# or
 git checkout -b fix/issue-123
 ```
 
-### 2. 编写代码
+### 2. Write the Code
 
-遵循 [代码风格](#代码风格) 指南。
+Follow the [Code Style](#code-style) guide.
 
-### 3. 运行测试
+### 3. Run the Tests
 
 ```bash
-# 确保所有测试通过
+# Make sure all tests pass
 cargo test --workspace
 
-# 确保 Clippy 无警告
+# Make sure Clippy reports no warnings
 cargo clippy --workspace --all-targets -- -D warnings
 
-# 确保代码格式化
+# Make sure the code is formatted
 cargo fmt --all -- --check
 ```
 
-### 4. 提交更改
+### 4. Commit Your Changes
 
 ```bash
 git add .
-git commit -m "feat: 添加新功能
+git commit -m "feat: add new feature
 
-详细描述新功能的作用和使用方法。
+Describe in detail what the new feature does and how to use it.
 
 Fixes #123"
 ```
 
-### 5. 提交 Pull Request
+### 5. Open a Pull Request
 
-1. Push 到你的分支：`git push origin feature/your-feature-name`
-2. 在 GitHub 上创建 Pull Request
-3. 填写 PR 描述，关联相关 Issue
+1. Push your branch: `git push origin feature/your-feature-name`
+2. Open a Pull Request on GitHub
+3. Fill in the PR description and link any related Issues
 
 ---
 
-## 代码风格
+## Code Style
 
-### Rust 代码风格
+### Rust Code Style
 
-我们遵循 [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/)：
+We follow the [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/):
 
-1. **格式化**：使用 `cargo fmt` 自动格式化
-2. **命名**：
-   - 类型、Trait：`PascalCase`
-   - 函数、变量：`snake_case`
-   - 常量、宏：`SCREAMING_SNAKE_CASE`
-3. **文档**：所有公共 API 必须有文档注释
-4. **错误处理**：使用 `Result` 类型，避免 `unwrap()`
+1. **Formatting**: Use `cargo fmt` to auto-format
+2. **Naming**:
+   - Types, traits: `PascalCase`
+   - Functions, variables: `snake_case`
+   - Constants, macros: `SCREAMING_SNAKE_CASE`
+3. **Documentation**: All public APIs must have doc comments
+4. **Error handling**: Use the `Result` type and avoid `unwrap()`
 
-### 提交信息风格
+### Commit Message Style
 
-我们使用 [Conventional Commits](https://www.conventionalcommits.org/)：
+We follow [Conventional Commits](https://www.conventionalcommits.org/):
 
 ```
 <type>(<scope>): <description>
@@ -195,54 +195,54 @@ Fixes #123"
 [optional footer]
 ```
 
-**Type 类型：**
+**Types:**
 
-| 类型 | 描述 |
-|------|------|
-| `feat` | 新功能 |
-| `fix` | Bug 修复 |
-| `docs` | 文档更新 |
-| `style` | 代码格式化（不影响功能） |
-| `refactor` | 重构（不添加功能或修复 Bug） |
-| `perf` | 性能优化 |
-| `test` | 测试相关 |
-| `chore` | 构建、配置、工具等 |
+| Type | Description |
+|------|-------------|
+| `feat` | A new feature |
+| `fix` | A bug fix |
+| `docs` | Documentation only changes |
+| `style` | Formatting changes (no functional impact) |
+| `refactor` | A code change that neither fixes a bug nor adds a feature |
+| `perf` | A code change that improves performance |
+| `test` | Adding or correcting tests |
+| `chore` | Build, configuration, tooling, etc. |
 
-**示例：**
+**Example:**
 
 ```
-feat: 添加异步工具调用支持
+feat: add async tool call support
 
-- 支持 async fn 作为工具方法
-- 自动生成异步 call_tool 方法
-- 添加异步示例代码
+- Support async fn as tool methods
+- Auto-generate async call_tool methods
+- Add async example code
 
 Fixes #45
 ```
 
 ---
 
-## 测试
+## Testing
 
-### 运行测试
+### Running Tests
 
 ```bash
-# 运行所有测试
+# Run all tests
 cargo test --workspace
 
-# 运行特定测试
+# Run a specific test
 cargo test --package tokitai-macros test_basic_tool
 
-# 运行 UI 测试
+# Run UI tests
 cargo test --test ui_tests
 
-# 生成测试覆盖率报告（需要 cargo-tarpaulin）
+# Generate a test coverage report (requires cargo-tarpaulin)
 cargo tarpaulin --workspace --out Html
 ```
 
-### 编写测试
+### Writing Tests
 
-#### 单元测试
+#### Unit Tests
 
 ```rust
 #[cfg(test)]
@@ -263,7 +263,7 @@ mod tests {
 }
 ```
 
-#### 集成测试
+#### Integration Tests
 
 ```rust
 // tests/integration_test.rs
@@ -271,11 +271,11 @@ use tokitai::tool;
 
 #[test]
 fn test_tool_macro() {
-    // 测试宏生成代码
+    // Test macro-generated code
 }
 ```
 
-#### UI 测试
+#### UI Tests
 
 ```rust
 // tests/ui/01_basic_tool.rs
@@ -291,22 +291,22 @@ fn main() {}
 
 ---
 
-## 文档
+## Documentation
 
-### 代码文档
+### Code Documentation
 
-所有公共 API 必须有文档注释：
+All public APIs must have doc comments:
 
 ```rust
-/// 工具定义 - 描述一个 AI 可调用的工具
+/// Tool definition - describes an AI-callable tool
 ///
-/// # 字段
+/// # Fields
 ///
-/// * `name` - 工具名称
-/// * `description` - 工具描述
-/// * `input_schema` - 输入参数 JSON Schema
+/// * `name` - The tool name
+/// * `description` - The tool description
+/// * `input_schema` - The JSON schema for the input parameters
 ///
-/// # 示例
+/// # Examples
 ///
 /// ```
 /// use tokitai::ToolDefinition;
@@ -320,60 +320,59 @@ pub struct ToolDefinition {
 }
 ```
 
-### 文档测试
+### Documentation Tests
 
-确保文档中的代码示例可以编译和运行：
+Make sure the code examples in the documentation compile and run:
 
 ```bash
-# 运行文档测试
+# Run the doc tests
 cargo test --doc
 ```
 
-### 更新文档
+### Updating Documentation
 
-修改代码时，请同步更新：
+When you change code, please update the documentation at the same time:
 
-1. 代码文档注释
+1. The code doc comments
 2. README.md
-3. docs/ 目录下的详细文档
-4. 示例代码
+3. Detailed documentation under the docs/ directory
+4. Example code
 
 ---
 
-## 发布流程
+## Release Process
 
-### 发布新版本
+### Publishing a New Version
 
-1. 更新 `CHANGELOG.md`
-2. 更新 `Cargo.toml` 版本号
-3. 运行完整测试：`cargo test --workspace`
-4. 运行 Clippy：`cargo clippy --workspace --all-targets -- -D warnings`
-5. 构建文档：`cargo doc --workspace --no-deps`
-6. 提交并打 Tag：`git tag -a v0.3.0 -m "Release v0.3.0"`
-7. 发布到 crates.io：`cargo publish`
-
----
-
-## 问题？
-
-如有任何问题，欢迎：
-
-- 创建 [Discussion](https://github.com/silverenternal/tokitai/discussions)
-- 发送邮件至 3147264070@qq.com
-- 在 Issue 中提问
+1. Update `CHANGELOG.md`
+2. Update the version in `Cargo.toml`
+3. Run the full test suite: `cargo test --workspace`
+4. Run Clippy: `cargo clippy --workspace --all-targets -- -D warnings`
+5. Build the documentation: `cargo doc --workspace --no-deps`
+6. Commit and tag: `git tag -a v0.3.0 -m "Release v0.3.0"`
+7. Publish to crates.io: `cargo publish`
 
 ---
 
-## 行为准则
+## Questions?
 
-我们遵循 [Rust 行为准则](https://www.rust-lang.org/policies/code-of-conduct)。请：
+If you have any questions, feel free to:
 
-- 保持开放和包容
-- 尊重不同观点
-- 优雅地接受建设性批评
-- 关注对社区最有利的事情
-- 对其他社区成员表示同理心
+- Open a [Discussion](https://github.com/silverenternal/tokitai/discussions)
+- Open an Issue
 
 ---
 
-感谢你为 Tokitai 做出贡献！🎉
+## Code of Conduct
+
+We follow the [Rust Code of Conduct](https://www.rust-lang.org/policies/code-of-conduct). Please:
+
+- Be open and inclusive
+- Respect differing viewpoints
+- Gracefully accept constructive criticism
+- Focus on what is best for the community
+- Show empathy toward other community members
+
+---
+
+Thanks for contributing to Tokitai!

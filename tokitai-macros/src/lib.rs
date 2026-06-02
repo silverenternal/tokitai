@@ -6,7 +6,7 @@
 //! for AI/LLM tool calling systems. It generates all the boilerplate code needed to expose
 //! your Rust functions as AI-callable tools.
 //!
-//! ## 🎯 Key Features
+//! ## Key Features
 //!
 //! - **Zero Runtime Dependencies** - The macro itself has no runtime overhead
 //! - **Compile-time Generation** - Tool definitions are generated at compile time
@@ -21,7 +21,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! tokitai = "0.4"
+//! tokitai = "0.5"
 //! ```
 //!
 //! Then use the `#[tool]` macro:
@@ -255,13 +255,13 @@ use proc_macro::TokenStream;
 ///
 /// ## Features
 ///
-/// - ✅ Zero runtime dependencies (macro itself)
-/// - ✅ Compile-time tool definition generation
-/// - ✅ Automatic description extraction from doc comments
-/// - ✅ Custom tool names and descriptions support
-/// - ✅ Type-safe parameter parsing
-/// - ✅ Recursive type resolution for complex types
-/// - ✅ JSON Schema generation with proper formatting
+/// -Zero runtime dependencies (macro itself)
+/// -Compile-time tool definition generation
+/// -Automatic description extraction from doc comments
+/// -Custom tool names and descriptions support
+/// -Type-safe parameter parsing
+/// -Recursive type resolution for complex types
+/// -JSON Schema generation with proper formatting
 #[proc_macro_attribute]
 pub fn tool(attr: TokenStream, item: TokenStream) -> TokenStream {
     tool::tool(attr, item)
@@ -486,11 +486,11 @@ pub fn param_tool(_attr: TokenStream, item: TokenStream) -> TokenStream {
 /// tokitai::config! {
 ///     MyService {
 ///         get_user: {
-///             desc: "获取用户信息",
+///             desc: "Fetch user info",
 ///             tags: ["user", "read"],
 ///             params: {
 ///                 id: {
-///                     desc: "用户唯一标识",
+///                     desc: "User unique identifier",
 ///                     example: "1001"
 ///                 }
 ///             }

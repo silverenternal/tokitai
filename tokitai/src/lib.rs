@@ -6,7 +6,7 @@
 //! into AI-callable tools with a single `#[tool]` attribute. All tool definitions are generated at
 //! compile time, ensuring type errors are caught before runtime.
 //!
-//! ## 🎯 Key Features
+//! ## Key Features
 //!
 //! - **Zero Runtime Intrusion** - The macro itself has no runtime dependencies
 //! - **Compile-time Type Safety** - Tool definitions generated at compile time, parameter type errors exposed during compilation
@@ -16,13 +16,13 @@
 
 #![allow(unexpected_cfgs)]
 
-//! ## 🚀 Quick Start
+//! ## Quick Start
 //!
 //! ### 1. Add Dependencies
 //!
 //! ```toml
 //! [dependencies]
-//! tokitai = "0.4"
+//! tokitai = "0.5"
 //! ```
 //!
 //! That's it! All required dependencies (serde, serde_json, thiserror) are included automatically.
@@ -99,7 +99,7 @@
 //! println!("Result: {}", result);  // 30
 //! ```
 //!
-//! ## 📦 Crate Structure
+//! ## Crate Structure
 //!
 //! Tokitai is organized as a workspace with three crates:
 //!
@@ -109,7 +109,7 @@
 //! | [`tokitai-core`](https://crates.io/crates/tokitai-core) | Core types and traits (zero dependencies) |
 //! | [`tokitai-macros`](https://crates.io/crates/tokitai-macros) | Procedural macros (compile-time code generation) |
 //!
-//! ## 🔧 How It Works
+//! ## How It Works
 //!
 //! ```text
 //! +---------------+    Tool Definitions    +---------------+
@@ -132,7 +132,7 @@
 //! 3. **Receive call request** → AI returns "I want to call a tool"
 //! 4. **Execute and return** → Run Rust code locally
 //!
-//! ## 🛠️ Features
+//! ## Features
 //!
 //! | Feature | Description |
 //! |---------|-------------|
@@ -146,12 +146,12 @@
 //!
 //! ```toml
 //! [dependencies]
-//! tokitai = { version = "0.3", default-features = false }
+//! tokitai = { version = "0.5", default-features = false }
 //! ```
 //!
 //! Note: Runtime features (call_tool, etc.) require serde/serde_json which are included by default.
 //!
-//! ## 📚 API Overview
+//! ## API Overview
 //!
 //! ### Re-exported Core Types
 //!
@@ -171,7 +171,7 @@
 //!
 //! - [`tool`] - Attribute macro for marking tool implementations
 //!
-//! ## 📋 Type Mapping
+//! ## Type Mapping
 //!
 //! Rust types are automatically mapped to JSON Schema types:
 //!
@@ -184,20 +184,20 @@
 //! | `Vec<T>` | `array` |
 //! | Custom structs | `object` |
 //!
-//! ## 📖 Examples
+//! ## Examples
 //!
 //! See the [examples directory](https://github.com/silverenternal/tokitai/tree/main/examples) for more:
 //!
 //! - `basic_usage.rs` - Basic usage example
 //! - `ollama_integration.rs` - Ollama AI integration with SHA256 tool
-//! - `multi_tool_chat.rs` - Multi-tool协作 chatbot
+//! - `multi_tool_chat.rs` - Multi-tool collaborative chatbot
 //!
-//! ## ⚙️ Requirements
+//! ## Requirements
 //!
 //! - **Rust Version**: 1.70+
 //! - **Edition**: 2021
 //!
-//! ## 📄 License
+//! ## License
 //!
 //! Licensed under either of:
 //!
@@ -206,7 +206,7 @@
 //!
 //! at your option.
 //!
-//! ## 🤝 Contributing
+//! ## Contributing
 //!
 //! Unless you explicitly state otherwise, any contribution intentionally submitted
 //! for inclusion in this crate by you, as defined in the Apache-2.0 license, shall be

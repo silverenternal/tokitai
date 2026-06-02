@@ -1,6 +1,6 @@
-# 5 分钟快速开始
+# 5-Minute Quickstart
 
-## 1. 添加依赖
+## 1. Add the Dependency
 
 ```toml
 [dependencies]
@@ -8,9 +8,9 @@ tokitai = "0.5.0"
 serde_json = "1.0"
 ```
 
-就这一行！所有必需的依赖（serde、thiserror）都会自动包含；只需要再添加 `serde_json` 来构造/解析 JSON。
+That's all you need. Every transitive dependency (`serde`, `thiserror`) is pulled in automatically; you only need to add `serde_json` to construct and parse the JSON payloads.
 
-## 2. 定义工具
+## 2. Define a Tool
 
 ```rust
 use tokitai::tool;
@@ -20,25 +20,25 @@ struct Calculator;
 
 #[tool]
 impl Calculator {
-    /// 两个数相加
+    /// Add two numbers
     pub fn add(&self, a: i32, b: i32) -> i32 {
         a + b
     }
 
-    /// 两个数相乘
+    /// Multiply two numbers
     pub fn multiply(&self, a: i32, b: i32) -> i32 {
         a * b
     }
 }
 ```
 
-## 3. 获取工具定义（发送给 AI）
+## 3. Get the Tool Definitions (to Send to the AI)
 
 ```rust
-// 编译期生成的工具定义
+// Compile-time generated tool definitions
 let tools = Calculator::tool_definitions();
 
-// 转换为 JSON 发送给 AI
+// Convert to JSON and send to the AI
 let json = serde_json::json!({
     "tools": tools.iter().map(|t| {
         serde_json::json!({
@@ -52,92 +52,93 @@ let json = serde_json::json!({
 println!("{}", serde_json::to_string_pretty(&json)?);
 ```
 
-输出：
+Output:
+
 ```json
 [
   {
     "name": "add",
-    "description": "两个数相加",
+    "description": "Add two numbers",
     "input_schema": "{\"type\":\"object\",\"properties\":{\"a\":{\"type\":\"integer\"},\"b\":{\"type\":\"integer\"}},\"required\":[\"a\",\"b\"]}"
   },
   {
     "name": "multiply",
-    "description": "两个数相乘",
+    "description": "Multiply two numbers",
     "input_schema": "{\"type\":\"object\",\"properties\":{\"a\":{\"type\":\"integer\"},\"b\":{\"type\":\"integer\"}},\"required\":[\"a\",\"b\"]}"
   }
 ]
 ```
 
-## 4. 处理 AI 调用
+## 4. Handle a Tool Call From the AI
 
 ```rust
 use serde_json::json;
 
 let calc = Calculator::default();
 
-// AI 返回工具调用请求
+// The AI returns a tool-call request
 let call_request = json!({
     "name": "add",
     "arguments": {"a": 10, "b": 20}
 });
 
-// 执行工具调用
+// Execute the tool call
 let result = calc.call_tool(
     call_request["name"].as_str().unwrap(),
     &call_request["arguments"]
 )?;
 
-println!("结果：{}", result);  // 30
+println!("Result: {}", result);  // 30
 ```
 
-## 完整示例
+## Full Example
 
-运行示例查看效果：
+Run the included example to see it work end to end:
 
 ```bash
-# 基础使用示例
+# Basic usage
 cargo run --example basic_usage
 
-# MCP 服务器示例
+# MCP server example
 cargo run --example mcp_builder_demo -p tokitai-mcp-server
 
-# 多工具聊天
+# Multi-tool chat
 cargo run --example multi_tool_chat
 ```
 
-## 下一步
+## Next Steps
 
-- [完整 API 文档](https://docs.rs/tokitai)
-- [更多示例](https://github.com/silverenternal/tokitai/tree/main/examples)
-- [高级用法](ADVANCED_USAGE.md)
-- [类型映射](USAGE.md)
+- [Full API documentation](https://docs.rs/tokitai)
+- [More examples](https://github.com/silverenternal/tokitai/tree/main/examples)
+- [Advanced usage](ADVANCED_USAGE.md)
+- [Type mapping](USAGE.md)
 
-## 常见问题
+## Frequently Asked Questions
 
-### 为什么只需要一个 `#[tool]` 属性？
+### Why do I only need a single `#[tool]` attribute?
 
-tokitai 在编译期分析你的代码，自动生成所有必需的元数据。不需要额外的 `#[tool_name]`、`#[tool_description]` 等属性。
+Tokitai analyzes your code at compile time and generates every piece of metadata for you. You do not need a separate `#[tool_name]`, `#[tool_description]`, or any other attribute.
 
-### Option 类型参数的警告？
+### Warnings about `Option` Parameters
 
-如果参数是 `Option<T>` 类型，建议添加默认值或示例，这样 AI 知道可以不传这个参数：
+If a parameter has type `Option<T>`, it is good practice to add a default value or an example so the AI knows it can be omitted:
 
 ```rust
 #[tool]
 impl MyTools {
-    // 添加默认值
+    // Add a default value
     pub fn process(&self, data: String, #[tool(default = "null")] options: Option<serde_json::Value>) {
         // ...
     }
 
-    // 或者改为必填
+    // Or make it required
     pub fn process(&self, data: String, options: serde_json::Value) {
         // ...
     }
 }
 ```
 
-### 如何自定义工具名称？
+### How Do I Customize a Tool's Name?
 
 ```rust
 #[tool]
@@ -149,15 +150,15 @@ impl MyTools {
 }
 ```
 
-### 支持哪些类型？
+### Which Types Are Supported?
 
-Rust 类型自动映射到 JSON Schema：
+Rust types are mapped to JSON Schema automatically:
 
-| Rust 类型 | JSON Schema |
+| Rust type | JSON Schema |
 |-----------|-------------|
 | `String`, `&str` | `string` |
-| `i32`, `i64`, `u32` 等 | `integer` |
+| `i32`, `i64`, `u32`, etc. | `integer` |
 | `f32`, `f64` | `number` |
 | `bool` | `boolean` |
 | `Vec<T>` | `array` |
-| 自定义 struct | `object` |
+| Custom struct | `object` |

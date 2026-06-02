@@ -5,46 +5,56 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-06-02
+
+### Fixed
+
+- **Documentation localisation pass**: All user-facing Markdown (5 READMEs, the 4 lib-level rustdoc, the long-form docs, the `CHANGELOG`, `CONTRIBUTING`, and the `examples/` files) is now in English with no emoji decoration. The v0.5.0 entry is no longer the only clean entry — every historical entry is translated too.
+- **Wrapper-feature docs are now linked from both crate READMEs**: The `#[wrap]`, `#[openapi]` / `#[openapi_op]`, `#[delegate]`, `#[retry]`, `#[rate_limit]`, and `#[circuit_breaker]` attributes are documented under `docs/reference/` and the `docs/wrap-architecture.md` / `docs/wrap-cheatsheet.md` cheat sheets. Both the workspace root README and the `tokitai` sub-crate README now have a prominent "Wrap features (v0.5+)" section linking to them.
+- **Version drift in rustdoc**: The `tokitai = "0.4"` example in `tokitai/src/lib.rs` and `tokitai-macros/src/lib.rs` and the `tokitai = { version = "0.3", default-features = false }` example in `tokitai/src/lib.rs` are now aligned with the current 0.5.x line.
+- **`tokitai::config!` docstring example** in `tokitai-macros/src/lib.rs` was in Chinese (`"获取用户信息"` / `"用户唯一标识"`); now in English.
+- **`tokitai/src/mcp.rs` module-level rustdoc** was in Chinese; now in English.
+
 ## [0.5.0] - 2026-06-02
 
-### Breaking ⚠️
+### Breaking
 
 - No public API break relative to 0.4.0. (`TOOL_DEFINITIONS` const → `tool_definitions()` method was already shipped in 0.4.0; see the 0.4.0 entry for the migration steps.)
 - One known macro bug ("duplicate `__call_X`" on mixed sync/async impls) is fixed — affected users may simply have to delete a workaround.
 - The `tokitai_core::AsyncExecutor` trait gained a `block_on_dyn(&mut self, ...)` method (the old `block_on` static helper remains for backwards compatibility).
 
-### Added 📚
+### Added
 
-- **Wrap feature stabilisation (X-series)** — 编译期优化 X1–X8, integrating `#[wrap]`, `#[openapi]`, `#[openapi_op]`, `#[delegate]`, `#[retry]`, `#[rate_limit]`, and `#[circuit_breaker]` into the same codegen pipeline as `#[tool]`.
+- **Wrap feature stabilisation (X-series)** — compile-time optimisations X1–X8, integrating `#[wrap]`, `#[openapi]`, `#[openapi_op]`, `#[delegate]`, `#[retry]`, `#[rate_limit]`, and `#[circuit_breaker]` into the same codegen pipeline as `#[tool]`.
 - **Resilience decorators** — `#[retry]`, `#[rate_limit]`, and `#[circuit_breaker]` can now wrap individual `#[tool]` methods; the three are described in `docs/wrap-architecture.md` and the per-macro pages under `docs/reference/`.
 - **Delegate macro** — `#[delegate]` forwards an inner struct's public methods as tools on the outer impl, removing the need to hand-write `match` dispatch.
 - **OpenAPI bridge** — `#[openapi]` and `#[openapi_op]` read an OpenAPI 3 spec and expose every operation (or a whitelisted subset) as a `#[tool]`.
 - **Runtime-agnostic async executor** — `tokitai_core::AsyncExecutor`, `set_async_executor`, `block_on_async`, and `block_on_dyn` let you drive `#[tool]` async methods from any runtime (Tokio, `futures::executor::block_on`, an embedded executor, etc.).
 - **Cross-language SDK examples** — `examples/py/`, `examples/js/`, `examples/go/`, and `examples/curl/` are runnable reference clients against `tokitai-mcp-server`. The HTTP+JSON contract is documented in `docs/CROSS_LANGUAGE.md`.
 - **New end-to-end example** — `examples/dev_assistant.rs` (file/git/calc tools) is now the downstream-consumer regression test; see `BUGS_FOUND.md` for the regression net.
-- **Documentation sweep (Y-series)** — 新增 Y1–Y8 文档节 (`docs/wrap-architecture.md`, `docs/wrap-cheatsheet.md`, expanded `docs/migration/v0.4-to-v0.5.md`).
-- **build.rs 脚本** - 自动配置环境变量抑制测试/示例中的宏警告
-  - `tokitai-macros/build.rs`: 测试环境安静模式
-  - `examples/build.rs`: 示例环境安静模式
+- **Documentation sweep (Y-series)** — added Y1–Y8 doc sections (`docs/wrap-architecture.md`, `docs/wrap-cheatsheet.md`, expanded `docs/migration/v0.4-to-v0.5.md`).
+- **`build.rs` scripts** — automatically configure environment variables to suppress macro warnings in tests/examples
+  - `tokitai-macros/build.rs`: quiet mode for the test environment
+  - `examples/build.rs`: quiet mode for the example environment
 
-### Changed 🔄
+### Changed
 
-- **Design philosophy clarification** — `tokitai` is an **in-process** tool-call library. The `#[tool]` macro generates type-safe `__call_*` wrappers and the `call_tool` dispatcher runs them in your Rust process — zero network hops, zero IPC round-trips after `serde_json::Value` parsing. `tokitai-mcp-server` (and the `mcp` / `http-server` features on `tokitai`) are **optional out-of-process wrappers** that expose the same tool set over HTTP / stdio / SSE; they are not the core. See the `🧭 设计理念` callout in `README.md` for the canonical wording.
-- **宏警告控制逻辑重构** - `tokitai-macros/src/tool/mod.rs::should_show_warnings()`
-  - 优先检查 `TOKITAI_SHOW_WARNINGS` 环境变量
-  - 其次检查 `TOKITAI_QUIET` 环境变量
-  - 默认显示警告
-- **版本同步** - workspace 所有 crate 版本统一从 `0.4.0` 升至 `0.5.0`
+- **Design philosophy clarification** — `tokitai` is an **in-process** tool-call library. The `#[tool]` macro generates type-safe `__call_*` wrappers and the `call_tool` dispatcher runs them in your Rust process — zero network hops, zero IPC round-trips after `serde_json::Value` parsing. `tokitai-mcp-server` (and the `mcp` / `http-server` features on `tokitai`) are **optional out-of-process wrappers** that expose the same tool set over HTTP / stdio / SSE; they are not the core. See the `Design philosophy` callout in `README.md` for the canonical wording.
+- **Macro warning control logic refactored** — `tokitai-macros/src/tool/mod.rs::should_show_warnings()`
+  - Preferentially check the `TOKITAI_SHOW_WARNINGS` environment variable
+  - Then check the `TOKITAI_QUIET` environment variable
+  - Show warnings by default
+- **Version synchronisation** — all workspace crates unified from `0.4.0` to `0.5.0`
 - **Error message localisation** — Wrapper-generated `__call_*` strings, the dispatcher fallback, and the `tokitai_core::ToolError` constructors now all use English. Previously the wrappers hard-coded Chinese strings, which caused a single user run to see both languages.
 
-### Performance ⚡
+### Performance
 
-- **50% 性能提升** - 通过系统化 `#[inline]` 优化 (X1–X8 系列, 详细基准见 `docs/performance.md` 和 `docs/internal/schema-generation-optimization.md`)
-- 优化热点路径：`SchemaGenConfig` Builder 方法（17 个函数）
-- 优化提取函数：`extract_param_info`, `extract_doc_comments`
-- 优化代码生成：`generate_schema_json_*` 系列函数
+- **50% performance improvement** — via systematic `#[inline]` optimisations (X1–X8 series, detailed benchmarks in `docs/performance.md` and `docs/internal/schema-generation-optimization.md`)
+- Optimised hot paths: `SchemaGenConfig` Builder methods (17 functions)
+- Optimised extraction functions: `extract_param_info`, `extract_doc_comments`
+- Optimised code generation: `generate_schema_json_*` family of functions
 
-### Fixed 🐛
+### Fixed
 
 The eight defects previously documented in `BUGS_FOUND.md` (repurposed as a
 regression-test report for this release) are all fixed. The full mapping from
@@ -53,87 +63,87 @@ defect to locking test is in `BUGS_FOUND.md`; the short list is:
 - **Mixed async + sync methods** in a single `#[tool]` impl no longer produce duplicate `__call_<name>` definitions.
 - **Per-parameter `#[tool(default_* = "...")]`** (method-level form) and **`#[tool(validate_<param> = "...")]`** are wired through to runtime behaviour — they used to be accepted by the parser but ignored.
 - **Schema/default consistency** — a parameter that has a `default_*` value is no longer listed in the schema's `required` array, and calls that omit it now succeed using the default.
-- **Alias description format** — alias descriptions no longer carry a Chinese `（别名：…）` prefix; they match the primary tool's description.
+- **Alias description format** — alias descriptions no longer carry the legacy Chinese-language prefix; they match the primary tool's description.
 - **Single-language error surface** — wrapper-generated "missing required parameter" / "parameter type mismatch" / "unknown tool" messages are all in English, matching the rest of the runtime.
 
 Additional fix-ups from the W1–W4 round:
 
-- **W1 (P0): Workspace profile 配置修复** - 将 `[profile.release]` 从 `tokitai/Cargo.toml` 移到 workspace 根目录
-  - 消除 `profiles for the non root package will be ignored` 警告
-- **W2 (P1): 文档版本号统一** - 将所有文档中的 `0.3.3` 更新为 `0.4.0`
+- **W1 (P0): Workspace profile configuration fix** — move `[profile.release]` from `tokitai/Cargo.toml` to the workspace root
+  - Eliminate the `profiles for the non root package will be ignored` warning
+- **W2 (P1): Documentation version number unification** — update all `0.3.3` references to `0.4.0` in documentation
   - `docs/USAGE.md`, `PROMOTION.md`
-- **W3 (P2): 宏警告抑制改进** - 使用 `TOKITAI_QUIET` 环境变量控制宏警告输出
-  - 添加 `build.rs` 自动设置环境变量（测试/示例环境）
-  - 修复 `cfg!(test)` 在过程宏中的误用
-- **W4 (P0): Clippy 警告清理** - 修复 12 个 `default()` 调用警告
-  - `tokitai-mcp-server/tests/integration_test.rs`: 使用 unit struct 直接初始化
-- **W4 (P1): 测试警告输出抑制** - 使用 `cfg!(test)` 抑制测试环境下的宏警告输出
-  - 参数默认值警告（Option 类型无 default/example）
-  - 验证/转换表达式解析失败警告
-  - context=async 不匹配警告
+- **W3 (P2): Macro warning suppression improvement** — use the `TOKITAI_QUIET` environment variable to control macro warning output
+  - Added `build.rs` to automatically set the environment variable (test/example environment)
+  - Fixed misuse of `cfg!(test)` in procedural macros
+- **W4 (P0): Clippy warning cleanup** — fix 12 `default()` call warnings
+  - `tokitai-mcp-server/tests/integration_test.rs`: use a unit struct directly for initialisation
+- **W4 (P1): Test warning output suppression** — use `cfg!(test)` to suppress macro warning output in the test environment
+  - Parameter default value warning (Option type with no default/example)
+  - Validation/transformation expression parse failure warning
+  - context=async mismatch warning
 
 ## [0.4.0] - 2026-03-10
 
-### Breaking Changes ⚠️
+### Breaking Changes
 
-- **API 简化：`TOOL_DEFINITIONS` 常量 → `tool_definitions()` 方法**
+- **API simplification: `TOOL_DEFINITIONS` constant → `tool_definitions()` method**
   - Before: `pub const TOOL_DEFINITIONS: &'static [ToolDefinition] = &[...];`
   - After: `pub fn tool_definitions() -> &'static [ToolDefinition] { ... }`
-  - Reason: 更灵活的运行时工具定义生成，支持动态工具注册
-  - Migration: 替换所有 `TOOL_DEFINITIONS` 引用为 `tool_definitions()`
+  - Reason: more flexible runtime tool definition generation, supporting dynamic tool registration
+  - Migration: replace all `TOOL_DEFINITIONS` references with `tool_definitions()`
 
-- **参数属性语法修正**
-  - Before: `#[tool_attr(example_format = "...")]` 可直接放在参数上
-  - After: `#[tool(example_format = "...")]` 必须放在方法级别
-  - Reason: 参数级属性（如 `xxx_param`）必须在方法级别声明，由宏内部处理
-  - Migration: 
+- **Parameter attribute syntax fix**
+  - Before: `#[tool_attr(example_format = "...")]` could be placed directly on a parameter
+  - After: `#[tool(example_format = "...")]` must be placed at the method level
+  - Reason: parameter-level attributes (such as `xxx_param`) must be declared at the method level and handled internally by the macro
+  - Migration:
     ```rust
-    // ❌ 旧语法（编译错误）
+    // OLD syntax (compile error)
     pub fn format_date(&self, date: String, #[tool_attr(example_format = "%Y/%m/%d")] format: String) {}
-    
-    // ✅ 新语法
+
+    // NEW syntax
     #[tool(example_format = "%Y/%m/%d")]
     pub fn format_date(&self, date: String, format: String) {}
     ```
 
-### Fixed 🐛
+### Fixed
 
-- **P0: 示例代码编译错误** - `examples/mcp_server_demo.rs` 参数属性冲突
-- **P1: 文档旧 API 引用** - 清理 36+ 处 `TOOL_DEFINITIONS` → `tool_definitions()`
-  - 集中于 `docs/` 根目录与 `tokitai/docs/` 子目录
-- **P2: 文档块语法错误** - 宏示例使用 ` ```text` 而非 ` ```rust,ignore`
+- **P0: Example code compile error** - `examples/mcp_server_demo.rs` parameter attribute conflict
+- **P1: Documentation references to old API** - cleaned up 36+ references from `TOOL_DEFINITIONS` → `tool_definitions()`
+  - concentrated in `docs/` root and `tokitai/docs/` subdirectory
+- **P2: Documentation block syntax error** - macro examples used ` ```text` instead of ` ```rust,ignore`
 
-### Added 📚
+### Added
 
-- **examples/Cargo.toml 完整依赖** - 添加 `axum`, `tower-http`, `tracing-subscriber` 等 HTTP 服务器依赖
-- **P11 审查修复报告** - `P11_REVIEW_FIX_REPORT_ROUND2.md` 完整记录所有修复
+- **examples/Cargo.toml complete dependencies** - added HTTP server dependencies such as `axum`, `tower-http`, `tracing-subscriber`
+- **P11 review fix report** - `P11_REVIEW_FIX_REPORT_ROUND2.md` completely documents all fixes
 
-### Changed 🔄
+### Changed
 
-- **文档块规范** - 所有宏生成代码示例使用 ` ```text` 语法高亮
-- **版本同步** - 所有 workspace crate 版本统一到 `0.4.0`
+- **Documentation block conventions** - all macro-generated code examples use ` ```text` syntax highlighting
+- **Version synchronisation** - all workspace crate versions unified to `0.4.0`
 
-### Verification ✅
+### Verification
 
-| 检查项 | 结果 |
-|--------|------|
-| 测试 | 85/85 通过 |
-| Clippy | 无警告 |
-| 文档生成 | 无警告 |
-| 编译 | 无错误 |
+| Check item | Result |
+|------------|--------|
+| Tests | 85/85 passed |
+| Clippy | no warnings |
+| Documentation generation | no warnings |
+| Compilation | no errors |
 
 ---
 
 ## [0.3.4] - 2026-03-09
 
-### P11+ Code Review Fixes 🔧
+### P11+ Code Review Fixes
 
 #### P0 - Critical Improvements
 - **Removed all Chinese compiler warnings** - Complete internationalization
-  - Changed `⚠️  方法 \`add\` 被标记为 deprecated，但未指定 replaced_by` → `[tokitai] warning: method \`add\` is marked deprecated without replaced_by`
-  - Changed `⚠️  解析验证表达式失败` → `[tokitai] warning: failed to parse validation expression`
-  - Changed `⚠️  解析转换表达式失败` → `[tokitai] warning: failed to parse transform expression`
-  - Changed `⚠️  方法 \`new_method\` 标记为 context = "async" 但不是 async 方法` → `[tokitai] warning: method \`new_method\` is marked context = "async" but is not an async method`
+  - Changed `WARNING: method \`add\` is marked deprecated, but no replaced_by is specified` → `[tokitai] warning: method \`add\` is marked deprecated without replaced_by`
+  - Changed `WARNING: failed to parse validation expression` → `[tokitai] warning: failed to parse validation expression`
+  - Changed `WARNING: failed to parse transform expression` → `[tokitai] warning: failed to parse transform expression`
+  - Changed `WARNING: method \`new_method\` is marked context = "async" but is not an async method` → `[tokitai] warning: method \`new_method\` is marked context = "async" but is not an async method`
   - All repair suggestions now in English
 - **Refactored `SchemaGenConfig` to public Builder pattern**
   - Before: Private builder methods (internal use only)
@@ -146,8 +156,8 @@ Additional fix-ups from the W1–W4 round:
 
 #### P1 - Quality Improvements
 - **Fixed Markdown support documentation** - Avoided over-promising
-  - Clarified: "保留原始文本格式" (preserves raw text format) instead of "支持 Markdown 格式"
-  - Added note: "此函数仅保留原始文本，不进行 Markdown 解析（如转换为 HTML）"
+  - Clarified: "preserves raw text format" instead of "supports Markdown format"
+  - Added note: "this function only preserves raw text; it does not perform Markdown parsing (e.g. conversion to HTML)"
   - Recommended external libraries (e.g., `pulldown-cmark`) for full Markdown parsing
 - **Added LazyLock deadlock detection warnings**
   - Added `# Safety Note` to `GLOBAL_CONFIG_REGISTRY` documentation
@@ -167,7 +177,7 @@ Additional fix-ups from the W1–W4 round:
   - FAQ for common migration questions
 
 ### Fixed
-- Removed all Clippy warnings (25+ warnings → 0) 🎉
+- Removed all Clippy warnings (25+ warnings → 0)
 - Fixed `too_many_arguments` warning by introducing `SchemaGenConfig` struct for JSON Schema generation
 - Fixed `dead_code` warning for `build()` method with `#[allow(dead_code)]` attribute
 - Fixed unused variable warnings in tests using `cargo fix`
@@ -198,7 +208,7 @@ Additional fix-ups from the W1–W4 round:
 - Dependencies: `sha2` and `hex` crates for cryptographic hashing
 
 ### Removed
-- HeWeather (和风天气) real API integration due to API host authentication issues
+- HeWeather real API integration due to API host authentication issues
 - Weather preloading and caching logic
 - `WEATHER_API_KEY` and `WEATHER_USE_REAL_API` environment variables
 - `reqwest` blocking feature (now only requires `json` feature)
@@ -217,12 +227,12 @@ Additional fix-ups from the W1–W4 round:
 - Documentation warnings for `call_tool_sync` blocking behavior
 
 ### Fixed
-- User custom error messages now preserved instead of being replaced with generic "方法执行失败"
+- User custom error messages now preserved instead of being replaced with generic "method execution failed"
 - Removed unnecessary `#[allow(dead_code)]` attributes in example code
 - Doc comment formatting in starter project examples
 
 ### Changed
-- README.md now includes "5 分钟快速上手" quick start guide
+- README.md now includes "5-minute quick start" guide
 - README.md now mentions `#[tool(skip)]` feature in features section
 - Improved panic error message when calling async methods without runtime
 - Starter project now properly organized with modular tool definitions

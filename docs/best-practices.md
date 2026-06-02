@@ -143,7 +143,7 @@ transient `Err` that doesn't open the circuit still gets
 retried.
 
 ```rust,no_run
-// ❌ Wrong: rate-limit wraps retry — a 3-attempt retry eats 3× the budget
+// Wrong: rate-limit wraps retry — a 3-attempt retry eats 3× the budget
 #[rate_limit(rps = 5)]
 #[retry(max = 3, backoff = "exponential")]
 async fn call(&self) -> Result<_, _> { /* … */ }
@@ -191,10 +191,10 @@ LLM**, not an internal detail.
 ### Good vs bad
 
 ```rust,no_run
-// ❌ Bad: opaque, optional-everything, no validation
+// Bad: opaque, optional-everything, no validation
 pub fn search(&self, data: serde_json::Value) -> Vec<String> { /* … */ }
 
-// ✅ Good: named, typed, validated, documented
+// Good: named, typed, validated, documented
 pub fn search(
     &self,
     #[tool(min_length = 3, max_length = 200)] query: String,
@@ -250,7 +250,7 @@ The doc comment serves two audiences with the same text — the
 LLM (which gets the `description`) and the Rust developer
 (which sees it in `cargo doc` / IDE hover). Write for the LLM
 first, then make sure the text reads well to a human. See
-[`USAGE.md` §工具描述三种方式](USAGE.md#工具描述三种方式).
+[`USAGE.md` §Three ways to describe a tool](USAGE.md#three-ways-to-describe-a-tool).
 
 ### The `@`-directive syntax
 
@@ -294,10 +294,10 @@ pub enum MyError {
     #[error("internal: {0}")] Internal(String),
 }
 
-// ✅ Bare T  — infallible:  pub fn add(&self, a: i32, b: i32) -> i32 { a + b }
-// ✅ Result<T, ToolError>:   pub fn lookup(&self, id: i32) -> Result<User, ToolError> { … }
-// ✅ Result<T, MyError>:     pub fn lookup2(&self, id: i32) -> Result<User, MyError> { … }
-// ❌ Result<T, anyhow::Error>: LLM sees the Display impl, often a multi-line backtrace.
+// Good: Bare T  — infallible:  pub fn add(&self, a: i32, b: i32) -> i32 { a + b }
+// Good: Result<T, ToolError>:   pub fn lookup(&self, id: i32) -> Result<User, ToolError> { … }
+// Good: Result<T, MyError>:     pub fn lookup2(&self, id: i32) -> Result<User, MyError> { … }
+// Bad:  Result<T, anyhow::Error>: LLM sees the Display impl, often a multi-line backtrace.
 ```
 
 ### What the LLM sees — and how to override
@@ -311,10 +311,10 @@ string is `format!("{}", e)` of your error — make it
 **specific and actionable** for `LLM-recoverable` failures:
 
 ```text
-❌ "internal error"
-✅ "user_id must be a positive integer (got -1)"
-✅ "rate limit exceeded; retry in 30s"
-✅ "tool 'add' is deprecated; use 'sum' instead"
+Bad:  "internal error"
+Good: "user_id must be a positive integer (got -1)"
+Good: "rate limit exceeded; retry in 30s"
+Good: "tool 'add' is deprecated; use 'sum' instead"
 ```
 
 The default wrapper uses
@@ -403,8 +403,8 @@ about it. A concrete return is a precise schema the LLM can
 describe in its reasoning trace.
 
 ```rust,no_run
-// ❌ Bad:  pub fn search(&self, q: String) -> serde_json::Value { … }
-// ✅ Good:
+// Bad:  pub fn search(&self, q: String) -> serde_json::Value { … }
+// Good:
 #[derive(serde::Serialize)] pub struct SearchResult { pub hits: Vec<Hit>, pub total: u32 }
 pub fn search(&self, q: String) -> Result<SearchResult, SearchError> { … }
 ```
@@ -416,8 +416,8 @@ treats the parameter as optional and may omit it. If the
 parameter is required, declare it as `T`.
 
 ```rust,no_run
-// ❌ Bad:  pub fn create_user(&self, name: Option<String>, email: Option<String>) -> User { … }
-// ✅ Good: pub fn create_user(&self, name: String, email: String) -> Result<User, UserError> { … }
+// Bad:  pub fn create_user(&self, name: Option<String>, email: Option<String>) -> User { … }
+// Good: pub fn create_user(&self, name: String, email: String) -> Result<User, UserError> { … }
 ```
 
 ### A3. Validation in the body, not the schema
@@ -428,10 +428,10 @@ gives the LLM a schema it can see. Hand-rolled `if name.len() < 3`
 in the body is faster but loses the schema.
 
 ```rust,no_run
-// ❌ Bad:  pub fn create_user(&self, name: String) -> Result<User, String> {
+// Bad:  pub fn create_user(&self, name: String) -> Result<User, String> {
 //     if name.len() < 3 { return Err("name too short".into()); }
 // }
-// ✅ Good: pub fn create_user(#[tool(min_length = 3, max_length = 50)] name: String) -> Result<User, UserError> { … }
+// Good: pub fn create_user(#[tool(min_length = 3, max_length = 50)] name: String) -> Result<User, UserError> { … }
 ```
 
 ### A4. Exposing internal helpers
@@ -440,8 +440,8 @@ Every `pub` method in a `#[tool]` impl becomes a tool the LLM
 can call.
 
 ```rust,no_run
-// ❌ Bad:  pub fn validate(&self, u: &User) -> bool { … }  // not a tool!
-// ✅ Good: #[tool(skip)] pub fn validate(&self, u: &User) -> bool { … }
+// Bad:  pub fn validate(&self, u: &User) -> bool { … }  // not a tool!
+// Good: #[tool(skip)] pub fn validate(&self, u: &User) -> bool { … }
 ```
 
 ### A5. Generic methods
@@ -452,8 +452,8 @@ will fail with "Generic methods are not supported". Use
 concrete types — name the methods after the type.
 
 ```rust,no_run
-// ❌ Bad:  pub fn encode<T: serde::Serialize>(&self, value: T) -> String { … }
-// ✅ Good: pub fn encode_string(&self, value: String) -> String { … }
+// Bad:  pub fn encode<T: serde::Serialize>(&self, value: T) -> String { … }
+// Good: pub fn encode_string(&self, value: String) -> String { … }
 ```
 
 ### A6. One giant `#[tool]` impl
@@ -463,8 +463,8 @@ touched. A change to one domain re-checks that impl's `fn`
 items, not the 204 of a monolithic 100-method block.
 
 ```rust,no_run
-// ❌ Bad:  #[tool] impl MegaClient { /* … 100 methods … */ }
-// ✅ Good: #[tool] impl UserClient  { /* … 25 methods … */ }
+// Bad:  #[tool] impl MegaClient { /* … 100 methods … */ }
+// Good: #[tool] impl UserClient  { /* … 25 methods … */ }
 //          #[tool] impl OrderClient { /* … 25 methods … */ }  // etc.
 ```
 
@@ -476,8 +476,8 @@ to the LLM. Either make it not `pub`, or add `#[tool(skip)]`
 explicitly.
 
 ```rust,no_run
-// ❌ Bad:  pub fn _test_helper(&self) -> bool { … }  // pub, so it's a tool
-// ✅ Good: fn _test_helper(&self) -> bool { … }      // not pub, not a tool
+// Bad:  pub fn _test_helper(&self) -> bool { … }  // pub, so it's a tool
+// Good: fn _test_helper(&self) -> bool { … }      // not pub, not a tool
 ```
 
 ---

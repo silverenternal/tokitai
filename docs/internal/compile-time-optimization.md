@@ -99,7 +99,7 @@ for item in &impl_item.items { ... }
 After:
 ```rust
 // tool/extract/tool_info.rs
-// 【P1 优化】按 impl 块内条目数预分配
+// [P1 optimization] pre-allocate by the number of items in the impl block
 let mut tools = Vec::with_capacity(impl_item.items.len());
 for item in &impl_item.items { ... }
 ```

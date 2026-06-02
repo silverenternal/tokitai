@@ -1,27 +1,27 @@
-//! Ollama AI 集成示例
+//! Ollama AI integration example
 //!
-//! 展示如何使用 tokitai 与 Ollama API 集成，实现 AI 工具调用功能
+//! Demonstrates how to integrate tokitai with the Ollama API to enable AI tool calls.
 //!
-//! # 前置要求
+//! # Prerequisites
 //!
-//! 1. 安装 Ollama: https://ollama.ai
-//! 2. 拉取模型：`ollama pull llama2` 或 `ollama pull mistral`
-//! 3. 启动 Ollama 服务：`ollama serve`
+//! 1. Install Ollama: https://ollama.ai
+//! 2. Pull a model: `ollama pull llama2` or `ollama pull mistral`
+//! 3. Start the Ollama service: `ollama serve`
 //!
-//! # 配置
+//! # Configuration
 //!
-//! 复制 `examples/.env.example` 到 `examples/.env` 并配置：
+//! Copy `examples/.env.example` to `examples/.env` and configure:
 //! ```text
-//! # 本地 Ollama 服务（默认）
+//! # Local Ollama service (default)
 //! OLLAMA_BASE_URL=http://localhost:11434
 //! OLLAMA_MODEL=llama2
 //! OLLAMA_ENABLED=true
 //! ```
 //!
-//! # 运行示例
+//! # Run the example
 //!
 //! ```bash
-//! # 从项目根目录运行
+//! # Run from the project root
 //! cargo run --example ollama_integration
 //! ```
 
@@ -34,9 +34,9 @@ use tokitai::tool;
 use tokitai::ToolProvider;
 use utils::init_console;
 
-// ==================== 环境变量配置 ====================
+// ==================== Environment-Variable Configuration ====================
 
-/// 从环境变量或默认值加载配置
+/// Load configuration from environment variables or defaults
 struct Config {
     base_url: String,
     model: String,
@@ -46,14 +46,14 @@ struct Config {
 
 impl Config {
     fn from_env() -> Self {
-        // 尝试从项目根目录加载 examples/.env
+        // Try to load examples/.env from the project root
         let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string());
         let env_path = std::path::Path::new(&manifest_dir)
             .join("examples")
             .join(".env");
         dotenv::from_path(env_path).ok();
 
-        // 也尝试当前目录的 .env（兼容）
+        // Also try the current-directory .env (compatibility)
         dotenv::dotenv().ok();
 
         let base_url =
@@ -74,35 +74,35 @@ impl Config {
     }
 }
 
-// ==================== 工具定义 ====================
+// ==================== Tool Definitions ====================
 
-/// 数学计算器工具
+/// Math calculator tools
 pub struct Calculator;
 
 #[tool]
 impl Calculator {
-    /// 两个数相加
+    /// Add two numbers
     pub fn add(&self, a: i32, b: i32) -> i32 {
         a + b
     }
 
-    /// 两个数相乘
+    /// Multiply two numbers
     pub fn multiply(&self, a: i32, b: i32) -> i32 {
         a * b
     }
 
-    /// 计算平方根（取整）
+    /// Compute the square root (rounded)
     pub fn sqrt(&self, n: i32) -> i32 {
         (n as f64).sqrt() as i32
     }
 }
 
-/// SHA256 哈希计算工具
+/// SHA256 hashing tools
 pub struct HashCalculator;
 
 #[tool]
 impl HashCalculator {
-    /// 计算字符串的 SHA256 哈希值（返回 64 位十六进制）
+    /// Compute the SHA256 hash of a string (returns a 64-character hex string)
     pub fn sha256(&self, input: String) -> String {
         let mut hasher = Sha256::new();
         hasher.update(input.as_bytes());
@@ -110,7 +110,7 @@ impl HashCalculator {
         hex::encode(result)
     }
 
-    /// 计算文件的 SHA256 哈希值
+    /// Compute the SHA256 hash of a file
     pub fn sha256_file(&self, path: String) -> String {
         match std::fs::read(&path) {
             Ok(contents) => {
@@ -119,56 +119,56 @@ impl HashCalculator {
                 let result = hasher.finalize();
                 hex::encode(result)
             }
-            Err(e) => format!("读取文件失败：{}", e),
+            Err(e) => format!("Failed to read file: {}", e),
         }
     }
 }
 
-/// 天气查询工具
+/// Weather lookup tools
 pub struct WeatherService;
 
 #[tool]
 impl WeatherService {
-    /// 获取指定城市的天气信息
+    /// Get weather information for a specified city
     pub fn get_weather(&self, city: String) -> String {
-        // 模拟天气数据
+        // Simulated weather data
         match city.to_lowercase().as_str() {
-            "北京" | "beijing" => "北京：晴朗，温度 25°C，湿度 40%".to_string(),
-            "上海" | "shanghai" => "上海：多云，温度 22°C，湿度 60%".to_string(),
-            "广州" | "guangzhou" => "广州：小雨，温度 28°C，湿度 80%".to_string(),
-            "深圳" | "shenzhen" => "深圳：晴朗，温度 30°C，湿度 70%".to_string(),
-            "杭州" | "hangzhou" => "杭州：多云，温度 24°C，湿度 65%".to_string(),
-            "成都" | "chengdu" => "成都：阴天，温度 20°C，湿度 75%".to_string(),
-            "重庆" | "chongqing" => "重庆：小雨，温度 26°C，湿度 85%".to_string(),
-            "武汉" | "wuhan" => "武汉：晴朗，温度 27°C，湿度 55%".to_string(),
-            "西安" | "xian" => "西安：多云，温度 23°C，湿度 50%".to_string(),
-            "南京" | "nanjing" => "南京：晴朗，温度 25°C，湿度 60%".to_string(),
-            _ => format!("{}：数据不可用", city),
+            "beijing" => "Beijing: clear, temperature 25C, humidity 40%".to_string(),
+            "shanghai" => "Shanghai: cloudy, temperature 22C, humidity 60%".to_string(),
+            "guangzhou" => "Guangzhou: light rain, temperature 28C, humidity 80%".to_string(),
+            "shenzhen" => "Shenzhen: clear, temperature 30C, humidity 70%".to_string(),
+            "hangzhou" => "Hangzhou: cloudy, temperature 24C, humidity 65%".to_string(),
+            "chengdu" => "Chengdu: overcast, temperature 20C, humidity 75%".to_string(),
+            "chongqing" => "Chongqing: light rain, temperature 26C, humidity 85%".to_string(),
+            "wuhan" => "Wuhan: clear, temperature 27C, humidity 55%".to_string(),
+            "xian" => "Xian: cloudy, temperature 23C, humidity 50%".to_string(),
+            "nanjing" => "Nanjing: clear, temperature 25C, humidity 60%".to_string(),
+            _ => format!("{}: data unavailable", city),
         }
     }
 }
 
-/// 时间工具
+/// Time tools
 pub struct TimeService;
 
 #[tool]
 impl TimeService {
-    /// 获取当前日期时间
+    /// Get the current date and time
     pub fn get_current_time(&self) -> String {
         chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
     }
 
-    /// 计算两个日期的天数差
+    /// Compute the number of days between two dates
     pub fn days_between(&self, date1: String, date2: String) -> Result<i32, String> {
         let d1 = chrono::NaiveDate::parse_from_str(&date1, "%Y-%m-%d")
-            .map_err(|e| format!("日期格式错误：{}", e))?;
+            .map_err(|e| format!("Invalid date format: {}", e))?;
         let d2 = chrono::NaiveDate::parse_from_str(&date2, "%Y-%m-%d")
-            .map_err(|e| format!("日期格式错误：{}", e))?;
+            .map_err(|e| format!("Invalid date format: {}", e))?;
         Ok((d2 - d1).num_days() as i32)
     }
 }
 
-// ==================== Ollama API 类型定义 ====================
+// ==================== Ollama API Type Definitions ====================
 
 #[derive(Debug, Serialize)]
 struct OllamaRequest {
@@ -218,7 +218,7 @@ struct FunctionCall {
     arguments: Value,
 }
 
-// ==================== Ollama 客户端 ====================
+// ==================== Ollama Client ====================
 
 struct OllamaClient {
     client: Client,
@@ -237,7 +237,7 @@ impl OllamaClient {
         }
     }
 
-    /// 转换 tokitai 工具定义为 Ollama 格式
+    /// Convert tokitai tool definitions to Ollama format
     #[allow(dead_code)]
     fn convert_tools<T: ToolProvider>(&self) -> Vec<ToolDefinition> {
         T::tool_definitions()
@@ -262,7 +262,7 @@ impl OllamaClient {
             .collect()
     }
 
-    /// 发送消息到 Ollama
+    /// Send a chat request to Ollama
     async fn chat(
         &self,
         messages: Vec<Message>,
@@ -275,38 +275,38 @@ impl OllamaClient {
             stream: false,
         };
 
-        // Ollama 云 API 路径是 /api/chat
+        // The Ollama cloud API path is /api/chat
         let url = format!("{}/api/chat", self.base_url);
 
         let mut req = self.client.post(&url).json(&request);
 
-        // 如果有 API key，添加认证头（Ollama 云需要）
+        // If an API key is set, add the Authorization header (required by Ollama cloud)
         if let Some(ref api_key) = self.api_key {
             req = req.header("Authorization", format!("Bearer {}", api_key));
         }
 
-        let response = req.send().await.map_err(|e| format!("请求失败：{}", e))?;
+        let response = req.send().await.map_err(|e| format!("Request failed: {}", e))?;
 
-        // 检查响应状态
+        // Check the response status
         let status = response.status();
         if !status.is_success() {
             let error_text = response
                 .text()
                 .await
-                .unwrap_or_else(|_| "未知错误".to_string());
-            return Err(format!("API 返回错误 ({}): {}", status, error_text));
+                .unwrap_or_else(|_| "unknown error".to_string());
+            return Err(format!("API returned error ({}): {}", status, error_text));
         }
 
         let result = response
             .json::<OllamaResponse>()
             .await
-            .map_err(|e| format!("解析响应失败：{}", e))?;
+            .map_err(|e| format!("Failed to parse response: {}", e))?;
 
         Ok(result.message)
     }
 }
 
-// ==================== 主流程 ====================
+// ==================== Main Flow ====================
 
 struct AiAssistant {
     calculator: Calculator,
@@ -325,29 +325,29 @@ impl AiAssistant {
         }
     }
 
-    /// 处理工具调用
+    /// Handle a tool call
     fn handle_tool_call(&self, name: &str, args: &Value) -> Result<Value, String> {
-        println!("   [工具调用] {}({:?})", name, args);
+        println!("   [Tool call] {}({:?})", name, args);
 
-        // 根据工具名称路由到不同的服务
+        // Route to the appropriate service based on tool name
         let result = match name {
             "add" | "multiply" | "sqrt" => self
                 .calculator
                 .call_tool(name, args)
-                .map_err(|e| format!("计算器工具错误：{:?}", e))?,
+                .map_err(|e| format!("Calculator tool error: {:?}", e))?,
             "sha256" | "sha256_file" => self
                 .hash_calculator
                 .call_tool(name, args)
-                .map_err(|e| format!("哈希工具错误：{:?}", e))?,
+                .map_err(|e| format!("Hash tool error: {:?}", e))?,
             "get_weather" => self
                 .weather
                 .call_tool(name, args)
-                .map_err(|e| format!("天气工具错误：{:?}", e))?,
+                .map_err(|e| format!("Weather tool error: {:?}", e))?,
             "get_current_time" | "days_between" => self
                 .time_service
                 .call_tool(name, args)
-                .map_err(|e| format!("时间工具错误：{:?}", e))?,
-            _ => return Err(format!("未知工具：{}", name)),
+                .map_err(|e| format!("Time tool error: {:?}", e))?,
+            _ => return Err(format!("Unknown tool: {}", name)),
         };
 
         Ok(result)
@@ -357,43 +357,43 @@ impl AiAssistant {
 #[tokio::main]
 async fn main() -> Result<(), String> {
     init_console();
-    println!("=== Tokitai x Ollama AI 集成示例 ===\n");
+    println!("=== Tokitai x Ollama AI Integration Example ===\n");
 
-    // 加载配置
+    // Load configuration
     let config = Config::from_env();
 
-    // 检查是否启用 Ollama 集成
+    // Check whether Ollama integration is enabled
     if !config.enabled {
-        println!("ℹ️ OLLAMA_ENABLED=false，使用离线演示模式\n");
-        println!("提示：要启用 Ollama 集成，请：");
-        println!("  1. 安装 Ollama: https://ollama.ai");
-        println!("  2. 拉取模型：ollama pull llama2");
-        println!("  3. 启动服务：ollama serve");
-        println!("  4. 复制 examples/.env.example 到 examples/.env");
-        println!("  5. 设置 OLLAMA_ENABLED=true");
-        println!("\n或者使用云端 AI 服务：");
-        println!("  - 编辑 examples/.env，配置 OLLAMA_API_KEY 等");
-        println!("  - 参考 docs/AI_INTEGRATION.md 了解如何集成其他 AI 服务\n");
+        println!("Note: OLLAMA_ENABLED=false, using offline demo mode\n");
+        println!("Hint: to enable Ollama integration, follow these steps:");
+        println!("  1. Install Ollama: https://ollama.ai");
+        println!("  2. Pull a model: ollama pull llama2");
+        println!("  3. Start the service: ollama serve");
+        println!("  4. Copy examples/.env.example to examples/.env");
+        println!("  5. Set OLLAMA_ENABLED=true");
+        println!("\nOr use a hosted AI service:");
+        println!("  - Edit examples/.env and configure OLLAMA_API_KEY, etc.");
+        println!("  - See docs/AI_INTEGRATION.md for integrating other AI services\n");
         run_offline_demo().await.map_err(|e| e.to_string())?;
         return Ok(());
     }
 
-    // 检查是否为在线服务（有 API key 或非 localhost 地址）
+    // Detect cloud vs. local service (API key present or non-localhost address)
     let is_cloud = config.api_key.is_some() && !config.api_key.as_ref().unwrap().is_empty()
         || (!config.base_url.contains("localhost") && !config.base_url.contains("127.0.0.1"));
 
     if is_cloud {
-        println!("✓ 使用 Ollama 云服务");
-        println!("  服务地址：{}", config.base_url);
-        println!("  模型：{}", config.model);
+        println!("Using Ollama cloud service");
+        println!("  Service URL: {}", config.base_url);
+        println!("  Model: {}", config.model);
         if config.api_key.is_some() && !config.api_key.as_ref().unwrap().is_empty() {
-            println!("  API Key: 已配置\n");
+            println!("  API Key: configured\n");
         } else {
-            println!("  API Key: 未配置（可能需要）\n");
+            println!("  API Key: not configured (may be required)\n");
         }
     } else {
-        // 本地服务检查
-        println!("正在检查 Ollama 本地服务 ({})...", config.base_url);
+        // Local-service check
+        println!("Checking Ollama local service at {}...", config.base_url);
         let client = reqwest::Client::new();
         match client
             .get(format!("{}/api/tags", config.base_url))
@@ -402,24 +402,24 @@ async fn main() -> Result<(), String> {
         {
             Ok(resp) => {
                 if resp.status().is_success() {
-                    println!("✓ Ollama 本地服务正常运行\n");
+                    println!("Ollama local service is up\n");
                 } else {
-                    println!("⚠ Ollama 本地服务响应异常，继续示例演示...\n");
+                    println!("Ollama local service returned an abnormal response, continuing with the demo...\n");
                 }
             }
             Err(_) => {
-                println!("⚠ Ollama 本地服务未运行，将展示离线演示模式\n");
+                println!("Ollama local service is not running, falling back to offline demo mode\n");
                 run_offline_demo().await.map_err(|e| e.to_string())?;
                 return Ok(());
             }
         }
     }
 
-    // 创建助手和 Ollama 客户端
+    // Create the assistant and Ollama client
     let assistant = AiAssistant::new();
     let ollama = OllamaClient::new(&config);
 
-    // 收集所有工具定义
+    // Collect all tool definitions
     let mut all_tools = Vec::new();
     all_tools.extend(Calculator::tool_definitions().iter().map(convert_tool_def));
     all_tools.extend(
@@ -434,34 +434,34 @@ async fn main() -> Result<(), String> {
     );
     all_tools.extend(TimeService::tool_definitions().iter().map(convert_tool_def));
 
-    println!("已加载 {} 个工具:", all_tools.len());
+    println!("Loaded {} tools:", all_tools.len());
     for tool in &all_tools {
         println!("   - {}: {}", tool.function.name, tool.function.description);
     }
     println!();
 
-    // 模拟对话 - 测试 SHA256 计算（AI 无法精确计算哈希值）
+    // Simulated conversation - SHA256 test (the AI can't compute the hash precisely)
     let mut messages = vec![Message {
         role: "user".to_string(),
-        content: "请计算字符串 'hello world' 的 SHA256 哈希值".to_string(),
+        content: "Please compute the SHA256 hash of the string 'hello world'".to_string(),
         tool_calls: None,
     }];
 
-    println!("[用户] 请计算字符串 'hello world' 的 SHA256 哈希值\n");
+    println!("[User] Please compute the SHA256 hash of the string 'hello world'\n");
 
-    // 第一轮对话
+    // First turn
     let response = ollama
         .chat(messages.clone(), Some(all_tools.clone()))
         .await?;
 
     if let Some(tool_calls) = response.tool_calls {
-        println!("[AI 请求工具调用]");
+        println!("[AI requests tool call]");
         for call in tool_calls {
             let result =
                 assistant.handle_tool_call(&call.function.name, &call.function.arguments)?;
-            println!("   [工具返回] {}\n", result);
+            println!("   [Tool return] {}\n", result);
 
-            // 添加工具调用结果到消息
+            // Append the tool call and its result to the message history
             messages.push(Message {
                 role: "assistant".to_string(),
                 content: "".to_string(),
@@ -474,27 +474,27 @@ async fn main() -> Result<(), String> {
             });
         }
 
-        // 获取最终回复
+        // Get the final reply
         let final_response = ollama
             .chat(messages, None)
             .await
             .map_err(|e| e.to_string())?;
-        println!("[AI 最终回复] {}", final_response.content);
+        println!("[AI final reply] {}", final_response.content);
     } else {
-        println!("[AI 回复] {}", response.content);
+        println!("[AI reply] {}", response.content);
     }
 
     Ok(())
 }
 
-/// 离线演示模式（当 Ollama 不可用时）
+/// Offline demo mode (used when Ollama is unavailable)
 async fn run_offline_demo() -> Result<(), Box<dyn std::error::Error>> {
-    println!("=== 离线演示模式 ===\n");
+    println!("=== Offline Demo Mode ===\n");
 
     let assistant = AiAssistant::new();
 
-    // 展示工具定义
-    println!("1. 工具定义（可发送给任何 AI）");
+    // Show tool definitions
+    println!("1. Tool definitions (can be sent to any AI)");
     let tools = Calculator::tool_definitions();
     for tool in tools {
         println!(
@@ -512,35 +512,35 @@ async fn run_offline_demo() -> Result<(), Box<dyn std::error::Error>> {
     }
     println!();
 
-    // 模拟 AI 对话流程
-    println!("2. 模拟 AI 对话流程");
-    println!("   [用户] 请计算 100 + 250");
-    println!("   [AI] 我来帮你计算...");
+    // Simulated AI conversation flow
+    println!("2. Simulated AI conversation flow");
+    println!("   [User] Please compute 100 + 250");
+    println!("   [AI] Let me compute that...");
 
     let result = assistant.handle_tool_call("add", &json!({"a": 100, "b": 250}))?;
-    println!("   [工具执行] {}", result);
-    println!("   [AI] 结果是 {}\n", result);
+    println!("   [Tool execution] {}", result);
+    println!("   [AI] The result is {}\n", result);
 
-    // SHA256 计算示例（AI 无法精确计算）
-    println!("3. SHA256 哈希计算（AI 无法精确计算）");
-    println!("   [用户] 计算 'hello world' 的 SHA256");
-    println!("   [AI] 我来使用工具计算...");
+    // SHA256 example (the AI cannot compute it precisely)
+    println!("3. SHA256 hashing (the AI cannot compute it precisely)");
+    println!("   [User] Compute the SHA256 of 'hello world'");
+    println!("   [AI] Let me use a tool to compute it...");
 
     let result = assistant.handle_tool_call("sha256", &json!({"input": "hello world"}))?;
-    println!("   [工具执行] {}", result);
-    println!("   [AI] SHA256 哈希值是：{}\n", result);
+    println!("   [Tool execution] {}", result);
+    println!("   [AI] The SHA256 hash is: {}\n", result);
 
-    println!("4. 天气查询示例");
-    println!("   [用户] 北京天气怎么样？");
-    let result = assistant.handle_tool_call("get_weather", &json!({"city": "北京"}))?;
-    println!("   [工具执行] {}", result);
+    println!("4. Weather lookup example");
+    println!("   [User] What's the weather in Beijing?");
+    let result = assistant.handle_tool_call("get_weather", &json!({"city": "Beijing"}))?;
+    println!("   [Tool execution] {}", result);
     println!("   [AI] {}\n", result);
 
-    println!("提示：安装并启动 Ollama 后可体验完整的 AI 集成功能");
-    println!("   1. 访问 https://ollama.ai 下载安装");
-    println!("   2. 运行：ollama pull llama2");
-    println!("   3. 运行：ollama serve");
-    println!("   4. 重新运行此示例");
+    println!("Hint: install and start Ollama to experience the full AI integration:");
+    println!("   1. Visit https://ollama.ai to download and install");
+    println!("   2. Run: ollama pull llama2");
+    println!("   3. Run: ollama serve");
+    println!("   4. Re-run this example");
 
     Ok(())
 }

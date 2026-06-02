@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 publish = false
 
-# 抑制宏警告输出（测试和示例环境）
+# Suppress macro warning output (test and example environments)
 [build-dependencies]
 
 [dependencies]

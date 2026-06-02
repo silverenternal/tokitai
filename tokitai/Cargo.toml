@@ -1,6 +1,6 @@
 [package]
 name = "tokitai"
-version = "0.5.0"
+version = "0.5.1"
 edition = "2021"
 authors = ["silverenternal <3147264070@qq.com>"]
 license = "MIT OR Apache-2.0"
@@ -13,26 +13,26 @@ categories = ["development-tools", "asynchronous"]
 rust-version = "1.80"
 
 [dependencies]
-# 核心类型（零依赖）
-tokitai-core = { path = "../tokitai-core", version = "0.5.0" }
+# Core types (zero dependencies)
+tokitai-core = { path = "../tokitai-core", version = "0.5.1" }
 
-# 宏
-tokitai-macros = { path = "../tokitai-macros", version = "0.5.0" }
+# Procedural macros
+tokitai-macros = { path = "../tokitai-macros", version = "0.5.1" }
 
-# 序列化（可选，默认启用）
+# Serialisation (optional, enabled by default)
 serde = { version = "1.0", features = ["derive"], optional = true }
 serde_json = { version = "1.0", optional = true }
 
-# 错误处理（runtime 必需）
+# Error handling (required at runtime)
 thiserror = "1.0"
 
-# 日志
+# Logging
 log = { version = "0.4", optional = true }
 
-# 异步运行时（可选）
+# Async runtime (optional)
 async-trait = { version = "0.1", optional = true }
 
-# HTTP 服务器（可选，用于 MCP HTTP）
+# HTTP server (optional, for the MCP HTTP transport)
 axum = { version = "0.7", optional = true }
 tokio = { version = "1", features = ["full"], optional = true }
 tower = { version = "0.4", optional = true }
@@ -41,33 +41,33 @@ tracing = { version = "0.1", optional = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
 
 [features]
-# 默认启用 serde 支持，开箱即用
-# 需要最小依赖的用户可以使用 default-features = false
+# Serde is enabled by default for an out-of-the-box experience
+# Users who need the minimum dependency footprint can use default-features = false
 default = ["serde"]
 
-# std: 启用 serde 支持
+# std: enables serde support
 std = ["tokitai-core/serde", "dep:serde", "dep:serde_json"]
 
-# serde: serde 支持（默认启用）
+# serde: serde support (enabled by default)
 serde = ["tokitai-core/serde", "dep:serde", "dep:serde_json"]
 
-# runtime: 异步运行时支持
+# runtime: async runtime support
 runtime = ["std", "async-trait", "log"]
 
-# mcp: MCP 协议支持
+# mcp: MCP protocol support
 mcp = ["runtime"]
 
-# http-server: HTTP 服务器支持（用于 MCP HTTP）
+# http-server: HTTP server support (for MCP HTTP)
 http-server = ["mcp", "axum", "tokio", "tower", "tower-http", "tracing", "tracing-subscriber"]
 
-# 高级用法：
-# 1. 只用宏（真正的零依赖）: tokitai = { version = "0.5.0", default-features = false }
-#    - 只使用 #[tool] 宏，运行时自己处理
-# 2. 默认配置（推荐）: tokitai = "0.5.0"
-#    - 包含 serde + serde_json，开箱即用
-# 3. 完整功能：tokitai = { version = "0.5.0", features = ["http-server"] }
-#    - 包含 MCP HTTP 服务器
+# Advanced usage:
+# 1. Macro-only (truly zero dependencies): tokitai = { version = "0.5.1", default-features = false }
+#    - Use only the #[tool] macro and provide your own runtime
+# 2. Default configuration (recommended): tokitai = "0.5.1"
+#    - Includes serde + serde_json, ready to go
+# 3. Full feature set: tokitai = { version = "0.5.1", features = ["http-server"] }
+#    - Includes the MCP HTTP server
 
 [dev-dependencies]
-tokitai-core = { path = "../tokitai-core", version = "0.5.0", features = ["serde"] }
+tokitai-core = { path = "../tokitai-core", version = "0.5.1", features = ["serde"] }
 trybuild = "1.0"

@@ -302,7 +302,7 @@ warnings:
 
 | Code | Severity | Triggered by | Message |
 |---|---|---|---|
-| _compile error_ | hard | a `#[tool]` method has generic type parameters | `"🔧 工具方法 `<name>` 使用了泛型参数，这不被支持。"` |
+| _compile error_ | hard | a `#[tool]` method has generic type parameters | `"tool method \`<name>\` uses unsupported generic parameters"` |
 | `W001` | warning | a `#[tool(deprecated)]` method has no `replaced_by` | `"[tokitai] [W001] deprecated method `<name>` missing `replaced_by`"` |
 | `W002` | warning | an `Option<T>` parameter has no `default_*` or `example_*` | `"[tokitai] [W002] optional param `<name>` lacks default/example"` |
 | `W003` | warning | `context = "async"` on a sync method | `"[tokitai] [W003] method `<name>` has `context=\"async\"` but is not async"` |

@@ -1,26 +1,26 @@
-# Tokitai 高级用法指南
+# Tokitai Advanced Usage Guide
 
-**版本**: 0.5.0 | **最后更新**: 2026-06-02
+**Version**: 0.5.0 | **Last updated**: 2026-06-02
 
-本文档介绍 Tokitai 的高级功能和最佳实践。
+This guide covers Tokitai's advanced features and best practices.
 
-## 目录
+## Table of Contents
 
-- [#[tool(skip)] 排除方法](#toolskip-排除方法)
-- [同步与异步工具](#同步与异步工具)
-- [自定义错误类型](#自定义错误类型)
-- [复杂类型支持](#复杂类型支持)
-- [多工具组合](#多工具组合)
-- [call_tool 返回值处理](#call_tool-返回值处理)
-- [性能优化建议](#性能优化建议)
+- [`#[tool(skip)]` excluding methods](#toolskip-excluding-methods)
+- [Sync and async tools](#sync-and-async-tools)
+- [Custom error types](#custom-error-types)
+- [Support for complex types](#support-for-complex-types)
+- [Composing multiple tools](#composing-multiple-tools)
+- [Handling `call_tool` return values](#handling-call_tool-return-values)
+- [Performance optimization tips](#performance-optimization-tips)
 
 ---
 
-## #[tool(skip)] 排除方法
+## `#[tool(skip)]` excluding methods
 
-默认情况下，`#[tool]` impl 块中的所有 `pub` 方法都会被暴露给 AI。如果你希望排除某些方法（如内部辅助函数、调试方法），可以使用 `#[tool(skip)]` 属性。
+By default, every `pub` method in a `#[tool]` impl block is exposed to the AI. To exclude internal helpers or debug-only methods, annotate them with `#[tool(skip)]`.
 
-### 示例
+### Example
 
 ```rust
 use tokitai::tool;
@@ -31,23 +31,23 @@ pub struct DataProcessor {
 
 #[tool]
 impl DataProcessor {
-    /// 处理数据并返回结果
+    /// Process input and return the result
     pub fn process(&self, input: String) -> String {
         let cached = self.get_cached(&input);
         if let Some(result) = cached {
             return result;
         }
-        // 处理逻辑...
+        // Processing logic...
         format!("Processed: {}", input)
     }
 
-    /// 内部缓存查找方法 - 不暴露给 AI
+    /// Internal cache lookup - not exposed to the AI
     #[tool(skip)]
     pub fn get_cached(&self, key: &str) -> Option<String> {
         self.cache.get(key).cloned()
     }
 
-    /// 调试方法 - 不暴露给 AI
+    /// Debug helper - not exposed to the AI
     #[tool(skip)]
     pub fn debug_info(&self) -> String {
         format!("Cache size: {}", self.cache.len())
@@ -55,17 +55,18 @@ impl DataProcessor {
 }
 ```
 
-在这个例子中：
-- `process` 方法会被暴露给 AI
-- `get_cached` 和 `debug_info` 方法不会被暴露
+In this example:
+
+- `process` is exposed to the AI
+- `get_cached` and `debug_info` are not exposed
 
 ---
 
-## 同步与异步工具
+## Sync and async tools
 
-Tokitai 支持同步和异步工具方法。宏会根据方法的 async/sync 属性自动生成对应版本的 `call_tool`。
+Tokitai supports both synchronous and asynchronous tool methods. The macro generates the right `call_tool` variant for each.
 
-### 同步工具
+### Synchronous tools
 
 ```rust
 use tokitai::tool;
@@ -79,12 +80,12 @@ impl Calculator {
     }
 }
 
-// 同步调用
+// Synchronous call
 let calc = Calculator;
 let result = calc.call_tool("add", &serde_json::json!({"a": 10, "b": 20}))?;
 ```
 
-### 异步工具
+### Asynchronous tools
 
 ```rust
 use tokitai::tool;
@@ -94,22 +95,23 @@ pub struct DatabaseService;
 #[tool]
 impl DatabaseService {
     pub async fn query(&self, sql: String) -> Result<Vec<serde_json::Value>, String> {
-        // 异步数据库查询
+        // Async database query
         // tokio_postgres::query(...)
         Ok(vec![])
     }
 }
 
-// 异步调用
+// Asynchronous call
 let db = DatabaseService;
 let result = db.call_tool("query", &serde_json::json!({"sql": "SELECT * FROM users"})).await?;
 ```
 
-### 混合工具（同时包含同步和异步方法）
+### Mixed tools (sync and async in the same block)
 
-当 impl 块中同时包含同步和异步方法时，宏会生成：
-- `call_tool()` - 异步版本
-- `call_tool_sync()` - 同步阻塞版本（内部使用 `tokio::runtime::Handle::block_on`）
+When an impl block contains both sync and async methods, the macro generates:
+
+- `call_tool()` - the async version
+- `call_tool_sync()` - the synchronous, blocking version (uses `tokio::runtime::Handle::block_on` internally)
 
 ```rust
 use tokitai::tool;
@@ -118,35 +120,35 @@ pub struct HybridService;
 
 #[tool]
 impl HybridService {
-    // 同步方法
+    // Sync method
     pub fn compute(&self, data: Vec<i32>) -> i32 {
         data.iter().sum()
     }
 
-    // 异步方法
+    // Async method
     pub async fn fetch(&self, url: String) -> Result<String, String> {
         // reqwest::get(&url).await?.text().await
         Ok("data".to_string())
     }
 }
 
-// 在异步上下文中
+// In an async context
 let service = HybridService;
 
-// 异步调用（推荐）
+// Async call (preferred)
 let result = service.call_tool("compute", &serde_json::json!({"data": [1, 2, 3]})).await?;
 
-// 同步调用（会阻塞当前线程）
+// Sync call (blocks the current thread)
 let result = service.call_tool_sync("compute", &serde_json::json!({"data": [1, 2, 3]}))?;
 ```
 
 ---
 
-## 自定义错误类型
+## Custom error types
 
-Tokitai 支持工具方法返回自定义错误类型。宏会自动处理错误转换。
+Tokitai supports custom error types returned by tool methods. The macro handles the conversion to `ToolError` automatically.
 
-### 使用 thiserror
+### Using `thiserror`
 
 ```rust
 use tokitai::tool;
@@ -154,9 +156,9 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum CalculatorError {
-    #[error("除数不能为零")]
+    #[error("divisor cannot be zero")]
     DivisionByZero,
-    #[error("溢出错误：{0}")]
+    #[error("overflow: {0}")]
     Overflow(String),
 }
 
@@ -173,27 +175,27 @@ impl Calculator {
     }
 }
 
-// 调用时，错误会被转换为 tokitai::ToolError
+// The error is converted to tokitai::ToolError at the call site
 let calc = Calculator;
 match calc.call_tool("divide", &serde_json::json!({"a": 10.0, "b": 0.0})) {
-    Ok(_) => println!("成功"),
-    Err(e) => println!("错误：{:?}", e), // ToolError::InternalError
+    Ok(_) => println!("success"),
+    Err(e) => println!("error: {:?}", e), // ToolError::InternalError
 }
 ```
 
-### 错误处理最佳实践
+### Error-handling best practices
 
-1. **使用 Result 返回类型**：让宏自动处理错误转换
-2. **提供有意义的错误消息**：帮助用户理解问题
-3. **避免暴露内部实现细节**：错误消息应该对用户友好
+1. **Use `Result` as the return type** so the macro converts errors for you
+2. **Provide meaningful error messages** that help the caller understand what went wrong
+3. **Avoid leaking internal details** - messages should be user-friendly
 
 ---
 
-## 复杂类型支持
+## Support for complex types
 
-### Option 参数
+### `Option` parameters
 
-`Option<T>` 类型的参数是可选的。如果 AI 没有提供该参数，值为 `None`。
+Parameters of type `Option<T>` are optional. If the AI omits them, the value is `None`.
 
 ```rust
 use tokitai::tool;
@@ -202,26 +204,26 @@ pub struct Greeter;
 
 #[tool]
 impl Greeter {
-    /// 打招呼，language 是可选参数
+    /// Greet someone; `language` is optional
     pub fn greet(&self, name: String, language: Option<String>) -> String {
         match language.as_deref() {
-            Some("zh") => format!("你好，{}！", name),
+            Some("zh") => format!("Ni hao, {}!", name),
             Some("es") => format!("¡Hola, {}!", name),
             _ => format!("Hello, {}!", name),
         }
     }
 }
 
-// 不带可选参数
+// Without the optional parameter
 let result = greeter.call_tool("greet", &serde_json::json!({"name": "Alice"}))?;
-// 输出：Hello, Alice!
+// Output: Hello, Alice!
 
-// 带可选参数
+// With the optional parameter
 let result = greeter.call_tool("greet", &serde_json::json!({"name": "Bob", "language": "zh"}))?;
-// 输出：你好，Bob!
+// Output: Ni hao, Bob!
 ```
 
-### Vec 参数
+### `Vec` parameters
 
 ```rust
 use tokitai::tool;
@@ -230,21 +232,21 @@ pub struct MathService;
 
 #[tool]
 impl MathService {
-    /// 计算数字列表的总和
+    /// Sum a list of numbers
     pub fn sum(&self, numbers: Vec<i32>) -> i32 {
         numbers.iter().sum()
     }
 
-    /// 过滤偶数
+    /// Filter even numbers
     pub fn filter_even(&self, numbers: Vec<i32>) -> Vec<i32> {
         numbers.into_iter().filter(|n| n % 2 == 0).collect()
     }
 }
 ```
 
-### 自定义结构体参数
+### Custom struct parameters
 
-对于复杂的自定义结构体，建议使用 `serde_json::Value` 作为参数类型，然后在方法内部进行解析：
+For complex custom structs, the recommended approach is to take `serde_json::Value` as the parameter type and parse it inside the method:
 
 ```rust
 use tokitai::tool;
@@ -261,13 +263,13 @@ struct CreateUserRequest {
 
 #[tool]
 impl UserService {
-    /// 创建新用户
+    /// Create a new user
     pub fn create_user(&self, request: Value) -> Result<Value, String> {
         let req: CreateUserRequest = serde_json::from_value(request)
-            .map_err(|e| format!("参数解析错误：{}", e))?;
-        
-        // 处理创建逻辑...
-        
+            .map_err(|e| format!("Parameter parse error: {}", e))?;
+
+        // Creation logic...
+
         Ok(serde_json::json!({
             "id": 123,
             "name": req.name,
@@ -279,23 +281,23 @@ impl UserService {
 
 ---
 
-## 多工具组合
+## Composing multiple tools
 
-在大型应用中，你可能需要组合多个工具提供者。
+In larger applications, you may want to combine several tool providers into one.
 
-### 示例：个人助理系统
+### Example: a personal-assistant system
 
 ```rust
 use tokitai::{tool, ToolProvider};
 use serde_json::Value;
 
-// 待办事项管理
+// Todo management
 pub struct TodoManager;
 
 #[tool]
 impl TodoManager {
     pub fn add_todo(&self, title: String) -> String {
-        format!("已添加待办：{}", title)
+        format!("Added todo: {}", title)
     }
 
     pub fn list_todos(&self) -> Value {
@@ -303,13 +305,13 @@ impl TodoManager {
     }
 }
 
-// 笔记管理
+// Note management
 pub struct NoteManager;
 
 #[tool]
 impl NoteManager {
     pub fn create_note(&self, content: String) -> String {
-        "笔记已创建".to_string()
+        "Note created".to_string()
     }
 
     pub fn list_notes(&self) -> Value {
@@ -317,7 +319,7 @@ impl NoteManager {
     }
 }
 
-// 组合所有工具
+// Compose the two providers
 pub struct PersonalAssistant {
     todo_manager: TodoManager,
     note_manager: NoteManager,
@@ -331,7 +333,7 @@ impl PersonalAssistant {
         }
     }
 
-    /// 获取所有工具定义（合并多个工具提供者）
+    /// Get all tool definitions (merging multiple providers)
     pub fn get_all_tools(&self) -> Vec<tokitai::ToolDefinition> {
         let mut tools = Vec::new();
         tools.extend_from_slice(TodoManager::tool_definitions());
@@ -339,9 +341,9 @@ impl PersonalAssistant {
         tools
     }
 
-    /// 统一工具调用入口
+    /// Unified tool-call entry point
     pub fn call_tool(&self, name: &str, args: &Value) -> Result<Value, String> {
-        // 路由到对应的工具提供者
+        // Route to the right provider
         match name {
             "add_todo" | "list_todos" => {
                 self.todo_manager.call_tool(name, args)
@@ -359,19 +361,19 @@ impl PersonalAssistant {
 
 ---
 
-## call_tool 返回值处理
+## Handling `call_tool` return values
 
-`call_tool` 返回 `Result<serde_json::Value, ToolError>`。以下是处理返回值的几种方式：
+`call_tool` returns `Result<serde_json::Value, ToolError>`. A few common ways to handle the value:
 
-### 直接获取值
+### Extract directly
 
 ```rust
 let result = calc.call_tool("add", &json!({"a": 10, "b": 20}))?;
 let sum = result.as_i64().unwrap();
-println!("结果：{}", sum);
+println!("Result: {}", sum);
 ```
 
-### 反序列化为具体类型
+### Deserialize into a concrete type
 
 ```rust
 use serde::Deserialize;
@@ -382,16 +384,16 @@ struct WeatherResponse {
     condition: String,
 }
 
-let result = weather.call_tool("get_weather", &json!({"city": "北京"}))?;
+let result = weather.call_tool("get_weather", &json!({"city": "Beijing"}))?;
 let weather: WeatherResponse = serde_json::from_value(result)?;
-println!("温度：{}°C", weather.temperature);
+println!("Temperature: {}°C", weather.temperature);
 ```
 
-### 处理错误
+### Handle errors
 
 ```rust
 match calculator.call_tool("divide", &json!({"a": 10, "b": 0})) {
-    Ok(result) => println!("结果：{}", result),
+    Ok(result) => println!("Result: {}", result),
     Err(tokitai::ToolError { kind: tokitai::ToolErrorKind::ValidationError, message }) => {
         eprintln!("Parameter validation error: {}", message);
     }
@@ -406,32 +408,32 @@ match calculator.call_tool("divide", &json!({"a": 10, "b": 0})) {
 
 ---
 
-## 性能优化建议
+## Performance optimization tips
 
-### 1. 避免在工具调用中创建过多临时对象
+### 1. Avoid unnecessary temporaries in tool calls
 
 ```rust
-// ❌ 不推荐：每次调用都创建新的 Vec
+// Avoid: allocates a new Vec on every call
 pub fn process(&self, data: Vec<i32>) -> i32 {
     data.iter().sum()
 }
 
-// ✅ 推荐：使用切片
+// Prefer: take a slice
 pub fn process(&self, data: &[i32]) -> i32 {
     data.iter().sum()
 }
 ```
 
-### 2. 对于计算密集型任务，考虑使用 spawn_blocking
+### 2. For CPU-bound work, consider `spawn_blocking`
 
-如果在异步上下文中调用同步工具，且工具执行时间较长：
+When you call a sync tool from async code and the tool runs for a while:
 
 ```rust
-// 在异步环境中，长时间运行的同步工具可能会阻塞事件循环
-// 考虑在工具内部使用 tokio::task::spawn_blocking
+// A long-running sync tool can block the async event loop.
+// Consider using tokio::task::spawn_blocking inside the tool.
 pub async fn heavy_computation(&self, n: i32) -> i32 {
     tokio::task::spawn_blocking(move || {
-        // 计算密集型逻辑
+        // CPU-bound logic
         (0..n).sum()
     })
     .await
@@ -439,71 +441,71 @@ pub async fn heavy_computation(&self, n: i32) -> i32 {
 }
 ```
 
-### 3. 缓存工具定义
+### 3. Cache tool definitions
 
-工具定义在编译期生成，不需要每次调用时重新创建：
+Tool definitions are generated at compile time; you do not need to rebuild them on every call:
 
 ```rust
-// ✅ 推荐：使用方法调用
+// Prefer: call the method directly
 let tools = Calculator::tool_definitions();
 
-// ❌ 不推荐：不必要的克隆
+// Avoid: cloning when you do not need to
 let tools = Calculator::tool_definitions().to_vec();
 ```
 
 ---
 
-## 已知限制
+## Known limitations
 
-1. **泛型方法不支持**：工具方法不能是泛型的
-2. **关联类型限制**：返回类型必须是具体类型或 `Result<T, E>`
-3. **no_std 支持有限**：完整功能需要 serde 和 serde_json
+1. **Generic methods are not supported** - tool methods cannot be generic
+2. **Associated-type restrictions** - return types must be concrete or `Result<T, E>`
+3. **Limited `no_std` support** - the full feature set requires `serde` and `serde_json`
 
 ---
 
-## 故障排除
+## Troubleshooting
 
-### 编译错误：`call_tool` 不是 future
+### Compile error: `call_tool` is not a future
 
-如果你的工具都是同步的，`call_tool` 返回 `Result` 而不是 `Future`：
+If all of your tools are synchronous, `call_tool` returns a `Result` rather than a `Future`:
 
 ```rust
-// ❌ 错误：同步方法使用 .await
+// Does not compile: awaiting a sync call
 let result = calc.call_tool("add", &args).await?;
 
-// ✅ 正确：同步方法直接调用
+// Compiles: just call it directly
 let result = calc.call_tool("add", &args)?;
 ```
 
-### 编译错误：类型推断失败
+### Compile error: type inference failure
 
-当参数类型复杂时，可能需要显式类型注解：
+For complex argument types, an explicit annotation may be needed:
 
 ```rust
-// ❌ 可能失败
+// Might fail to infer
 let result = service.call_tool(name, &args)?;
 
-// ✅ 添加类型注解
+// Add a type annotation
 let result: serde_json::Value = service.call_tool(name, &args)?;
 ```
 
-### Runtime error: Parameter type mismatch
+### Runtime error: parameter type mismatch
 
-确保 JSON 参数类型与 Rust 类型匹配：
+Make sure the JSON parameter types match the Rust types:
 
 ```rust
 // Rust: fn add(&self, a: i32, b: i32)
-// ❌ 错误：浮点数
+// Wrong: floats
 json!({"a": 10.5, "b": 20.5})
 
-// ✅ 正确：整数
+// Right: integers
 json!({"a": 10, "b": 20})
 ```
 
 ---
 
-## 获取更多帮助
+## Getting more help
 
-- [基础使用文档](USAGE.md)
-- [AI 集成指南](AI_INTEGRATION.md)
-- [GitHub Issues](https://github.com/silverenternal/tokitai/issues)
+- [Basic usage guide](USAGE.md)
+- [AI integration guide](AI_INTEGRATION.md)
+- [GitHub issues](https://github.com/silverenternal/tokitai/issues)

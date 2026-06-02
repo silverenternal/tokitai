@@ -1,25 +1,25 @@
-//! MCP HTTP 服务器示例
+//! MCP HTTP server example
 //!
-//! 展示如何运行一个完整的 MCP HTTP 服务器。
+//! Demonstrates how to run a complete MCP HTTP server.
 //!
-//! # 运行方式
+//! # How to run
 //!
 //! ```bash
 //! cargo run --example mcp_http_server
 //! ```
 //!
-//! # 测试 API
+//! # Test the API
 //!
 //! ```bash
-//! # 获取工具列表
+//! # List tools
 //! curl http://127.0.0.1:8080/tools
 //!
-//! # 调用工具
+//! # Call a tool
 //! curl -X POST http://127.0.0.1:8080/call \
 //!   -H "Content-Type: application/json" \
 //!   -d '{"name": "add", "arguments": {"a": 10, "b": 20}}'
 //!
-//! # 健康检查
+//! # Health check
 //! curl http://127.0.0.1:8080/health
 //! ```
 
@@ -42,24 +42,24 @@ use tower_http::{
 use tracing::{error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-// ==================== 工具定义 ====================
+// ==================== Tool Definitions ====================
 
 #[derive(Default, Clone)]
 struct Calculator;
 
 #[tool]
 impl Calculator {
-    /// 两个数相加
+    /// Add two numbers
     pub fn add(&self, a: i32, b: i32) -> i32 {
         a + b
     }
 
-    /// 两个数相乘
+    /// Multiply two numbers
     pub fn multiply(&self, a: i32, b: i32) -> i32 {
         a * b
     }
 
-    /// 计算平方根
+    /// Compute the square root
     pub fn sqrt(&self, n: i32) -> i32 {
         (n as f64).sqrt() as i32
     }
@@ -70,7 +70,7 @@ struct HashCalculator;
 
 #[tool]
 impl HashCalculator {
-    /// 计算字符串的 SHA256 哈希值
+    /// Compute the SHA256 hash of a string
     pub fn sha256(&self, input: String) -> String {
         let mut hasher = Sha256::new();
         hasher.update(input.as_bytes());
@@ -84,17 +84,17 @@ struct WeatherService;
 
 #[tool]
 impl WeatherService {
-    /// 获取指定城市的天气信息
+    /// Get weather information for a specified city
     pub fn get_weather(&self, city: String) -> String {
         match city.to_lowercase().as_str() {
-            "北京" | "beijing" => "北京：晴朗，温度 25°C，湿度 40%".to_string(),
-            "上海" | "shanghai" => "上海：多云，温度 22°C，湿度 60%".to_string(),
-            "广州" | "guangzhou" => "广州：小雨，温度 28°C，湿度 80%".to_string(),
-            "深圳" | "shenzhen" => "深圳：晴朗，温度 30°C，湿度 70%".to_string(),
-            "纽约" | "new york" => "纽约：晴朗，温度 20°C，湿度 45%".to_string(),
-            "伦敦" | "london" => "伦敦：阴天，温度 15°C，湿度 70%".to_string(),
-            "东京" | "tokyo" => "东京：多云，温度 22°C，湿度 60%".to_string(),
-            _ => format!("{}：数据不可用", city),
+            "beijing" => "Beijing: clear, temperature 25C, humidity 40%".to_string(),
+            "shanghai" => "Shanghai: cloudy, temperature 22C, humidity 60%".to_string(),
+            "guangzhou" => "Guangzhou: light rain, temperature 28C, humidity 80%".to_string(),
+            "shenzhen" => "Shenzhen: clear, temperature 30C, humidity 70%".to_string(),
+            "new york" => "New York: clear, temperature 20C, humidity 45%".to_string(),
+            "london" => "London: overcast, temperature 15C, humidity 70%".to_string(),
+            "tokyo" => "Tokyo: cloudy, temperature 22C, humidity 60%".to_string(),
+            _ => format!("{}: data unavailable", city),
         }
     }
 }
@@ -104,29 +104,29 @@ struct TimeService;
 
 #[tool]
 impl TimeService {
-    /// 获取当前日期时间
+    /// Get the current date and time
     pub fn get_current_time(&self) -> String {
         chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
     }
 
-    /// 计算两个日期的天数差
+    /// Compute the number of days between two dates
     pub fn days_between(&self, date1: String, date2: String) -> Result<i32, String> {
         let d1 = chrono::NaiveDate::parse_from_str(&date1, "%Y-%m-%d")
-            .map_err(|e| format!("日期格式错误：{}", e))?;
+            .map_err(|e| format!("Invalid date format: {}", e))?;
         let d2 = chrono::NaiveDate::parse_from_str(&date2, "%Y-%m-%d")
-            .map_err(|e| format!("日期格式错误：{}", e))?;
+            .map_err(|e| format!("Invalid date format: {}", e))?;
         Ok((d2 - d1).num_days() as i32)
     }
 }
 
-// ==================== 应用状态 ====================
+// ==================== Application State ====================
 
-/// 应用状态
+/// Application state
 struct AppState {
     tools: Vec<tokitai::mcp::McpTool>,
 }
 
-/// 工具调用请求
+/// Tool-call request
 #[derive(Debug, Deserialize)]
 struct ToolCallRequest {
     name: String,
@@ -134,7 +134,7 @@ struct ToolCallRequest {
     arguments: Value,
 }
 
-/// 工具调用响应
+/// Tool-call response
 #[derive(Debug, Serialize)]
 struct ToolCallResponse {
     success: bool,
@@ -162,9 +162,9 @@ impl ToolCallResponse {
     }
 }
 
-// ==================== HTTP 处理器 ====================
+// ==================== HTTP Handlers ====================
 
-/// 列出工具处理器
+/// List-tools handler
 async fn list_tools_handler(
     State(state): State<Arc<AppState>>,
 ) -> Json<Vec<tokitai::mcp::McpTool>> {
@@ -172,7 +172,7 @@ async fn list_tools_handler(
     Json(state.tools.clone())
 }
 
-/// 调用工具处理器
+/// Call-tool handler
 async fn call_tool_handler(
     State(state): State<Arc<AppState>>,
     Json(request): Json<ToolCallRequest>,
@@ -182,7 +182,7 @@ async fn call_tool_handler(
         request.name, request.arguments
     );
 
-    // 查找工具
+    // Find the tool
     let tool = state
         .tools
         .iter()
@@ -194,9 +194,8 @@ async fn call_tool_handler(
 
     info!("Found tool: {} - {}", tool.name, tool.description);
 
-    // 实际调用工具
-    // 注意：这里需要具体的工具实例来调用
-    // 在实际应用中，你需要维护一个工具实例映射
+    // Actually invoke the tool
+    // Note: in real applications you would maintain a tool-instance map
     let result = call_concrete_tool(&request.name, &request.arguments);
 
     match result {
@@ -208,14 +207,14 @@ async fn call_tool_handler(
     }
 }
 
-/// 健康检查处理器
+/// Health-check handler
 async fn health_handler() -> &'static str {
     "OK"
 }
 
-// ==================== 工具调用路由 ====================
+// ==================== Tool-call Routing ====================
 
-/// 调用具体工具的辅助函数
+/// Helper that dispatches to a concrete tool instance
 fn call_concrete_tool(name: &str, args: &Value) -> Result<Value, String> {
     let calculator = Calculator;
     let hash_calculator = HashCalculator;
@@ -239,11 +238,11 @@ fn call_concrete_tool(name: &str, args: &Value) -> Result<Value, String> {
     }
 }
 
-// ==================== 主流程 ====================
+// ==================== Main Flow ====================
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // 初始化日志
+    // Initialize logging
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -252,25 +251,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    println!("=== Tokitai MCP HTTP 服务器 ===\n");
+    println!("=== Tokitai MCP HTTP Server ===\n");
 
-    // 收集所有工具定义
+    // Collect all tool definitions
     let mut all_tools = Vec::new();
     all_tools.extend(tokitai::mcp::to_mcp_tools(Calculator::tool_definitions()).into_iter());
     all_tools.extend(tokitai::mcp::to_mcp_tools(HashCalculator::tool_definitions()).into_iter());
     all_tools.extend(tokitai::mcp::to_mcp_tools(WeatherService::tool_definitions()).into_iter());
     all_tools.extend(tokitai::mcp::to_mcp_tools(TimeService::tool_definitions()).into_iter());
 
-    println!("已加载 {} 个工具:", all_tools.len());
+    println!("Loaded {} tools:", all_tools.len());
     for tool in &all_tools {
         println!("  - {}: {}", tool.name, tool.description);
     }
     println!();
 
-    // 创建应用状态
+    // Create application state
     let state = Arc::new(AppState { tools: all_tools });
 
-    // 构建路由
+    // Build the router
     let app = Router::new()
         .route("/tools", get(list_tools_handler))
         .route("/call", post(call_tool_handler))
@@ -284,21 +283,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 
-    // 启动服务器
+    // Start the server
     let addr = "127.0.0.1:8080";
-    println!("MCP HTTP 服务器启动中...");
-    println!("监听地址：http://{}", addr);
+    println!("Starting MCP HTTP server...");
+    println!("Listening on http://{}", addr);
     println!();
-    println!("API 端点:");
-    println!("  GET  /tools  - 获取工具列表");
-    println!("  POST /call   - 调用工具");
-    println!("  GET  /health - 健康检查");
+    println!("API endpoints:");
+    println!("  GET  /tools  - list tools");
+    println!("  POST /call   - call a tool");
+    println!("  GET  /health - health check");
     println!();
-    println!("测试命令:");
+    println!("Test commands:");
     println!("  curl http://127.0.0.1:8080/tools");
     println!("  curl -X POST http://127.0.0.1:8080/call -H \"Content-Type: application/json\" -d '{{\"name\":\"add\",\"arguments\":{{\"a\":10,\"b\":20}}}}'");
     println!();
-    println!("按 Ctrl+C 停止服务器\n");
+    println!("Press Ctrl+C to stop the server\n");
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;

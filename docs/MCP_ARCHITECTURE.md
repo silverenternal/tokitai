@@ -1,63 +1,63 @@
-# Tokitai x MCP 架构指南
+# Tokitai x MCP Architecture Guide
 
-**版本**: 0.5.0
-**最后更新**: 2026-06-02
-
----
-
-## 📖 概述
-
-本指南介绍如何使用 Tokitai 构建基于 MCP (Model Context Protocol) 的 AI 工具服务器。
-
-### 核心理念
-
-> **编译期生成、零运行时侵入、类型安全**
-
-Tokitai 的核心理念与 MCP 协议完美结合，让 Rust 成为编写"AI 原生后端"的最佳语言。
+**Version**: 0.5.0
+**Last updated**: 2026-06-02
 
 ---
 
-## 🏗️ 架构设计
+## Overview
 
-### 整体架构
+This guide explains how to use Tokitai to build AI tool servers based on MCP (Model Context Protocol).
+
+### Core philosophy
+
+> **Compile-time generation. Zero runtime intrusion. Type safety.**
+
+Tokitai's design philosophy lines up naturally with the MCP protocol, making Rust the best language for writing AI-native backends.
+
+---
+
+## Architecture
+
+### End-to-end architecture
 
 ```
-┌─────────────────┐         ┌─────────────────────┐         ┌─────────────────┐
-│   AI Client     │         │  MCP Server         │         │  Business Logic │
-│   (Python/JS)   │ ──────> │  (tokitai-mcp)      │ ──────> │  (Rust tools)   │
-│                 │ <────── │                     │ <────── │  #[tool]        │
-└─────────────────┘         └─────────────────────┘         └─────────────────┘
-     │                           │                              │
-     │ 1. List tools             │                              │
-     │ 2. Call tool (JSON)       │                              │
-     │                           │ 3. Type-safe call            │
-     │                           │                              │
-     │ 4. Result (JSON)          │                              │
++-----------------+         +---------------------+         +-----------------+
+|   AI Client     |         |  MCP Server         |         |  Business Logic |
+|   (Python/JS)   | ------> |  (tokitai-mcp)      | ------> |  (Rust tools)   |
+|                 | <------ |                     | <------ |  #[tool]        |
++-----------------+         +---------------------+         +-----------------+
+     |                           |                              |
+     | 1. List tools             |                              |
+     | 2. Call tool (JSON)       |                              |
+     |                           | 3. Type-safe call            |
+     |                           |                              |
+     | 4. Result (JSON)          |                              |
 ```
 
-### 组件说明
+### Components
 
-| 组件 | 角色 | 关键技术 |
-|------|------|----------|
-| **AI Client** | 轻量化决策者 | 只发送 JSON 请求，不加载业务代码 |
-| **MCP Server** | 编译时处理中心 | tokitai 宏生成工具定义 |
-| **Business Logic** | 强类型内核 | `#[tool]` 标记的 Rust 代码 |
+| Component | Role | Key technology |
+|-----------|------|----------------|
+| **AI Client** | Lightweight decision-maker | Sends JSON requests only; never loads business code |
+| **MCP Server** | Compile-time processing hub | Tokitai macros generate the tool definitions |
+| **Business Logic** | Strongly typed core | Rust code marked with `#[tool]` |
 
 ---
 
-## 🚀 快速开始
+## Quickstart
 
-### 1. 添加依赖
+### 1. Add the dependency
 
 ```toml
 [dependencies]
 tokitai = { version = "0.5.0", features = ["mcp"] }
-tokitai-mcp-server = "0.5"  # 可选：MCP 服务器脚手架
+tokitai-mcp-server = "0.5"  # Optional: MCP server scaffolding
 tokio = { version = "1", features = ["full"] }
 serde_json = "1.0"
 ```
 
-### 2. 定义工具
+### 2. Define a tool
 
 ```rust
 use tokitai::tool;
@@ -67,46 +67,46 @@ struct Calculator;
 
 #[tool]
 impl Calculator {
-    /// 两个数相加
+    /// Add two numbers
     pub fn add(&self, a: i32, b: i32) -> i32 {
         a + b
     }
 
-    /// 计算 SHA256 哈希值
+    /// Compute the SHA-256 hash of the input
     pub fn sha256(&self, input: String) -> String {
-        // 你的业务逻辑
+        // Your business logic
         format!("hash of {}", input)
     }
 }
 ```
 
-### 3. 获取工具定义
+### 3. Get the tool definitions
 
 ```rust
-// 编译期生成的工具定义
+// Compile-time generated tool definitions
 let tools = Calculator::tool_definitions();
 
-// 转换为 MCP 格式
+// Convert to the MCP format
 let mcp_tools = tokitai::mcp::to_mcp_tools(&tools);
 
-// 发送给 AI
+// Send to the AI
 let tools_json = serde_json::to_string_pretty(&mcp_tools)?;
 ```
 
-### 4. 处理 AI 调用
+### 4. Handle a tool call
 
 ```rust
 use serde_json::json;
 
 let calc = Calculator::default();
 
-// AI 决定调用工具
+// The AI decides to call a tool
 let call_request = json!({
     "name": "add",
     "arguments": {"a": 10, "b": 20}
 });
 
-// 执行工具（类型安全）
+// Execute the tool (type-safe)
 let result = calc.call_tool(
     call_request["name"].as_str().unwrap(),
     &call_request["arguments"]
@@ -117,9 +117,9 @@ println!("{}", result);  // 30
 
 ---
 
-## 📦 完整示例：MCP HTTP 服务器
+## Full example: an MCP HTTP server
 
-### 使用 tokitai-mcp-server 脚手架
+### Using the `tokitai-mcp-server` scaffolding
 
 ```rust
 use tokitai::tool;
@@ -145,7 +145,7 @@ async fn main() {
 }
 ```
 
-### 自定义 HTTP 服务器
+### Custom HTTP server
 
 ```rust
 use axum::{routing::{get, post}, Json, Router};
@@ -164,18 +164,18 @@ impl Calculator {
 
 #[tokio::main]
 async fn main() {
-    // 获取工具定义
+    // Get the tool definitions
     let tools = to_mcp_tools(&Calculator::tool_definitions());
-    
-    // 构建路由
+
+    // Build the routes
     let app = Router::new()
         .route("/tools", get(|| async { tools }))
         .route("/call", post(|body: Json<Value>| async {
-            // 处理工具调用
+            // Handle the tool call
             json!({"success": true, "result": 30})
         }));
-    
-    // 启动服务器
+
+    // Start the server
     let listener = tokio::net::TcpListener::bind("127.0.0.1:8080").await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
@@ -183,50 +183,51 @@ async fn main() {
 
 ---
 
-## 🔧 运行示例
+## Running the examples
 
-### 示例 1：基础 MCP 服务器演示
+### Example 1: basic MCP server demo
 
 ```bash
-# 从项目根目录运行
+# Run from the project root
 cargo run --example mcp_server_demo
 ```
 
-输出示例：
+Sample output:
+
 ```
-=== Tokitai MCP Server 示例 ===
+=== Tokitai MCP Server Example ===
 
-已加载工具:
-  - add: 两个数相加
-  - multiply: 两个数相乘
-  - sqrt: 计算平方根
-  - sha256: 计算字符串的 SHA256 哈希值
-  - get_weather: 获取指定城市的天气信息
-  - get_current_time: 获取当前日期时间
+Loaded tools:
+  - add: Add two numbers
+  - multiply: Multiply two numbers
+  - sqrt: Compute the square root
+  - sha256: Compute the SHA-256 hash of a string
+  - get_weather: Get weather information for a given city
+  - get_current_time: Get the current date and time
 
-MCP 工具定义 (6 个):
+MCP tool definitions (6 total):
   - add (150 bytes)
   - multiply (140 bytes)
   ...
 
-=== 工具调用演示 ===
+=== Tool-call demo ===
 
-[1] 数学计算
-   [工具调用] add({"a": 100, "b": 250})
+[1] Math
+   [tool call] add({"a": 100, "b": 250})
     add(100, 250) = 350
 ```
 
-### 示例 2：HTTP 服务器
+### Example 2: HTTP server
 
 ```bash
-# 启动 HTTP 服务器
+# Start the HTTP server
 cargo run --example mcp_http_server
 
-# 在另一个终端测试 API
-# 获取工具列表
+# In another terminal, exercise the API
+# List tools
 curl http://127.0.0.1:8080/tools
 
-# 调用工具
+# Call a tool
 curl -X POST http://127.0.0.1:8080/call \
   -H "Content-Type: application/json" \
   -d '{"name": "add", "arguments": {"a": 10, "b": 20}}'
@@ -234,19 +235,19 @@ curl -X POST http://127.0.0.1:8080/call \
 
 ---
 
-## 🌐 AI 客户端集成
+## AI client integration
 
-### Python 示例
+### Python example
 
 ```python
 import requests
 
-# 获取工具列表
+# List tools
 response = requests.get("http://127.0.0.1:8080/tools")
 tools = response.json()
 print(f"Available tools: {len(tools)}")
 
-# 调用工具
+# Call a tool
 response = requests.post(
     "http://127.0.0.1:8080/call",
     json={"name": "add", "arguments": {"a": 10, "b": 20}}
@@ -255,14 +256,14 @@ result = response.json()
 print(f"Result: {result['result']}")  # 30
 ```
 
-### JavaScript 示例
+### JavaScript example
 
 ```javascript
-// 获取工具列表
+// List tools
 const toolsResponse = await fetch('http://127.0.0.1:8080/tools');
 const tools = await toolsResponse.json();
 
-// 调用工具
+// Call a tool
 const callResponse = await fetch('http://127.0.0.1:8080/call', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
@@ -277,50 +278,65 @@ console.log(`Result: ${result.result}`);  // 30
 
 ---
 
-## 🎯 架构优势
+## Architectural advantages
 
-### 1. 轻量化 (Lightweight)
+### 1. Lightweight
 
-| 层面 | 优势 |
-|------|------|
-| **Agent 端** | 无业务代码，上下文精简 |
-| **传输层** | JSON 序列化，数据量最小化 |
-| **运行时** | 零解释器开销，原生执行 |
+| Layer | Advantage |
+|-------|-----------|
+| **Agent side** | No business code, minimal context |
+| **Transport** | JSON serialization, minimal payload size |
+| **Runtime** | No interpreter overhead, native execution |
 
-### 2. 强编译时处理 (Strong Compile-time)
+### 2. Strong compile-time guarantees
 
-| 特性 | 实现方式 |
-|------|----------|
-| **Schema 生成** | 过程宏编译期生成，非运行时反射 |
-| **类型检查** | Rust 类型系统保证参数匹配 |
-| **错误捕获** | 编译期发现类型错误 |
+| Property | How it works |
+|----------|--------------|
+| **Schema generation** | Procedural macros generate schemas at compile time; no runtime reflection |
+| **Type checking** | The Rust type system guarantees argument matching |
+| **Error capture** | Type errors are caught at compile time |
 
-### 3. MCP 灵活性
+### 3. MCP flexibility
 
-| 能力 | 说明 |
-|------|------|
-| **语言无关** | Agent 可是 Python/JS/任意语言 |
-| **协议标准** | 遵循 MCP 协议规范 |
-| **可扩展** | 轻松添加新工具 |
+| Capability | Notes |
+|------------|-------|
+| **Language-agnostic** | The agent can be Python, JavaScript, or anything else |
+| **Standard protocol** | Follows the MCP specification |
+| **Extensible** | New tools are easy to add |
+
+### 4. Wrapper macros for production hardening (v0.5.0)
+
+Tokitai v0.5.0 ships wrapper macros that decorate the generated dispatcher with cross-cutting behavior. They are especially valuable on the MCP server side, where one bad call can stall the whole agent loop.
+
+| Macro | Why it matters on an MCP server |
+|-------|----------------------------------|
+| `#[wrap]` | Inject custom middleware (logging, metrics, request/response transformation) around `call_tool` |
+| `#[openapi]` | Emit an OpenAPI / Swagger document directly from the tool surface, so the MCP server is self-describing |
+| `#[delegate]` | Forward a subset of tools to a sub-provider, enabling per-tenant or per-namespace routing |
+| `#[retry]` | Retry transient failures with backoff before propagating to the AI |
+| `#[rate_limit]` | Throttle per-tool or globally to protect the server from runaway agents |
+| `#[circuit_breaker]` | Trip the circuit after repeated failures so the server can shed load |
+
+These macros stack: apply several of them to one impl block and the macro pipeline resolves their order. For most MCP servers you will want at least `#[retry]`, `#[rate_limit]`, and `#[circuit_breaker]`.
 
 ---
 
-## 📋 类型映射
+## Type mapping
 
-| Rust 类型 | JSON Schema | 示例 |
-|-----------|-------------|------|
+| Rust type | JSON Schema | Example |
+|-----------|-------------|---------|
 | `String`, `&str` | `string` | `"hello"` |
 | `i32`, `i64`, `u32` | `integer` | `42` |
 | `f32`, `f64` | `number` | `3.14` |
 | `bool` | `boolean` | `true` |
 | `Vec<T>` | `array` | `[1, 2, 3]` |
-| 自定义 struct | `object` | `{"name": "Alice"}` |
+| Custom struct | `object` | `{"name": "Alice"}` |
 
 ---
 
-## 🔐 类型安全保证
+## Type-safety guarantees
 
-### 编译期检查
+### Compile-time checks
 
 ```rust
 #[tool]
@@ -330,16 +346,16 @@ impl Calculator {
     }
 }
 
-// 如果 AI 传入错误的参数类型，call_tool 会在运行时返回错误
-// 但 Rust 类型系统在编译期就保证了函数签名的正确性
+// If the AI sends a wrong argument type, call_tool returns a runtime error.
+// But the Rust type system has already guaranteed the function signature is correct.
 ```
 
-### 运行时验证
+### Runtime validation
 
 ```rust
 let calc = Calculator::default();
 
-// Parameter type mismatch returns an error
+// A parameter type mismatch returns an error
 let result = calc.call_tool("add", &json!({
     "a": "not a number",  // wrong: should be an integer
     "b": 20
@@ -350,29 +366,29 @@ assert!(result.is_err());
 
 ---
 
-## 🛠️ 最佳实践
+## Best practices
 
-### 1. 工具设计
+### 1. Tool design
 
 ```rust
 #[tool]
 impl MyTools {
-    /// 清晰的文档注释（自动成为 AI 工具描述）
+    /// Clear doc comment (automatically becomes the tool description for the AI)
     #[tool(tags = ["category", "feature"])]
     pub fn process_data(
         &self,
-        #[param_tool(desc = "输入数据", example = "sample")]
+        #[param_tool(desc = "Input data", example = "sample")]
         input: String,
-        
-        #[param_tool(desc = "处理选项", default = "null")]
+
+        #[param_tool(desc = "Processing options", default = "null")]
         options: Option<Vec<String>>,
     ) -> Result<String, MyError> {
-        // 业务逻辑
+        // Business logic
     }
 }
 ```
 
-### 2. 错误处理
+### 2. Error handling
 
 ```rust
 use tokitai::AiToolError;
@@ -380,25 +396,25 @@ use tokitai::AiToolError;
 #[tool]
 impl MyTools {
     pub fn risky_operation(&self, data: String) -> Result<String, AiToolError> {
-        // 验证输入
+        // Validate input
         if data.is_empty() {
             return Err(AiToolError::validation_error("Data cannot be empty"));
         }
-        
-        // 业务逻辑
+
+        // Business logic
         Ok(format!("Processed: {}", data))
     }
 }
 ```
 
-### 3. 性能优化
+### 3. Performance
 
 ```rust
-// ✅ 推荐：使用默认特征
+// Prefer: default-derived types
 #[derive(Default, Clone)]
 struct MyTools;
 
-// ✅ 推荐：工具实例复用
+// Prefer: reuse a single instance
 let tools = MyTools::default();
 let result1 = tools.call_tool("op1", &args1)?;
 let result2 = tools.call_tool("op2", &args2)?;
@@ -406,29 +422,29 @@ let result2 = tools.call_tool("op2", &args2)?;
 
 ---
 
-## 📚 相关资源
+## Related resources
 
-- [5 分钟快速开始](quickstart.md)
-- [高级用法](ADVANCED_USAGE.md)
-- [类型系统](USAGE.md)
-- [AI 集成](AI_INTEGRATION.md)
-- [API 文档](https://docs.rs/tokitai)
+- [5-minute quickstart](quickstart.md)
+- [Advanced usage](ADVANCED_USAGE.md)
+- [Type system](USAGE.md)
+- [AI integration](AI_INTEGRATION.md)
+- [API documentation](https://docs.rs/tokitai)
 
 ---
 
-## ❓ 常见问题
+## FAQ
 
-### Q: MCP 服务器必须用 `tokitai-mcp-server` 吗？
+### Q: Do I have to use `tokitai-mcp-server` for an MCP server?
 
-A: 不是必须的。`tokitai-mcp-server` 只是一个可选的脚手架，你可以用任何 HTTP 框架（如 axum、actix-web）自行构建服务器。
+A: No. `tokitai-mcp-server` is an optional scaffolding crate; you can build the server with any HTTP framework you like (axum, actix-web, and so on).
 
-### Q: 如何在运行时动态添加工具？
+### Q: How do I add tools at runtime?
 
-A: Tokitai 的工具定义在编译期生成，不支持运行时动态添加。如需动态工具，考虑使用多个 `#[tool]` 类型组合。
+A: Tokitai generates tool definitions at compile time, so it does not support runtime registration. If you need dynamic tools, compose multiple `#[tool]` types.
 
-### Q: 支持异步工具吗？
+### Q: Are async tools supported?
 
-A: 支持。启用 `runtime` 特征后，可以定义 `async fn` 工具。
+A: Yes. With the `runtime` feature enabled, you can define `async fn` tools.
 
 ```rust
 #[tool]
@@ -438,7 +454,3 @@ impl AsyncTools {
     }
 }
 ```
-
----
-
-**Happy Coding!** 🦀
