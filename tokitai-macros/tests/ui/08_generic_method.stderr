@@ -10,14 +10,14 @@ error: [tokitai] Tool method `generic_method` uses generic parameters, which are
   |
   = note: this error originates in the attribute macro `tool` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0599]: no associated item named `__TOOL_DEF_GENERIC_METHOD` found for struct `GenericTools` in the current scope
+error[E0599]: no associated function or constant named `__TOOL_DEF_GENERIC_METHOD` found for struct `GenericTools` in the current scope
  --> tests/ui/08_generic_method.rs:8:1
   |
 6 | pub struct GenericTools;
-  | ----------------------- associated item `__TOOL_DEF_GENERIC_METHOD` not found for this struct
+  | ----------------------- associated function or constant `__TOOL_DEF_GENERIC_METHOD` not found for this struct
 7 |
 8 | #[tool]
-  | ^^^^^^^ associated item not found in `GenericTools`
+  | ^^^^^^^ associated function or constant not found in `GenericTools`
   |
   = note: this error originates in the attribute macro `tool` (in Nightly builds, run with -Z macro-backtrace for more info)
 
