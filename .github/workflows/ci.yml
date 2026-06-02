@@ -28,13 +28,13 @@ jobs:
         uses: actions/checkout@v4.2.2
 
       - name: Install Rust ${{ matrix.rust }}
-        uses: dtolnay/rust-toolchain@v1.0.0
+        uses: dtolnay/rust-toolchain@1.100.0
         with:
           toolchain: ${{ matrix.rust }}
           components: clippy, rustfmt
 
       - name: Cache cargo registry and build artifacts
-        uses: Swatinem/rust-cache@v2.7.5
+        uses: Swatinem/rust-cache@v2.9.1
         with:
           cache-on-failure: true
 
@@ -70,12 +70,12 @@ jobs:
         uses: actions/checkout@v4.2.2
 
       - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@v1.0.0
+        uses: dtolnay/rust-toolchain@1.100.0
         with:
           toolchain: stable
 
       - name: Cache cargo registry
-        uses: Swatinem/rust-cache@v2.7.5
+        uses: Swatinem/rust-cache@v2.9.1
         with:
           cache-on-failure: true
 
@@ -85,7 +85,7 @@ jobs:
       # toolchain pinning. If `cargo-audit` is unavailable in the runner image
       # (e.g. on a fork PR), this step is skipped instead of failing the run.
       - name: Install cargo-audit
-        uses: taiki-e/install-action@v2.1.0
+        uses: taiki-e/install-action@v2.81.1
         with:
           tool: cargo-audit
 
