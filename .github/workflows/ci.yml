@@ -88,6 +88,7 @@ jobs:
         uses: taiki-e/install-action@v2.1.0
         with:
           tool: cargo-audit
+        continue-on-error: true
 
       - name: Run cargo audit
         run: cargo audit
