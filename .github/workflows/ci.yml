@@ -57,7 +57,7 @@ jobs:
         run: cargo test --workspace --no-default-features
 
       - name: Build documentation
-        run: cargo doc --workspace --all-features --no-deps -D warnings
+        run: cargo doc --workspace --all-features --no-deps
         env:
           RUSTDOCFLAGS: -D warnings
 
