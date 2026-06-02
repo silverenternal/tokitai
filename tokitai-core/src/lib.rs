@@ -1,169 +1,48 @@
 //! # Tokitai Core
 //!
-//! **Core types for Tokitai - Compile-time tool definitions with zero runtime dependencies**
+//! Core types and traits for the Tokitai AI tool integration library. All
+//! tool information is generated at compile time, so the core has zero
+//! runtime dependencies and is `no_std`-compatible (with the `serde`
+//! feature disabled).
 //!
-//! This crate provides the fundamental types and traits for the Tokitai AI tool integration system.
-//! All tool information is generated at compile time, ensuring zero runtime overhead and maximum
-//! type safety.
+//! See [`ToolDefinition`], [`ToolProvider`], and the [`tokitai`](https://crates.io/crates/tokitai)
+//! crate for the high-level overview.
 //!
-//! ## 🎯 Key Features
-//!
-//! - **Zero Runtime Dependencies** - Core types have minimal dependencies
-//! - **`no_std` Support** - Works in embedded environments (when `serde` feature is disabled)
-//! - **Type Safety** - Compile-time tool definitions prevent runtime errors
-//! - **Serde Integration** - Optional serialization support via the `serde` feature
-//!
-//! ## Core Types
-//!
-//! - [`ToolDefinition`] - Tool definition containing name, description, and input schema
-//! - [`ToolParameter`] - Parameter definition for tools
-//! - [`ParamType`] - JSON Schema type enumeration
-//! - [`ToolError`] - Error type for tool invocation failures
-//! - [`ToolErrorKind`] - Classification of tool errors
-//! - [`ToolProvider`] - Trait for tool providers (auto-implemented by `#[tool]` macro)
-//!
-//! ## Usage Example
+//! # Example
 //!
 //! ```rust
-//! use tokitai_core::ToolDefinition;
+//! use tokitai_core::{ToolDefinition, ParamType};
 //!
-//! // Create a tool definition
 //! let tool = ToolDefinition::new(
 //!     "add",
 //!     "Add two numbers together",
 //!     r#"{"type":"object","properties":{"a":{"type":"integer"},"b":{"type":"integer"}},"required":["a","b"]}"#
 //! );
-//!
 //! assert_eq!(tool.name, "add");
-//! assert_eq!(tool.description, "Add two numbers together");
 //!
-//! // With serde feature enabled, convert to JSON
-//! #[cfg(feature = "serde")]
-//! {
-//!     let json = tool.to_json().unwrap();
-//!     assert!(json.contains("\"name\":\"add\""));
-//! }
-//! ```
-//!
-//! ## No-Std Support
-//!
-//! This crate supports `no_std` environments when the `serde` feature is disabled:
-//!
-//! ```toml
-//! [dependencies]
-//! tokitai-core = { version = "0.4.0", default-features = false }
-//! ```
-//!
-//! ## Type Mapping
-//!
-//! The [`ParamType`] enum maps Rust types to JSON Schema types:
-//!
-//! | Rust Type | JSON Schema Type | `ParamType` Variant |
-//! |-----------|------------------|---------------------|
-//! | `String`, `&str` | `string` | `ParamType::String` |
-//! | `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64` | `integer` | `ParamType::Integer` |
-//! | `f32`, `f64` | `number` | `ParamType::Number` |
-//! | `bool` | `boolean` | `ParamType::Boolean` |
-//! | `Vec<T>` | `array` | `ParamType::Array` |
-//! | Custom structs | `object` | `ParamType::Object` |
-//!
-//! ```rust
-//! use tokitai_core::ParamType;
-//!
-//! assert_eq!(ParamType::from_rust_type("String"), Some(ParamType::String));
 //! assert_eq!(ParamType::from_rust_type("i32"), Some(ParamType::Integer));
-//! assert_eq!(ParamType::from_rust_type("f64"), Some(ParamType::Number));
-//! assert_eq!(ParamType::from_rust_type("bool"), Some(ParamType::Boolean));
 //! assert_eq!(ParamType::from_rust_type("Vec<i32>"), Some(ParamType::Array));
 //! ```
 //!
-//! ## Error Handling
-//!
-//! The [`ToolError`] type provides structured error handling for tool invocations:
-//!
-//! ```rust
-//! use tokitai_core::{ToolError, ToolErrorKind};
-//!
-//! // Create different error types
-//! let validation_err = ToolError::validation_error("Missing required parameter 'city'");
-//! assert_eq!(validation_err.kind, ToolErrorKind::ValidationError);
-//!
-//! let not_found_err = ToolError::not_found("Tool 'unknown_tool' not found");
-//! assert_eq!(not_found_err.kind, ToolErrorKind::NotFound);
-//!
-//! let internal_err = ToolError::internal_error("Connection timeout");
-//! assert_eq!(internal_err.kind, ToolErrorKind::InternalError);
-//! ```
-//!
-//! ## Tool Provider Trait
-//!
-//! The [`ToolProvider`] trait is automatically implemented by the `#[tool]` macro:
-//!
-//! ```rust
-//! use tokitai_core::ToolProvider;
-//!
-//! // After using #[tool] macro on your type:
-//! // struct Calculator;
-//! // #[tool] impl Calculator { ... }
-//!
-//! // Get all tool definitions
-//! // let tools = Calculator::tool_definitions();
-//!
-//! // Get tool count
-//! // let count = Calculator::tool_count();
-//!
-//! // Find a specific tool
-//! // let tool = Calculator::find_tool("add");
-//! ```
-//!
-//! ## JSON Schema Macro
-//!
-//! The `json_schema!` macro helps generate JSON Schema strings at compile time:
-//!
-//! ```rust,ignore
-//! use tokitai_core::json_schema;
-//!
-//! const SCHEMA: &str = json_schema!({
-//!     "city": {
-//!         type: String,
-//!         description: "Name of the city",
-//!         required: true,
-//!     }
-//! });
-//! ```
-//!
-//! ## Features
+//! # Features
 //!
 //! | Feature | Description |
 //! |---------|-------------|
-//! | `serde` (default) | Enable serde serialization and JSON support |
+//! | `serde` (default) | Enable `serde`/`serde_json` integration |
 //!
-//! ## Requirements
+//! For `no_std` usage, depend on the crate with `default-features = false`.
 //!
-//! - **Rust Version**: 1.70+
-//! - **Edition**: 2021
+//! # License
 //!
-//! ## License
+//! Dual-licensed under either of:
 //!
-//! Licensed under either of:
-//!
-//! - Apache License, Version 2.0 ([LICENSE-APACHE](https://github.com/silverenternal/tokitai/blob/main/LICENSE))
-//! - MIT License ([LICENSE-MIT](https://github.com/silverenternal/tokitai/blob/main/LICENSE))
+//! - Apache License, Version 2.0
+//! - MIT License
 //!
 //! at your option.
-//!
-//! ## Contributing
-//!
-//! Unless you explicitly state otherwise, any contribution intentionally submitted
-//! for inclusion in this crate by you, as defined in the Apache-2.0 license, shall be
-//! dual licensed as above, without any additional terms or conditions.
-//!
-//! ## See Also
-//!
-//! - [`tokitai`](https://crates.io/crates/tokitai) - Main crate with runtime support
-//! - [`tokitai-macros`](https://crates.io/crates/tokitai-macros) - Procedural macros
 
 #![cfg_attr(not(feature = "serde"), no_std)]
+#![deny(missing_docs)]
 #![allow(dead_code)]
 
 #[cfg(feature = "serde")]
@@ -178,20 +57,11 @@ pub use serde_types::*;
 #[cfg(feature = "serde")]
 pub use config::{ToolConfig, ToolConfigRegistry, GLOBAL_CONFIG_REGISTRY};
 
-/// # Tool Definition
+/// A tool that an AI system can invoke.
 ///
-/// Represents a tool that can be called by an AI system.
+/// Normally generated by the `#[tool]` macro; rarely created by hand.
 ///
-/// This struct is typically generated automatically by the `#[tool]` macro,
-/// so manual creation is rarely needed.
-///
-/// ## Fields
-///
-/// - `name` - The tool identifier used for AI recognition
-/// - `description` - Human-readable description helping AI understand the tool's purpose
-/// - `input_schema` - JSON Schema string for parameter validation
-///
-/// ## Example
+/// # Example
 ///
 /// ```rust
 /// use tokitai_core::ToolDefinition;
@@ -243,10 +113,9 @@ pub struct ToolDefinition {
     pub replaced_by: Option<&'static str>,
 }
 
-/// Internal struct for compile-time tool definition data
-///
-/// This is used to store tool definitions as `&'static str` at compile time,
-/// then convert to `ToolDefinition` at runtime with zero allocation.
+/// Compile-time storage for tool definition data, used by the
+/// `#[tool]` macro and converted to a `ToolDefinition` at zero cost
+/// via [`ToolDefinition::from_const`].
 #[doc(hidden)]
 pub struct ToolDefinitionConst {
     pub name: &'static str,
@@ -255,17 +124,8 @@ pub struct ToolDefinitionConst {
 }
 
 impl ToolDefinition {
-    /// Create a new tool definition from compile-time constants
-    ///
-    /// This is optimized for compile-time generated code where all strings
-    /// are `'static`. The conversion to `ToolDefinition` happens at runtime
-    /// but with zero allocation since we're just copying references.
-    ///
-    /// # Parameters
-    ///
-    /// - `name` - Tool name
-    /// - `description` - Tool description
-    /// - `input_schema` - JSON Schema string
+    /// Build a tool definition from compile-time constants. Optimized for the
+    /// `#[tool]` macro: no allocation, just `'static` -> owned-string copies.
     ///
     /// # Example
     ///
@@ -302,13 +162,8 @@ impl ToolDefinition {
         }
     }
 
-    /// Create a new tool definition (runtime version)
-    ///
-    /// # Parameters
-    ///
-    /// - `name` - Tool name
-    /// - `description` - Tool description
-    /// - `input_schema` - JSON Schema string
+    /// Create a new tool definition at runtime. Each argument can be any
+    /// type that implements `Into<String>`.
     ///
     /// # Example
     ///
@@ -338,7 +193,16 @@ impl ToolDefinition {
         }
     }
 
-    /// Create a new tool definition (no_std version)
+    /// `no_std` constructor: all three strings must be `'static`.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::ToolDefinition;
+    ///
+    /// let tool = ToolDefinition::new("add", "Add two numbers", r#"{"type":"object"}"#);
+    /// assert_eq!(tool.name, "add");
+    /// ```
     #[cfg(not(feature = "serde"))]
     pub fn new(name: &'static str, description: &'static str, input_schema: &'static str) -> Self {
         Self {
@@ -352,21 +216,53 @@ impl ToolDefinition {
         }
     }
 
-    /// Set the tool version
+    /// Set the tool version.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::ToolDefinition;
+    ///
+    /// let tool = ToolDefinition::new("add", "Add two numbers", r#"{"type":"object"}"#)
+    ///     .with_version("1.2.0");
+    /// assert_eq!(tool.version.as_deref(), Some("1.2.0"));
+    /// ```
     #[cfg(feature = "serde")]
     pub fn with_version(mut self, version: impl Into<alloc::string::String>) -> Self {
         self.version = Some(version.into());
         self
     }
 
-    /// Set the tool version (no_std version)
+    /// `no_std` version setter: `version` must be `'static`.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::ToolDefinition;
+    ///
+    /// let tool = ToolDefinition::new("add", "Add two numbers", r#"{"type":"object"}"#)
+    ///     .with_version("1.2.0");
+    /// assert_eq!(tool.version, Some("1.2.0"));
+    /// ```
     #[cfg(not(feature = "serde"))]
     pub fn with_version(mut self, version: &'static str) -> Self {
         self.version = Some(version);
         self
     }
 
-    /// Set deprecation information
+    /// Mark the tool as deprecated.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::ToolDefinition;
+    ///
+    /// let tool = ToolDefinition::new("multiply", "Multiply two numbers", r#"{"type":"object"}"#)
+    ///     .with_deprecated("0.5.0", "0.7.0", "add_repeated");
+    /// assert_eq!(tool.deprecated_since.as_deref(), Some("0.5.0"));
+    /// assert_eq!(tool.remove_in.as_deref(), Some("0.7.0"));
+    /// assert_eq!(tool.replaced_by.as_deref(), Some("add_repeated"));
+    /// ```
     #[cfg(feature = "serde")]
     pub fn with_deprecated(
         mut self,
@@ -380,7 +276,19 @@ impl ToolDefinition {
         self
     }
 
-    /// Set deprecation information (no_std version)
+    /// `no_std` deprecation setter: all three strings must be `'static`.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::ToolDefinition;
+    ///
+    /// let tool = ToolDefinition::new("multiply", "Multiply two numbers", r#"{"type":"object"}"#)
+    ///     .with_deprecated("0.5.0", "0.7.0", "add_repeated");
+    /// assert_eq!(tool.deprecated_since, Some("0.5.0"));
+    /// assert_eq!(tool.remove_in, Some("0.7.0"));
+    /// assert_eq!(tool.replaced_by, Some("add_repeated"));
+    /// ```
     #[cfg(not(feature = "serde"))]
     pub fn with_deprecated(
         mut self,
@@ -394,39 +302,97 @@ impl ToolDefinition {
         self
     }
 
-    /// Convert to JSON string (requires `serde` feature)
+    /// Serialize this tool definition to a JSON string.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::ToolDefinition;
+    ///
+    /// let tool = ToolDefinition::new("add", "Add two numbers", r#"{"type":"object"}"#);
+    /// let json = tool.to_json().unwrap();
+    /// assert!(json.contains(r#""name":"add""#));
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns a `serde_json::Error` if serialization fails.
     #[cfg(feature = "serde")]
     pub fn to_json(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string(self)
     }
 
-    /// Convert to JSON Value (requires `serde` feature)
+    /// Serialize this tool definition to a `serde_json::Value`.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::ToolDefinition;
+    /// use serde_json::json;
+    ///
+    /// let tool = ToolDefinition::new("add", "Add two numbers", r#"{"type":"object"}"#);
+    /// let value = tool.to_value().unwrap();
+    /// assert_eq!(value["name"], json!("add"));
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns a `serde_json::Error` if serialization fails.
     #[cfg(feature = "serde")]
     pub fn to_value(&self) -> Result<serde_json::Value, serde_json::Error> {
         serde_json::to_value(self)
     }
 
-    /// Get input schema as pretty-printed JSON string (requires `serde` feature)
+    /// Return the input schema pretty-printed as a JSON string.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::ToolDefinition;
+    ///
+    /// let tool = ToolDefinition::new(
+    ///     "add",
+    ///     "Add two numbers",
+    ///     r#"{"type":"object","properties":{"a":{"type":"integer"}}}"#,
+    /// );
+    /// let pretty = tool.input_schema_pretty().unwrap();
+    /// assert!(pretty.contains('\n'));
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns a `serde_json::Error` if `input_schema` is not valid JSON or
+    /// if pretty-printing fails.
     #[cfg(feature = "serde")]
     pub fn input_schema_pretty(&self) -> Result<String, serde_json::Error> {
         let value: serde_json::Value = serde_json::from_str(&self.input_schema)?;
         serde_json::to_string_pretty(&value)
     }
 
-    /// Get input schema as JSON Value (requires `serde` feature)
+    /// Parse the input schema into a `serde_json::Value`.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::ToolDefinition;
+    /// use serde_json::json;
+    ///
+    /// let tool = ToolDefinition::new("add", "Add two numbers", r#"{"type":"object"}"#);
+    /// let schema = tool.input_schema_value().unwrap();
+    /// assert_eq!(schema, json!({"type": "object"}));
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns a `serde_json::Error` if `input_schema` is not valid JSON.
     #[cfg(feature = "serde")]
     pub fn input_schema_value(&self) -> Result<serde_json::Value, serde_json::Error> {
         serde_json::from_str(&self.input_schema)
     }
 
-    /// Apply configurations to this tool definition.
+    /// Apply a list of runtime configuration items to this tool definition.
     ///
-    /// This method is used by the configuration system to apply runtime
-    /// configurations to tool definitions generated at compile time.
-    ///
-    /// # Parameters
-    ///
-    /// - `configs` - Slice of configuration items to apply
+    /// Used by the configuration system to override compile-time defaults.
     ///
     /// # Example
     ///
@@ -497,7 +463,7 @@ impl ToolDefinition {
         }
     }
 
-    /// Apply parameter description to the schema.
+    /// Set the `description` field of the named parameter in the JSON schema.
     #[cfg(feature = "serde")]
     fn apply_param_desc(&mut self, name: &str, desc: &str) {
         if let Ok(mut schema) = serde_json::from_str::<serde_json::Value>(&self.input_schema) {
@@ -512,7 +478,7 @@ impl ToolDefinition {
         }
     }
 
-    /// Apply parameter example to the schema.
+    /// Set the `example` field of the named parameter in the JSON schema.
     #[cfg(feature = "serde")]
     fn apply_param_example(&mut self, name: &str, example: &serde_json::Value) {
         if let Ok(mut schema) = serde_json::from_str::<serde_json::Value>(&self.input_schema) {
@@ -527,7 +493,7 @@ impl ToolDefinition {
         }
     }
 
-    /// Apply parameter default to the schema.
+    /// Set the `default` field of the named parameter in the JSON schema.
     #[cfg(feature = "serde")]
     fn apply_param_default(&mut self, name: &str, default: &serde_json::Value) {
         if let Ok(mut schema) = serde_json::from_str::<serde_json::Value>(&self.input_schema) {
@@ -542,7 +508,7 @@ impl ToolDefinition {
         }
     }
 
-    /// Apply parameter required flag to the schema.
+    /// Toggle the `required` flag of the named parameter in the JSON schema.
     #[cfg(feature = "serde")]
     fn apply_param_required(&mut self, name: &str, required: bool) {
         if let Ok(mut schema) = serde_json::from_str::<serde_json::Value>(&self.input_schema) {
@@ -575,7 +541,8 @@ impl ToolDefinition {
         }
     }
 
-    /// Apply a constraint to a parameter in the schema.
+    /// Insert a JSON-Schema constraint (e.g. `minimum`, `pattern`) for a
+    /// parameter by name.
     #[cfg(feature = "serde")]
     fn apply_param_constraint(
         &mut self,
@@ -594,6 +561,150 @@ impl ToolDefinition {
             self.input_schema = schema.to_string();
         }
     }
+
+    /// Convert this tool definition into the OpenAI function-calling format.
+    ///
+    /// Spec: <https://platform.openai.com/docs/guides/function-calling>
+    ///
+    /// Returns a JSON object of the form:
+    /// ```json
+    /// {
+    ///   "type": "function",
+    ///   "function": {
+    ///     "name": "<tool name>",
+    ///     "description": "<tool description>",
+    ///     "parameters": { /* full JSON Schema */ }
+    ///   }
+    /// }
+    /// ```
+    ///
+    /// If the stored `input_schema` is not valid JSON, the `parameters`
+    /// field will be emitted as an empty object (`{}`) so the surrounding
+    /// envelope remains a valid OpenAI tool descriptor.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::ToolDefinition;
+    /// use serde_json::json;
+    ///
+    /// let tool = ToolDefinition::new(
+    ///     "add",
+    ///     "Add two numbers",
+    ///     r#"{"type":"object","properties":{"a":{"type":"integer"}}}"#,
+    /// );
+    /// let openai = tool.to_openai_function();
+    /// assert_eq!(openai["type"], json!("function"));
+    /// assert_eq!(openai["function"]["name"], json!("add"));
+    /// ```
+    #[cfg(feature = "serde")]
+    pub fn to_openai_function(&self) -> serde_json::Value {
+        let parameters = self.parse_input_schema_or_empty();
+        serde_json::json!({
+            "type": "function",
+            "function": {
+                "name": self.name,
+                "description": self.description,
+                "parameters": parameters,
+            }
+        })
+    }
+
+    /// Convert this tool definition into the Anthropic tool-use format.
+    ///
+    /// Spec: <https://docs.anthropic.com/en/docs/build-with-claude/tool-use>
+    ///
+    /// Returns a JSON object of the form:
+    /// ```json
+    /// {
+    ///   "name": "<tool name>",
+    ///   "description": "<tool description>",
+    ///   "input_schema": { /* full JSON Schema */ }
+    /// }
+    /// ```
+    ///
+    /// If the stored `input_schema` is not valid JSON, the `input_schema`
+    /// field will be emitted as an empty object (`{}`) so the surrounding
+    /// envelope remains a valid Anthropic tool descriptor.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::ToolDefinition;
+    /// use serde_json::json;
+    ///
+    /// let tool = ToolDefinition::new(
+    ///     "add",
+    ///     "Add two numbers",
+    ///     r#"{"type":"object","properties":{"a":{"type":"integer"}}}"#,
+    /// );
+    /// let anthropic = tool.to_anthropic_tool();
+    /// assert_eq!(anthropic["name"], json!("add"));
+    /// assert!(anthropic["input_schema"].is_object());
+    /// ```
+    #[cfg(feature = "serde")]
+    pub fn to_anthropic_tool(&self) -> serde_json::Value {
+        let input_schema = self.parse_input_schema_or_empty();
+        serde_json::json!({
+            "name": self.name,
+            "description": self.description,
+            "input_schema": input_schema,
+        })
+    }
+
+    /// Convert this tool definition into the Model Context Protocol (MCP)
+    /// tool definition format.
+    ///
+    /// Spec: <https://modelcontextprotocol.io/>
+    ///
+    /// Returns a JSON object of the form:
+    /// ```json
+    /// {
+    ///   "name": "<tool name>",
+    ///   "description": "<tool description>",
+    ///   "inputSchema": { /* full JSON Schema */ }
+    /// }
+    /// ```
+    ///
+    /// If the stored `input_schema` is not valid JSON, the `inputSchema`
+    /// field will be emitted as an empty object (`{}`) so the surrounding
+    /// envelope remains a valid MCP tool descriptor.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::ToolDefinition;
+    /// use serde_json::json;
+    ///
+    /// let tool = ToolDefinition::new(
+    ///     "add",
+    ///     "Add two numbers",
+    ///     r#"{"type":"object","properties":{"a":{"type":"integer"}}}"#,
+    /// );
+    /// let mcp = tool.to_mcp_tool();
+    /// assert_eq!(mcp["name"], json!("add"));
+    /// assert!(mcp["inputSchema"].is_object());
+    /// ```
+    #[cfg(feature = "serde")]
+    pub fn to_mcp_tool(&self) -> serde_json::Value {
+        let input_schema = self.parse_input_schema_or_empty();
+        serde_json::json!({
+            "name": self.name,
+            "description": self.description,
+            "inputSchema": input_schema,
+        })
+    }
+
+    /// Parse `input_schema` into a `serde_json::Value`, falling back to an
+    /// empty object on parse failure. Used by the multi-format exporters
+    /// (`to_openai_function`, `to_anthropic_tool`, `to_mcp_tool`) so the
+    /// outer envelope is always well-formed JSON regardless of the inner
+    /// schema state.
+    #[cfg(feature = "serde")]
+    fn parse_input_schema_or_empty(&self) -> serde_json::Value {
+        serde_json::from_str::<serde_json::Value>(&self.input_schema)
+            .unwrap_or_else(|_| serde_json::json!({}))
+    }
 }
 
 impl core::fmt::Display for ToolDefinition {
@@ -602,11 +713,9 @@ impl core::fmt::Display for ToolDefinition {
     }
 }
 
-/// # Parameter Type
+/// JSON Schema type for a tool parameter.
 ///
-/// Represents JSON Schema types for tool parameters.
-///
-/// ## Example
+/// # Example
 ///
 /// ```rust
 /// use tokitai_core::ParamType;
@@ -634,7 +743,7 @@ pub enum ParamType {
 }
 
 impl ParamType {
-    /// Get the JSON Schema type string
+    /// Return the JSON-Schema keyword for this variant (e.g. `"string"`).
     ///
     /// # Example
     ///
@@ -655,11 +764,8 @@ impl ParamType {
         }
     }
 
-    /// Infer parameter type from Rust type name
-    ///
-    /// # Parameters
-    ///
-    /// - `type_name` - Rust type name (e.g., `"String"`, `"i32"`, `"Vec<i32>"`)
+    /// Best-effort mapping from a Rust type name to a JSON-Schema type.
+    /// Returns `None` for `Option<T>` (use [`FromJsonValue`] for those).
     ///
     /// # Example
     ///
@@ -692,11 +798,9 @@ impl ParamType {
     }
 }
 
-/// # Tool Parameter
+/// A single parameter definition for a tool.
 ///
-/// Represents a single parameter definition for a tool.
-///
-/// ## Example
+/// # Example
 ///
 /// ```rust
 /// use tokitai_core::{ToolParameter, ParamType};
@@ -705,7 +809,7 @@ impl ParamType {
 ///     "city",
 ///     ParamType::String,
 ///     "Name of the city",
-///     true, // Required parameter
+///     true, // required
 /// );
 /// ```
 #[derive(Debug, Clone)]
@@ -723,14 +827,7 @@ pub struct ToolParameter {
 }
 
 impl ToolParameter {
-    /// Create a new parameter definition
-    ///
-    /// # Parameters
-    ///
-    /// - `name` - Parameter name
-    /// - `param_type` - Parameter type
-    /// - `description` - Parameter description
-    /// - `required` - Whether the parameter is required
+    /// Build a parameter definition.
     ///
     /// # Example
     ///
@@ -754,11 +851,9 @@ impl ToolParameter {
     }
 }
 
-/// # Tool Error
+/// Error returned by tool invocations.
 ///
-/// Represents errors that can occur during tool invocation.
-///
-/// ## Example
+/// # Example
 ///
 /// ```rust
 /// use tokitai_core::{ToolError, ToolErrorKind};
@@ -790,12 +885,30 @@ impl std::fmt::Display for ToolError {
 
 #[cfg(not(feature = "serde"))]
 impl ToolError {
-    /// Create a new error
+    /// Create a new error with the given `kind` and `message`.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::{ToolError, ToolErrorKind};
+    ///
+    /// let err = ToolError::new(ToolErrorKind::ValidationError, "field 'name' is required");
+    /// assert_eq!(err.kind, ToolErrorKind::ValidationError);
+    /// ```
     pub fn new(kind: ToolErrorKind, message: &'static str) -> Self {
         Self { kind, message }
     }
 
-    /// Create a validation error
+    /// Shortcut to build a `ValidationError` variant with the given message.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::{ToolError, ToolErrorKind};
+    ///
+    /// let err = ToolError::validation_error("field 'name' is required");
+    /// assert_eq!(err.kind, ToolErrorKind::ValidationError);
+    /// ```
     pub fn validation_error(message: &'static str) -> Self {
         Self {
             kind: ToolErrorKind::ValidationError,
@@ -803,7 +916,17 @@ impl ToolError {
         }
     }
 
-    /// Create a not found error
+    /// Shortcut to build a `NotFound` variant with the given tool name.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::{ToolError, ToolErrorKind};
+    ///
+    /// let err = ToolError::not_found("unknown_tool");
+    /// assert_eq!(err.kind, ToolErrorKind::NotFound);
+    /// assert_eq!(err.message, "unknown_tool");
+    /// ```
     pub fn not_found(message: &'static str) -> Self {
         Self {
             kind: ToolErrorKind::NotFound,
@@ -811,7 +934,16 @@ impl ToolError {
         }
     }
 
-    /// Create an internal error
+    /// Shortcut to build an `InternalError` variant with the given message.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::{ToolError, ToolErrorKind};
+    ///
+    /// let err = ToolError::internal_error("downstream timed out");
+    /// assert_eq!(err.kind, ToolErrorKind::InternalError);
+    /// ```
     pub fn internal_error(message: &'static str) -> Self {
         Self {
             kind: ToolErrorKind::InternalError,
@@ -822,7 +954,16 @@ impl ToolError {
 
 #[cfg(feature = "serde")]
 impl ToolError {
-    /// Create a new error
+    /// Create a new error with the given `kind` and `message`.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::{ToolError, ToolErrorKind};
+    ///
+    /// let err = ToolError::new(ToolErrorKind::ValidationError, "field 'name' is required");
+    /// assert_eq!(err.kind, ToolErrorKind::ValidationError);
+    /// ```
     pub fn new(kind: ToolErrorKind, message: impl Into<crate::serde_types::String>) -> Self {
         Self {
             kind,
@@ -830,7 +971,16 @@ impl ToolError {
         }
     }
 
-    /// Create a validation error
+    /// Shortcut to build a `ValidationError` variant with the given message.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::{ToolError, ToolErrorKind};
+    ///
+    /// let err = ToolError::validation_error("field 'name' is required");
+    /// assert_eq!(err.kind, ToolErrorKind::ValidationError);
+    /// ```
     pub fn validation_error(message: impl Into<crate::serde_types::String>) -> Self {
         Self {
             kind: ToolErrorKind::ValidationError,
@@ -838,7 +988,16 @@ impl ToolError {
         }
     }
 
-    /// Create a not found error
+    /// Shortcut to build a `NotFound` variant with the given tool name.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::{ToolError, ToolErrorKind};
+    ///
+    /// let err = ToolError::not_found("unknown_tool");
+    /// assert_eq!(err.kind, ToolErrorKind::NotFound);
+    /// ```
     pub fn not_found(message: impl Into<crate::serde_types::String>) -> Self {
         Self {
             kind: ToolErrorKind::NotFound,
@@ -846,7 +1005,16 @@ impl ToolError {
         }
     }
 
-    /// Create an internal error
+    /// Shortcut to build an `InternalError` variant with the given message.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::{ToolError, ToolErrorKind};
+    ///
+    /// let err = ToolError::internal_error("downstream timed out");
+    /// assert_eq!(err.kind, ToolErrorKind::InternalError);
+    /// ```
     pub fn internal_error(message: impl Into<crate::serde_types::String>) -> Self {
         Self {
             kind: ToolErrorKind::InternalError,
@@ -855,9 +1023,17 @@ impl ToolError {
     }
 }
 
-/// # Error Kind
+/// Classification of a [`ToolError`] for structured error handling.
 ///
-/// Classification of tool errors for structured error handling.
+/// # Example
+///
+/// ```rust
+/// use tokitai_core::ToolErrorKind;
+///
+/// // The four classifications:
+/// assert_ne!(ToolErrorKind::ValidationError, ToolErrorKind::NotFound);
+/// assert_ne!(ToolErrorKind::InternalError, ToolErrorKind::TypeError);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(u8)]
@@ -872,58 +1048,41 @@ pub enum ToolErrorKind {
     TypeError = 3,
 }
 
-/// # Compile-time Tool Registry Trait
+/// Compile-time tool registry trait.
 ///
-/// Automatically implemented by the `#[tool]` macro, providing tool definitions
-/// and invocation interface.
+/// Auto-implemented by the `#[tool]` macro for any `impl` block it processes.
 ///
-/// ## Example
+/// # Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use tokitai_core::ToolProvider;
-///
-/// // After using #[tool] macro on your type:
-/// // struct Calculator;
-/// // #[tool] impl Calculator { ... }
-///
-/// // Get all tool definitions
+/// // After `#[tool]` on a type:
 /// // let tools = Calculator::tool_definitions();
-///
-/// // Get tool count
 /// // let count = Calculator::tool_count();
-///
-/// // Find a specific tool
-/// // let tool = Calculator::find_tool("add");
+/// // let tool  = Calculator::find_tool("add");
 /// ```
 pub trait ToolProvider {
-    /// Get all tool definitions
+    /// All tool definitions produced by this provider.
     fn tool_definitions() -> &'static [ToolDefinition];
 
-    /// Get the number of tools
+    /// Number of tools produced by this provider.
     fn tool_count() -> usize {
         Self::tool_definitions().len()
     }
 
-    /// Find a tool definition by name
+    /// Look up a tool definition by its `name`.
     fn find_tool(name: &str) -> Option<&'static ToolDefinition> {
         Self::tool_definitions().iter().find(|t| t.name == name)
     }
 }
 
-/// # Tool Caller Trait
+/// Runtime tool invocation trait. Auto-implemented by the `#[tool]` macro.
 ///
-/// Provides runtime tool invocation capability.
-/// Automatically implemented by the `#[tool]` macro for all tool types.
-///
-/// ## Example
+/// # Example
 ///
 /// ```rust,ignore
 /// use tokitai_core::{ToolProvider, ToolCaller};
 /// use serde_json::json;
-///
-/// // After using #[tool] macro on your type:
-/// // struct Calculator;
-/// // #[tool] impl Calculator { ... }
 ///
 /// let calc = Calculator;
 /// let result = calc.call_tool("add", &json!({"a": 10, "b": 20})).unwrap();
@@ -931,17 +1090,25 @@ pub trait ToolProvider {
 /// ```
 #[cfg(feature = "serde")]
 pub trait ToolCaller {
-    /// Call a tool by name with JSON arguments
+    /// Invoke a tool by `name` with the given JSON `args`.
     ///
-    /// # Parameters
+    /// # Example
     ///
-    /// - `name` - Tool name to call
-    /// - `args` - JSON arguments for the tool
+    /// ```rust,ignore
+    /// use tokitai_core::ToolCaller;
+    /// use serde_json::json;
     ///
-    /// # Returns
+    /// // After `#[tool]` has been applied to Calculator:
+    /// // let result = calc.call_tool("add", &json!({"a": 1, "b": 2})).unwrap();
+    /// // assert_eq!(result, json!(3));
+    /// ```
     ///
-    /// - `Ok(Value)` - Tool execution result
-    /// - `Err(ToolError)` - Tool execution failed
+    /// # Errors
+    ///
+    /// Returns a [`ToolError`] of kind [`ToolErrorKind::NotFound`] if no tool
+    /// with the given name is registered, or of kind [`ToolErrorKind::ValidationError`]
+    /// / [`ToolErrorKind::InternalError`] if argument parsing or tool
+    /// execution fails.
     fn call_tool(
         &self,
         name: &str,
@@ -949,22 +1116,15 @@ pub trait ToolCaller {
     ) -> Result<crate::serde_types::Value, ToolError>;
 }
 
-/// # From Json Value Trait (P0 优化)
+/// # From Json Value Trait
 ///
-/// Trait for parsing JSON values into Rust types.
-/// This trait is implemented for common types and used by the `#[tool]` macro
-/// to parse tool parameters from JSON arguments.
+/// Parses JSON values into Rust types. Implemented once per type and used by
+/// the `#[tool]` macro to extract typed parameters from JSON arguments.
 ///
-/// ## Design Goals
-///
-/// - **Zero code duplication**: Implemented once per type, not per tool method
-/// - **Compile-time monomorphization**: Generic over types for optimal performance
-/// - **Clear error messages**: Type-specific error handling
-///
-/// ## Example
+/// # Example
 ///
 /// ```rust
-/// use tokitai_core::{FromJsonValue, ToolError};
+/// use tokitai_core::FromJsonValue;
 /// use serde_json::json;
 ///
 /// let args = json!({"count": 42, "name": "test"});
@@ -975,46 +1135,65 @@ pub trait ToolCaller {
 /// ```
 #[cfg(feature = "serde")]
 pub trait FromJsonValue: Sized {
-    /// Parse a value from JSON arguments
+    /// Extract a typed value for `key` from a JSON arguments object.
     ///
-    /// # Parameters
+    /// # Example
     ///
-    /// - `args` - JSON arguments object
-    /// - `key` - Parameter name to extract
+    /// ```rust
+    /// use tokitai_core::FromJsonValue;
+    /// use serde_json::json;
     ///
-    /// # Returns
+    /// let args = json!({"count": 42});
+    /// let count = i64::from_json_value(&args, "count").unwrap();
+    /// assert_eq!(count, 42);
+    /// ```
     ///
-    /// - `Ok(Self)` - Successfully parsed value
-    /// - `Err(ToolError)` - Parsing failed (missing key or type mismatch)
+    /// # Errors
+    ///
+    /// Returns a [`ToolError`] of kind [`ToolErrorKind::ValidationError`] when
+    /// `key` is missing or its value does not match `Self`'s expected type.
     fn from_json_value(args: &crate::serde_types::Value, key: &str) -> Result<Self, ToolError>;
 
-    /// Parse an optional value from JSON arguments
+    /// Extract a typed value for `key`, or `None` if extraction fails.
     ///
-    /// # Parameters
+    /// Equivalent to `Self::from_json_value(args, key).ok()`. Useful for
+    /// optional parameters.
     ///
-    /// - `args` - JSON arguments object
-    /// - `key` - Parameter name to extract
+    /// # Example
     ///
-    /// # Returns
+    /// ```rust
+    /// use tokitai_core::FromJsonValue;
+    /// use serde_json::json;
     ///
-    /// - `Some(Self)` - Successfully parsed value
-    /// - `None` - Key does not exist or type mismatch
+    /// let args = json!({});
+    /// let missing: Option<i64> = i64::from_json_value_opt(&args, "absent");
+    /// assert_eq!(missing, None);
+    ///
+    /// let args = json!({"count": 7});
+    /// let present = i64::from_json_value_opt(&args, "count");
+    /// assert_eq!(present, Some(7));
+    /// ```
     fn from_json_value_opt(args: &crate::serde_types::Value, key: &str) -> Option<Self> {
         Self::from_json_value(args, key).ok()
     }
 }
 
-// ============== 基本类型实现 ==============
+// ============== Primitive type impls ==============
 
 #[cfg(feature = "serde")]
 impl FromJsonValue for i64 {
     #[inline(always)]
     fn from_json_value(args: &crate::serde_types::Value, key: &str) -> Result<Self, ToolError> {
         args.get(key)
-            .ok_or_else(|| ToolError::validation_error(format!("缺少必需参数 '{}'", key)))?
+            .ok_or_else(|| {
+                ToolError::validation_error(format!("Missing required parameter '{}'", key))
+            })?
             .as_i64()
             .ok_or_else(|| {
-                ToolError::validation_error(format!("参数 '{}' 类型错误，期望 integer", key))
+                ToolError::validation_error(format!(
+                    "Parameter '{}' has wrong type, expected integer",
+                    key
+                ))
             })
     }
 }
@@ -1024,11 +1203,16 @@ impl FromJsonValue for i32 {
     #[inline(always)]
     fn from_json_value(args: &crate::serde_types::Value, key: &str) -> Result<Self, ToolError> {
         args.get(key)
-            .ok_or_else(|| ToolError::validation_error(format!("缺少必需参数 '{}'", key)))?
+            .ok_or_else(|| {
+                ToolError::validation_error(format!("Missing required parameter '{}'", key))
+            })?
             .as_i64()
             .map(|v| v as i32)
             .ok_or_else(|| {
-                ToolError::validation_error(format!("参数 '{}' 类型错误，期望 integer", key))
+                ToolError::validation_error(format!(
+                    "Parameter '{}' has wrong type, expected integer",
+                    key
+                ))
             })
     }
 }
@@ -1038,11 +1222,13 @@ impl FromJsonValue for u64 {
     #[inline(always)]
     fn from_json_value(args: &crate::serde_types::Value, key: &str) -> Result<Self, ToolError> {
         args.get(key)
-            .ok_or_else(|| ToolError::validation_error(format!("缺少必需参数 '{}'", key)))?
+            .ok_or_else(|| {
+                ToolError::validation_error(format!("Missing required parameter '{}'", key))
+            })?
             .as_u64()
             .ok_or_else(|| {
                 ToolError::validation_error(format!(
-                    "参数 '{}' 类型错误，期望 unsigned integer",
+                    "Parameter '{}' has wrong type, expected unsigned integer",
                     key
                 ))
             })
@@ -1054,12 +1240,14 @@ impl FromJsonValue for u32 {
     #[inline(always)]
     fn from_json_value(args: &crate::serde_types::Value, key: &str) -> Result<Self, ToolError> {
         args.get(key)
-            .ok_or_else(|| ToolError::validation_error(format!("缺少必需参数 '{}'", key)))?
+            .ok_or_else(|| {
+                ToolError::validation_error(format!("Missing required parameter '{}'", key))
+            })?
             .as_u64()
             .map(|v| v as u32)
             .ok_or_else(|| {
                 ToolError::validation_error(format!(
-                    "参数 '{}' 类型错误，期望 unsigned integer",
+                    "Parameter '{}' has wrong type, expected unsigned integer",
                     key
                 ))
             })
@@ -1071,10 +1259,15 @@ impl FromJsonValue for f64 {
     #[inline(always)]
     fn from_json_value(args: &crate::serde_types::Value, key: &str) -> Result<Self, ToolError> {
         args.get(key)
-            .ok_or_else(|| ToolError::validation_error(format!("缺少必需参数 '{}'", key)))?
+            .ok_or_else(|| {
+                ToolError::validation_error(format!("Missing required parameter '{}'", key))
+            })?
             .as_f64()
             .ok_or_else(|| {
-                ToolError::validation_error(format!("参数 '{}' 类型错误，期望 number", key))
+                ToolError::validation_error(format!(
+                    "Parameter '{}' has wrong type, expected number",
+                    key
+                ))
             })
     }
 }
@@ -1084,11 +1277,16 @@ impl FromJsonValue for f32 {
     #[inline(always)]
     fn from_json_value(args: &crate::serde_types::Value, key: &str) -> Result<Self, ToolError> {
         args.get(key)
-            .ok_or_else(|| ToolError::validation_error(format!("缺少必需参数 '{}'", key)))?
+            .ok_or_else(|| {
+                ToolError::validation_error(format!("Missing required parameter '{}'", key))
+            })?
             .as_f64()
             .map(|v| v as f32)
             .ok_or_else(|| {
-                ToolError::validation_error(format!("参数 '{}' 类型错误，期望 number", key))
+                ToolError::validation_error(format!(
+                    "Parameter '{}' has wrong type, expected number",
+                    key
+                ))
             })
     }
 }
@@ -1098,10 +1296,15 @@ impl FromJsonValue for bool {
     #[inline(always)]
     fn from_json_value(args: &crate::serde_types::Value, key: &str) -> Result<Self, ToolError> {
         args.get(key)
-            .ok_or_else(|| ToolError::validation_error(format!("缺少必需参数 '{}'", key)))?
+            .ok_or_else(|| {
+                ToolError::validation_error(format!("Missing required parameter '{}'", key))
+            })?
             .as_bool()
             .ok_or_else(|| {
-                ToolError::validation_error(format!("参数 '{}' 类型错误，期望 boolean", key))
+                ToolError::validation_error(format!(
+                    "Parameter '{}' has wrong type, expected boolean",
+                    key
+                ))
             })
     }
 }
@@ -1111,17 +1314,40 @@ impl FromJsonValue for String {
     #[inline(always)]
     fn from_json_value(args: &crate::serde_types::Value, key: &str) -> Result<Self, ToolError> {
         args.get(key)
-            .ok_or_else(|| ToolError::validation_error(format!("缺少必需参数 '{}'", key)))?
+            .ok_or_else(|| {
+                ToolError::validation_error(format!("Missing required parameter '{}'", key))
+            })?
             .as_str()
             .map(|s| s.to_string())
             .ok_or_else(|| {
-                ToolError::validation_error(format!("参数 '{}' 类型错误，期望 string", key))
+                ToolError::validation_error(format!(
+                    "Parameter '{}' has wrong type, expected string",
+                    key
+                ))
             })
     }
 }
 
-// ============== &str 零拷贝支持 ==============
-// 特殊处理：需要生命周期，使用单独函数
+// ============== &str zero-copy support ==============
+// Special handling: needs a lifetime, so we expose a standalone function.
+
+/// Borrow a string parameter without copying.
+///
+/// # Example
+///
+/// ```rust
+/// use tokitai_core::from_json_value_str;
+/// use serde_json::json;
+///
+/// let args = json!({"city": "Paris"});
+/// let city: &str = from_json_value_str(&args, "city").unwrap();
+/// assert_eq!(city, "Paris");
+/// ```
+///
+/// # Errors
+///
+/// Returns a [`ToolError`] of kind [`ToolErrorKind::ValidationError`] when
+/// `key` is missing or its value is not a string.
 #[cfg(feature = "serde")]
 #[inline(always)]
 pub fn from_json_value_str<'a>(
@@ -1138,7 +1364,7 @@ pub fn from_json_value_str<'a>(
         })
 }
 
-// ============== Option 实现 ==============
+// ============== Option impls ==============
 
 #[cfg(feature = "serde")]
 impl<T: FromJsonValue> FromJsonValue for Option<T> {
@@ -1148,23 +1374,46 @@ impl<T: FromJsonValue> FromJsonValue for Option<T> {
     }
 }
 
-// ============== Vec 实现 ==============
+// ============== Vec impls ==============
 
 #[cfg(feature = "serde")]
 impl<T: serde::de::DeserializeOwned> FromJsonValue for Vec<T> {
     #[inline(always)]
     fn from_json_value(args: &crate::serde_types::Value, key: &str) -> Result<Self, ToolError> {
-        let value = args
-            .get(key)
-            .ok_or_else(|| ToolError::validation_error(format!("缺少必需参数 '{}'", key)))?;
-        serde_json::from_value(value.clone())
-            .map_err(|e| ToolError::validation_error(format!("参数 '{}' 类型错误：{}", key, e)))
+        let value = args.get(key).ok_or_else(|| {
+            ToolError::validation_error(format!("Missing required parameter '{}'", key))
+        })?;
+        serde_json::from_value(value.clone()).map_err(|e| {
+            ToolError::validation_error(format!("Parameter '{}' has wrong type: {}", key, e))
+        })
     }
 }
 
-// ============== 辅助函数：解析任意 DeserializeOwned 类型 ==============
-// 对于不支持的自定义类型，用户可以在方法内部手动反序列化
+// ============== Helper: parse any DeserializeOwned type ==============
+// For unsupported custom types, users can deserialize manually inside their method.
 
+/// Parse a `DeserializeOwned` value for `key`. Useful for custom types not
+/// covered by the [`FromJsonValue`] blanket impls.
+///
+/// # Example
+///
+/// ```rust
+/// use tokitai_core::from_json_value_generic;
+/// use serde_json::json;
+/// use serde::Deserialize;
+///
+/// #[derive(Deserialize, Debug, PartialEq)]
+/// struct Point { x: i32, y: i32 }
+///
+/// let args = json!({"p": {"x": 1, "y": 2}});
+/// let p: Point = from_json_value_generic(&args, "p").unwrap();
+/// assert_eq!(p, Point { x: 1, y: 2 });
+/// ```
+///
+/// # Errors
+///
+/// Returns a [`ToolError`] of kind [`ToolErrorKind::ValidationError`] when
+/// `key` is missing or its value cannot be deserialized into `T`.
 #[cfg(feature = "serde")]
 #[inline(always)]
 pub fn from_json_value_generic<T: serde::de::DeserializeOwned>(
@@ -1178,7 +1427,7 @@ pub fn from_json_value_generic<T: serde::de::DeserializeOwned>(
         .map_err(|e| ToolError::validation_error(format!("Parameter '{}' type error: {}", key, e)))
 }
 
-// ============== HashMap 实现 ==============
+// ============== HashMap impls ==============
 #[cfg(feature = "serde")]
 impl<V: serde::de::DeserializeOwned> FromJsonValue for std::collections::HashMap<String, V> {
     #[inline(always)]
@@ -1192,7 +1441,7 @@ impl<V: serde::de::DeserializeOwned> FromJsonValue for std::collections::HashMap
     }
 }
 
-// ============== BTreeMap 实现 ==============
+// ============== BTreeMap impls ==============
 #[cfg(feature = "serde")]
 impl<V: serde::de::DeserializeOwned> FromJsonValue for std::collections::BTreeMap<String, V> {
     #[inline(always)]
@@ -1206,29 +1455,329 @@ impl<V: serde::de::DeserializeOwned> FromJsonValue for std::collections::BTreeMa
     }
 }
 
-/// Tool configuration types for runtime customization.
+/// Runtime configuration types used to override compile-time tool metadata.
 #[cfg(feature = "serde")]
 pub mod config;
 
+/// # Runtime-Agnostic Async Executor
+///
+/// Bridge for the `#[tool]` macro's sync-from-async path that decouples
+/// Tokitai from Tokio. The macro's sync wrapper delegates to a registered
+/// [`AsyncExecutor`]; install one with [`set_async_executor`] to use
+/// `async-std`, `smol`, `embassy`, or any custom executor.
+///
+/// ## Default behaviour
+///
+/// 1. Custom executor registered via [`set_async_executor`] -> use it.
+/// 2. Otherwise, if inside a Tokio runtime, use the active
+///    `Handle::block_on` (preserves backward compatibility).
+/// 3. Otherwise, return a [`ToolError`] with a descriptive English message.
+///
+/// ## No-`std` fallback
+///
+/// When the `serde` feature is disabled the crate is `no_std` and no
+/// executor is reachable; [`block_on_async`] always returns a
+/// `ToolError::InternalError` so the macro can still type-check.
+///
+/// [`block_on_async`]: crate::block_on_async
+///
+/// This trait is **object-safe** so the user-registered executor can be
+/// stored as `&'static dyn AsyncExecutor`. The type-erased
+/// [`AsyncExecutor::block_on_dyn`] takes a boxed future and returns a boxed
+/// output; typed convenience is provided by [`AsyncExecutorExt`].
+pub trait AsyncExecutor: Send + Sync {
+    /// Object-safe entry point: drive a boxed future to completion on the
+    /// current thread and return its output as a boxed `Any`. Most users
+    /// implement [`AsyncExecutorExt::block_on`] and let the blanket impl
+    /// derive this; override it directly only for full control.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use tokitai_core::AsyncExecutor;
+    /// use core::future::Future;
+    /// use core::pin::Pin;
+    /// use core::any::Any;
+    ///
+    /// struct ThreadPoolExecutor;
+    /// impl AsyncExecutor for ThreadPoolExecutor {
+    ///     fn block_on_dyn(
+    ///         &self,
+    ///         future: Pin<Box<dyn Future<Output = ()> + Send>>,
+    ///     ) -> Box<dyn Any + Send> {
+    ///         // ... drive the future to completion ...
+    ///         # Box::new(())
+    ///     }
+    /// }
+    /// ```
+    fn block_on_dyn(
+        &self,
+        future: core::pin::Pin<Box<dyn core::future::Future<Output = ()> + Send>>,
+    ) -> Box<dyn core::any::Any + Send>;
+}
+
+/// Typed convenience wrapper around [`AsyncExecutor::block_on_dyn`].
+/// Implemented for every `T: AsyncExecutor`; re-introduces the natural
+/// `block_on<F: Future>(&self, F) -> F::Output` signature on top of the
+/// type-erased entry point.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use tokitai_core::{AsyncExecutor, AsyncExecutorExt};
+///
+/// fn drive<E: AsyncExecutor>(exec: &E) -> String {
+///     exec.block_on(async { String::from("typed output") })
+/// }
+/// ```
+pub trait AsyncExecutorExt: AsyncExecutor {
+    /// Drive a future to completion and return its output.
+    ///
+    /// The future must be `Send + 'static` (so it can cross the type-erasure
+    /// boundary) and its output must be `Send + 'static` (so it can be
+    /// downcast on the call site).
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use tokitai_core::{AsyncExecutor, AsyncExecutorExt};
+    ///
+    /// fn run<E: AsyncExecutor>(exec: &E) -> i32 {
+    ///     exec.block_on(async { 21 + 21 })
+    /// }
+    /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal output slot mutex is poisoned or if the
+    /// underlying [`AsyncExecutor::block_on_dyn`] returns without driving the
+    /// future to completion.
+    fn block_on<F>(&self, future: F) -> F::Output
+    where
+        F: core::future::Future + Send + 'static,
+        F::Output: Send + 'static,
+    {
+        use core::any::Any;
+        use core::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::{Arc, Mutex};
+
+        let slot: Arc<Mutex<Option<F::Output>>> = Arc::new(Mutex::new(None));
+        let ran: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
+        let slot_inner = slot.clone();
+        let ran_inner = ran.clone();
+
+        let wrapped = async move {
+            let output = future.await;
+            *slot_inner
+                .lock()
+                .expect("AsyncExecutor output slot poisoned") = Some(output);
+            ran_inner.store(true, Ordering::Release);
+        };
+
+        let _: Box<dyn Any + Send> = self.block_on_dyn(Box::pin(wrapped));
+
+        assert!(
+            ran.load(Ordering::Acquire),
+            "AsyncExecutor did not drive the future to completion"
+        );
+
+        let mut guard = slot.lock().expect("AsyncExecutor output slot poisoned");
+        guard
+            .take()
+            .expect("future reported complete but produced no output")
+    }
+}
+
+impl<T: AsyncExecutor + ?Sized> AsyncExecutorExt for T {}
+
+/// Process-wide slot that holds the user-registered [`AsyncExecutor`].
+/// A `OnceLock<Box<dyn AsyncExecutor>>` is the portable, leak-free
+/// storage: the box is leaked into the static slot, so the resulting
+/// reference is `&'static`.
+static ASYNC_EXECUTOR: std::sync::OnceLock<Box<dyn AsyncExecutor>> = std::sync::OnceLock::new();
+
+/// Install a global [`AsyncExecutor`] used by every `#[tool]`-generated sync
+/// wrapper. Call once at program startup, before any sync `call_tool` is
+/// invoked on an `async` tool. The box is leaked: the executor lives for the
+/// lifetime of the program. The first call wins; subsequent calls are
+/// silently ignored (best-effort registration).
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use tokitai_core::{set_async_executor, AsyncExecutor, AsyncExecutorExt};
+/// use core::future::Future;
+/// use core::pin::Pin;
+///
+/// struct BlockingExecutor;
+/// impl AsyncExecutor for BlockingExecutor {
+///     fn block_on_dyn(
+///         &self,
+///         future: Pin<Box<dyn Future<Output = ()> + Send>>,
+///     ) -> Box<dyn core::any::Any + Send> {
+///         Box::new(futures::executor::block_on(future))
+///     }
+/// }
+///
+/// set_async_executor(Box::new(BlockingExecutor));
+/// ```
+pub fn set_async_executor<E: AsyncExecutor + 'static>(executor: Box<E>) {
+    let trait_obj: Box<dyn AsyncExecutor> = executor;
+    // `_ =` to ignore the `AlreadyInitialized` error; the registration
+    // is best-effort. The first executor wins.
+    let _ = ASYNC_EXECUTOR.set(trait_obj);
+}
+
+/// Return the currently registered [`AsyncExecutor`], or `None` if no
+/// executor has been installed via [`set_async_executor`]. The returned
+/// reference is `&'static` because the registered `Box<dyn AsyncExecutor>`
+/// is held inside a `OnceLock` for the program's lifetime.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use tokitai_core::current_async_executor;
+///
+/// // Initially no executor has been installed.
+/// assert!(current_async_executor().is_none());
+/// ```
+pub fn current_async_executor() -> Option<&'static dyn AsyncExecutor> {
+    ASYNC_EXECUTOR
+        .get()
+        .map(|b| b.as_ref() as &'static dyn AsyncExecutor)
+}
+
+/// Try to drive `future` to completion using the registered executor, the
+/// current Tokio runtime (when available), or a clear English error.
+///
+/// This is the entry point used by the `#[tool]` macro. It is intentionally
+/// panic-free and always returns a [`ToolError`] on failure so the macro
+/// can propagate the error through `call_tool_sync` without `unwrap`.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use tokitai_core::{block_on_async, set_async_executor, AsyncExecutor, AsyncExecutorExt};
+/// use core::future::Future;
+/// use core::pin::Pin;
+/// use core::any::Any;
+///
+/// struct InlineExecutor;
+/// impl AsyncExecutor for InlineExecutor {
+///     fn block_on_dyn(
+///         &self,
+///         future: Pin<Box<dyn Future<Output = ()> + Send>>,
+///     ) -> Box<dyn Any + Send> {
+///         futures::executor::block_on(future);
+///         Box::new(())
+///     }
+/// }
+///
+/// set_async_executor(Box::new(InlineExecutor));
+/// let value: i32 = block_on_async(async { 21 + 21 }).unwrap();
+/// assert_eq!(value, 42);
+/// ```
+///
+/// # Errors
+///
+/// Returns a [`ToolError`] of kind [`ToolErrorKind::InternalError`] when no
+/// executor is registered and no Tokio runtime is in scope. The `#[tool]`
+/// macro also probes for a Tokio runtime and surfaces a richer message via
+/// [`block_on_async_error_message`].
+#[cfg(feature = "serde")]
+pub fn block_on_async<F>(future: F) -> Result<F::Output, ToolError>
+where
+    F: core::future::Future + Send + 'static,
+    F::Output: Send + 'static,
+{
+    if let Some(exec) = current_async_executor() {
+        return Ok(exec.block_on(future));
+    }
+
+    // No executor was registered. The `#[tool]` macro's sync wrappers
+    // additionally probe the current Tokio runtime as a final fallback;
+    // here we only handle the user-registered executor path and return
+    // a clear error so the macro can surface a helpful message.
+    drop(future);
+    Err(ToolError::internal_error(block_on_async_error_message()))
+}
+
+/// `no_std`/`no-serde` companion to [`block_on_async`]. Always returns an
+/// error because no executor is reachable in a `no_std` build.
+///
+/// # Errors
+///
+/// Always returns `Err` with a static explanation string instructing the
+/// caller to enable the `serde` feature and register an executor.
+#[cfg(not(feature = "serde"))]
+pub fn block_on_async<F>(_future: F) -> Result<F, &'static str> {
+    Err(
+        "no async runtime available in no_std build; enable the `serde` feature \
+         and call `tokitai_core::set_async_executor(...)` to enable sync-from-async",
+    )
+}
+
+/// Canonical English error message returned by the `#[tool]` macro when
+/// it cannot find any executor to drive a sync-from-async call. The macro
+/// embeds the return value of this function as the error string, so the
+/// message is centralised here for consistency and future i18n.
+///
+/// # Example
+///
+/// ```rust
+/// use tokitai_core::block_on_async_error_message;
+///
+/// let msg = block_on_async_error_message();
+/// assert!(msg.contains("no async runtime"));
+/// ```
+pub const fn block_on_async_error_message() -> &'static str {
+    "no async runtime registered; either call from within an async context, \
+     run inside a tokio runtime, or call `tokitai_core::set_async_executor(...)` \
+     before invoking"
+}
+
+#[cfg(feature = "serde")]
+mod executor_internal {
+    use super::*;
+
+    /// A no-op executor used as a placeholder. Registered executors must
+    /// implement [`AsyncExecutor`]; this stub panics on use so an accidental
+    /// `set_async_executor(Box::new(NullExecutor))` is loud rather than
+    /// silently broken.
+    pub struct NullExecutor;
+
+    impl AsyncExecutor for NullExecutor {
+        /// # Panics
+        ///
+        /// Always panics with a message instructing the caller to install
+        /// a real executor via [`crate::set_async_executor`].
+        fn block_on_dyn(
+            &self,
+            _future: core::pin::Pin<Box<dyn core::future::Future<Output = ()> + Send>>,
+        ) -> Box<dyn core::any::Any + Send> {
+            panic!(
+                "NullExecutor::block_on_dyn invoked; \
+                 install a real AsyncExecutor via set_async_executor(...)"
+            )
+        }
+    }
+}
+
 #[cfg(feature = "serde")]
 pub mod serde_types {
-    //! Serde type aliases
-    //!
-    //! This module is available when the `serde` feature is enabled.
+    //! Re-exports of `serde_json` and `alloc::string` types under a stable
+    //! path. Available when the `serde` feature is enabled.
 
     pub use alloc::string::String;
     pub use serde_json::Value;
 }
 
-/// # JSON Schema Macro (Compile-time)
+/// Compile-time helper for emitting JSON Schema strings without runtime
+/// overhead.
 ///
-/// Helper macro for generating JSON Schema strings at compile time,
-/// avoiding runtime overhead.
-///
-/// ## Example
+/// # Example
 ///
 /// ```rust,ignore
-/// // Note: This macro generates strings at compile time, syntax is special
 /// use tokitai_core::json_schema;
 ///
 /// const SCHEMA: &str = json_schema!({
@@ -1298,5 +1847,83 @@ mod tests {
         let tool = ToolDefinition::new("test", "A test tool", r#"{"type":"object"}"#);
         let json = tool.to_json().unwrap();
         assert!(json.contains(r#""name":"test""#));
+    }
+
+    // -----------------------------------------------------------------
+    // AsyncExecutor unit tests
+    //
+    // The three scenarios the executor must cover are exercised in a
+    // single `#[test]` so the order is deterministic. Splitting them
+    // into three `#[test]` functions would not be reliable here:
+    // libtest runs tests in alphabetical order, and the global
+    // `ASYNC_EXECUTOR` slot is a `OnceLock` that can only be populated
+    // once per process. A fresh-process test for the "no executor"
+    // case is provided separately in
+    // `tests/async_executor_no_executor_test.rs`.
+    // -----------------------------------------------------------------
+
+    /// Minimal test executor that drives a boxed future to completion via
+    /// `futures::executor::block_on`. The output of the wrapped future is
+    /// not used here because the typed `AsyncExecutorExt::block_on` reads
+    /// the output from a shared slot.
+    #[cfg(feature = "serde")]
+    struct TestExecutor;
+
+    #[cfg(feature = "serde")]
+    impl AsyncExecutor for TestExecutor {
+        fn block_on_dyn(
+            &self,
+            future: core::pin::Pin<Box<dyn core::future::Future<Output = ()> + Send>>,
+        ) -> Box<dyn core::any::Any + Send> {
+            futures::executor::block_on(future);
+            Box::new(())
+        }
+    }
+
+    /// Single-threaded executor used by the async-executor tests. We use
+    /// `futures::executor::block_on` (no Tokio) so the suite can run
+    /// without a Tokio runtime.
+    #[cfg(feature = "serde")]
+    #[test]
+    #[serial_test::serial]
+    fn test_async_executor_lifecycle() {
+        // Step 1: in a fresh process the `OnceLock` is empty, so a
+        // call to `block_on_async` returns the standard English
+        // error. (We use a best-effort assertion: if a prior test in
+        // the same binary has already set the executor, skip this
+        // sub-assertion; the dedicated
+        // `async_executor_no_executor_test.rs` integration test
+        // exercises this path in a fresh process.)
+        if current_async_executor().is_none() {
+            let result: Result<(), ToolError> = block_on_async(async {});
+            let err = result
+                .expect_err("block_on_async should error when no AsyncExecutor is registered");
+            assert_eq!(err.kind, ToolErrorKind::InternalError);
+            let expected = block_on_async_error_message();
+            assert!(
+                err.message.contains(expected) || err.message.contains("no async runtime"),
+                "expected English error message, got: {:?}",
+                err.message
+            );
+        }
+
+        // Step 2: register a custom executor and verify
+        // `current_async_executor` returns it.
+        set_async_executor(Box::new(TestExecutor));
+        let exec = current_async_executor().expect("executor should be registered");
+        // Sanity check: it is a `&'static dyn AsyncExecutor`.
+        let _static_ref: &'static dyn AsyncExecutor = exec;
+
+        // Step 3: drive a future with a `String` output through the
+        // typed `AsyncExecutorExt::block_on` wrapper.
+        let string_result: String = exec.block_on(async { String::from("hello, executor") });
+        assert_eq!(string_result, "hello, executor");
+
+        // Step 4: drive a future with a non-`()` typed output
+        // (`(i32, String)`) through the type-erased `block_on_dyn`
+        // boundary and back. This is the
+        // `test_async_executor_typed_output` scenario.
+        let tuple_result: (i32, String) = exec.block_on(async { (42, String::from("typed")) });
+        assert_eq!(tuple_result, (42, String::from("typed")));
     }
 }

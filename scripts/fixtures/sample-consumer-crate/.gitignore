@@ -1,0 +1,6 @@
+# Cargo build artifacts.
+/target/
+
+# Cargo lock for a library-only fixture. Remove this file from
+# .gitignore if you want reproducible builds.
+Cargo.lock

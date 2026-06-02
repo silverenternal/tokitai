@@ -19,16 +19,22 @@ macro_rules! warn_if_not_test {
 
 /// 生成参数解析辅助方法
 pub fn generate_helper_methods(tools: &[ToolMethodInfo]) -> Vec<TokenStream2> {
-    let mut methods = Vec::new();
+    // Upper bound: each async tool emits 2 wrappers (async + sync),
+    // each sync tool emits 1.
+    let mut methods = Vec::with_capacity(tools.len() * 2);
     let has_async = tools.iter().any(|t| t.is_async);
 
     for tool in tools {
         if has_async {
-            methods.push(generate_wrapper_method(tool, true));
             if tool.is_async {
+                // 异步工具：emit __call_<name> (async) AND __call_<name>_sync (block_on wrapper)
+                methods.push(generate_wrapper_method(tool, true));
                 methods.push(generate_wrapper_method(tool, false));
             } else {
-                methods.push(generate_wrapper_method_sync(tool));
+                // 同步工具：emit only __call_<name>_sync (the dispatcher.call_tool_sync targets this name).
+                // The async `call_tool` dispatcher wraps the call in `async { ... }.await` so
+                // the sync wrapper is uniformly callable from both dispatchers.
+                methods.push(generate_wrapper_method(tool, false));
             }
         } else {
             methods.push(generate_wrapper_method_sync(tool));
@@ -58,22 +64,41 @@ pub fn generate_wrapper_method_sync(tool: &ToolMethodInfo) -> TokenStream2 {
                     })
                     .flatten();
             }
+        } else if let Some(default_value) = &p.default {
+            let default_json = serde_json::to_string(default_value)
+                .unwrap_or_else(|_| "null".to_string());
+            let default_lit = syn::LitStr::new(&default_json, Span::call_site());
+            quote! {
+                let #param_name: #param_type = serde_json::from_value(
+                    args.get(#schema_name_str).cloned()
+                        .unwrap_or_else(|| serde_json::from_str(#default_lit).unwrap())
+                )
+                .map_err(|e| ::tokitai::ToolError::validation_error(
+                    format!("parameter type mismatch: {} (expected: {})", #schema_name_str, std::any::type_name::<#param_type>())
+                ))?;
+            }
         } else {
             quote! {
                 let #param_name = args.get(#schema_name_str)
                     .ok_or_else(|| ::tokitai::ToolError::validation_error(
-                        format!("缺少必需参数 '{}' (类型：{})", #schema_name_str, std::any::type_name::<#param_type>())
+                        format!("missing required parameter '{}' (type: {})", #schema_name_str, std::any::type_name::<#param_type>())
                     ))?;
                 let mut #param_name: #param_type = serde_json::from_value(#param_name.clone())
                     .map_err(|e| ::tokitai::ToolError::validation_error(
-                        format!("参数类型错误：{} (期望类型：{})", #schema_name_str, std::any::type_name::<#param_type>())
+                        format!("parameter type mismatch: {} (expected: {})", #schema_name_str, std::any::type_name::<#param_type>())
                     ))?;
             }
         }
     });
 
     let param_validations = params.iter().flat_map(|p| {
-        let mut validations = Vec::new();
+        // Up to 9 validator slots can be filled per param (validate,
+        // one_of, pattern, min, max, min_length, max_length,
+        // multiple_of). The most common case is 0 (the param has no
+        // validators), but pre-allocating 1 means the hot path of
+        // "exactly one validator" is allocation-free, and we cap at
+        // a small constant to bound the upper case.
+        let mut validations = Vec::with_capacity(1);
         let param_name = &p.name;
         let schema_name_str = &p.schema_name;
 
@@ -97,14 +122,14 @@ pub fn generate_wrapper_method_sync(tool: &ToolMethodInfo) -> TokenStream2 {
                         if !msg_en_str.is_empty() {
                             msg_en_str.to_string()
                         } else {
-                            format!("参数 '{}' 验证失败：{}", #schema_name_str, #validate_expr)
+                            format!("validation failed for parameter '{}': {}", #schema_name_str, #validate_expr)
                         }
                     }
                 }
             } else if let Some(ref msg) = p.validate_msg {
                 quote! { #msg.to_string() }
             } else {
-                quote! { format!("参数 '{}' 验证失败：{}", #schema_name_str, #validate_expr) }
+                quote! { format!("validation failed for parameter '{}': {}", #schema_name_str, #validate_expr) }
             };
             validations.push(quote! {
                 if !(#validate_expr_tokens) {
@@ -120,7 +145,7 @@ pub fn generate_wrapper_method_sync(tool: &ToolMethodInfo) -> TokenStream2 {
                     if let Some(ref val) = #param_name {
                         if ![#(#allowed_values),*].contains(&val.as_str()) {
                             return Err(::tokitai::ToolError::validation_error(
-                                format!("参数 '{}' 的值 '{}' 不在允许的范围内，允许的值：{}", #schema_name_str, val, [#(#allowed_values),*].join(", "))
+                                format!("value '{}' for parameter '{}' is not in the allowed set, allowed values: {}", #schema_name_str, val, [#(#allowed_values),*].join(", "))
                             ));
                         }
                     }
@@ -130,7 +155,7 @@ pub fn generate_wrapper_method_sync(tool: &ToolMethodInfo) -> TokenStream2 {
                 validations.push(quote! {
                     if ![#(#allowed_values),*].contains(&#param_name.as_str()) {
                         return Err(::tokitai::ToolError::validation_error(
-                            format!("参数 '{}' 的值 '{}' 不在允许的范围内，允许的值：{}", #schema_name_str, #param_name, [#(#allowed_values),*].join(", "))
+                            format!("value '{}' for parameter '{}' is not in the allowed set, allowed values: {}", #schema_name_str, #param_name, [#(#allowed_values),*].join(", "))
                         ));
                     }
                 });
@@ -143,7 +168,7 @@ pub fn generate_wrapper_method_sync(tool: &ToolMethodInfo) -> TokenStream2 {
                     if let Some(ref val) = #param_name {
                         if !val.contains(#pattern) {
                             return Err(::tokitai::ToolError::validation_error(
-                                format!("参数 '{}' 的值 '{}' 不包含模式：{}", #schema_name_str, val, #pattern)
+                                format!("value '{}' for parameter '{}' does not contain pattern: {}", #schema_name_str, val, #pattern)
                             ));
                         }
                     }
@@ -152,7 +177,7 @@ pub fn generate_wrapper_method_sync(tool: &ToolMethodInfo) -> TokenStream2 {
                 validations.push(quote! {
                     if !#param_name.contains(#pattern) {
                         return Err(::tokitai::ToolError::validation_error(
-                            format!("参数 '{}' 的值 '{}' 不包含模式：{}", #schema_name_str, #param_name, #pattern)
+                            format!("value '{}' for parameter '{}' does not contain pattern: {}", #schema_name_str, #param_name, #pattern)
                         ));
                     }
                 });
@@ -165,7 +190,7 @@ pub fn generate_wrapper_method_sync(tool: &ToolMethodInfo) -> TokenStream2 {
                     if let Some(val) = #param_name.map(|n| n as f64) {
                         if val < #min {
                             return Err(::tokitai::ToolError::validation_error(
-                                format!("参数 '{}' 的值 {} 小于最小值 {}", #schema_name_str, val, #min)
+                                format!("value {} for parameter '{}' is less than minimum {}", #schema_name_str, val, #min)
                             ));
                         }
                     }
@@ -175,7 +200,7 @@ pub fn generate_wrapper_method_sync(tool: &ToolMethodInfo) -> TokenStream2 {
                     let val = #param_name as f64;
                     if val < #min {
                         return Err(::tokitai::ToolError::validation_error(
-                            format!("参数 '{}' 的值 {} 小于最小值 {}", #schema_name_str, val, #min)
+                            format!("value {} for parameter '{}' is less than minimum {}", #schema_name_str, val, #min)
                         ));
                     }
                 });
@@ -188,7 +213,7 @@ pub fn generate_wrapper_method_sync(tool: &ToolMethodInfo) -> TokenStream2 {
                     if let Some(val) = #param_name.map(|n| n as f64) {
                         if val > #max {
                             return Err(::tokitai::ToolError::validation_error(
-                                format!("参数 '{}' 的值 {} 大于最大值 {}", #schema_name_str, val, #max)
+                                format!("value {} for parameter '{}' is greater than maximum {}", #schema_name_str, val, #max)
                             ));
                         }
                     }
@@ -198,7 +223,7 @@ pub fn generate_wrapper_method_sync(tool: &ToolMethodInfo) -> TokenStream2 {
                     let val = #param_name as f64;
                     if val > #max {
                         return Err(::tokitai::ToolError::validation_error(
-                            format!("参数 '{}' 的值 {} 大于最大值 {}", #schema_name_str, val, #max)
+                            format!("value {} for parameter '{}' is greater than maximum {}", #schema_name_str, val, #max)
                         ));
                     }
                 });
@@ -212,7 +237,7 @@ pub fn generate_wrapper_method_sync(tool: &ToolMethodInfo) -> TokenStream2 {
                         let len = val.len();
                         if len < #min_len {
                             return Err(::tokitai::ToolError::validation_error(
-                                format!("参数 '{}' 的长度 {} 小于最小长度 {}", #schema_name_str, len, #min_len)
+                                format!("length {} for parameter '{}' is less than minimum length {}", #schema_name_str, len, #min_len)
                             ));
                         }
                     }
@@ -222,7 +247,7 @@ pub fn generate_wrapper_method_sync(tool: &ToolMethodInfo) -> TokenStream2 {
                     let len = #param_name.len();
                     if len < #min_len {
                         return Err(::tokitai::ToolError::validation_error(
-                            format!("参数 '{}' 的长度 {} 小于最小长度 {}", #schema_name_str, len, #min_len)
+                            format!("length {} for parameter '{}' is less than minimum length {}", #schema_name_str, len, #min_len)
                         ));
                     }
                 });
@@ -236,7 +261,7 @@ pub fn generate_wrapper_method_sync(tool: &ToolMethodInfo) -> TokenStream2 {
                         let len = val.len();
                         if len > #max_len {
                             return Err(::tokitai::ToolError::validation_error(
-                                format!("参数 '{}' 的长度 {} 大于最大长度 {}", #schema_name_str, len, #max_len)
+                                format!("length {} for parameter '{}' is greater than maximum length {}", #schema_name_str, len, #max_len)
                             ));
                         }
                     }
@@ -246,7 +271,7 @@ pub fn generate_wrapper_method_sync(tool: &ToolMethodInfo) -> TokenStream2 {
                     let len = #param_name.len();
                     if len > #max_len {
                         return Err(::tokitai::ToolError::validation_error(
-                            format!("参数 '{}' 的长度 {} 大于最大长度 {}", #schema_name_str, len, #max_len)
+                            format!("length {} for parameter '{}' is greater than maximum length {}", #schema_name_str, len, #max_len)
                         ));
                     }
                 });
@@ -261,7 +286,7 @@ pub fn generate_wrapper_method_sync(tool: &ToolMethodInfo) -> TokenStream2 {
                         let remainder = (quotient - quotient.round()).abs();
                         if remainder > 0.0001 {
                             return Err(::tokitai::ToolError::validation_error(
-                                format!("参数 '{}' 的值 {} 不是 {} 的倍数", #schema_name_str, val, #multiple)
+                                format!("value {} for parameter '{}' is not a multiple of {}", #schema_name_str, val, #multiple)
                             ));
                         }
                     }
@@ -273,7 +298,7 @@ pub fn generate_wrapper_method_sync(tool: &ToolMethodInfo) -> TokenStream2 {
                     let remainder = (quotient - quotient.round()).abs();
                     if remainder > 0.0001 {
                         return Err(::tokitai::ToolError::validation_error(
-                            format!("参数 '{}' 的值 {} 不是 {} 的倍数", #schema_name_str, val, #multiple)
+                            format!("value {} for parameter '{}' is not a multiple of {}", #schema_name_str, val, #multiple)
                         ));
                     }
                 });
@@ -364,22 +389,41 @@ pub fn generate_wrapper_method(tool: &ToolMethodInfo, is_async: bool) -> TokenSt
                     })
                     .flatten();
             }
+        } else if let Some(default_value) = &p.default {
+            let default_json = serde_json::to_string(default_value)
+                .unwrap_or_else(|_| "null".to_string());
+            let default_lit = syn::LitStr::new(&default_json, Span::call_site());
+            quote! {
+                let #param_name: #param_type = serde_json::from_value(
+                    args.get(#schema_name_str).cloned()
+                        .unwrap_or_else(|| serde_json::from_str(#default_lit).unwrap())
+                )
+                .map_err(|e| ::tokitai::ToolError::validation_error(
+                    format!("parameter type mismatch: {} (expected: {})", #schema_name_str, std::any::type_name::<#param_type>())
+                ))?;
+            }
         } else {
             quote! {
                 let #param_name = args.get(#schema_name_str)
                     .ok_or_else(|| ::tokitai::ToolError::validation_error(
-                        format!("缺少必需参数 '{}' (类型：{})", #schema_name_str, std::any::type_name::<#param_type>())
+                        format!("missing required parameter '{}' (type: {})", #schema_name_str, std::any::type_name::<#param_type>())
                     ))?;
                 let mut #param_name: #param_type = serde_json::from_value(#param_name.clone())
                     .map_err(|e| ::tokitai::ToolError::validation_error(
-                        format!("参数类型错误：{} (期望类型：{})", #schema_name_str, std::any::type_name::<#param_type>())
+                        format!("parameter type mismatch: {} (expected: {})", #schema_name_str, std::any::type_name::<#param_type>())
                     ))?;
             }
         }
     });
 
     let param_validations = params.iter().flat_map(|p| {
-        let mut validations = Vec::new();
+        // Up to 9 validator slots can be filled per param (validate,
+        // one_of, pattern, min, max, min_length, max_length,
+        // multiple_of). The most common case is 0 (the param has no
+        // validators), but pre-allocating 1 means the hot path of
+        // "exactly one validator" is allocation-free, and we cap at
+        // a small constant to bound the upper case.
+        let mut validations = Vec::with_capacity(1);
         let param_name = &p.name;
         let schema_name_str = &p.schema_name;
 
@@ -403,14 +447,14 @@ pub fn generate_wrapper_method(tool: &ToolMethodInfo, is_async: bool) -> TokenSt
                         if !msg_en_str.is_empty() {
                             msg_en_str.to_string()
                         } else {
-                            format!("参数 '{}' 验证失败：{}", #schema_name_str, #validate_expr)
+                            format!("validation failed for parameter '{}': {}", #schema_name_str, #validate_expr)
                         }
                     }
                 }
             } else if let Some(ref msg) = p.validate_msg {
                 quote! { #msg.to_string() }
             } else {
-                quote! { format!("参数 '{}' 验证失败：{}", #schema_name_str, #validate_expr) }
+                quote! { format!("validation failed for parameter '{}': {}", #schema_name_str, #validate_expr) }
             };
             validations.push(quote! {
                 if !(#validate_expr_tokens) {
@@ -426,7 +470,7 @@ pub fn generate_wrapper_method(tool: &ToolMethodInfo, is_async: bool) -> TokenSt
                     if let Some(ref val) = #param_name {
                         if ![#(#allowed_values),*].contains(&val.as_str()) {
                             return Err(::tokitai::ToolError::validation_error(
-                                format!("参数 '{}' 的值 '{}' 不在允许的范围内，允许的值：{}", #schema_name_str, val, [#(#allowed_values),*].join(", "))
+                                format!("value '{}' for parameter '{}' is not in the allowed set, allowed values: {}", #schema_name_str, val, [#(#allowed_values),*].join(", "))
                             ));
                         }
                     }
@@ -436,7 +480,7 @@ pub fn generate_wrapper_method(tool: &ToolMethodInfo, is_async: bool) -> TokenSt
                 validations.push(quote! {
                     if ![#(#allowed_values),*].contains(&#param_name.as_str()) {
                         return Err(::tokitai::ToolError::validation_error(
-                            format!("参数 '{}' 的值 '{}' 不在允许的范围内，允许的值：{}", #schema_name_str, #param_name, [#(#allowed_values),*].join(", "))
+                            format!("value '{}' for parameter '{}' is not in the allowed set, allowed values: {}", #schema_name_str, #param_name, [#(#allowed_values),*].join(", "))
                         ));
                     }
                 });
@@ -449,7 +493,7 @@ pub fn generate_wrapper_method(tool: &ToolMethodInfo, is_async: bool) -> TokenSt
                     if let Some(ref val) = #param_name {
                         if !val.contains(#pattern) {
                             return Err(::tokitai::ToolError::validation_error(
-                                format!("参数 '{}' 的值 '{}' 不包含模式：{}", #schema_name_str, val, #pattern)
+                                format!("value '{}' for parameter '{}' does not contain pattern: {}", #schema_name_str, val, #pattern)
                             ));
                         }
                     }
@@ -458,7 +502,7 @@ pub fn generate_wrapper_method(tool: &ToolMethodInfo, is_async: bool) -> TokenSt
                 validations.push(quote! {
                     if !#param_name.contains(#pattern) {
                         return Err(::tokitai::ToolError::validation_error(
-                            format!("参数 '{}' 的值 '{}' 不包含模式：{}", #schema_name_str, #param_name, #pattern)
+                            format!("value '{}' for parameter '{}' does not contain pattern: {}", #schema_name_str, #param_name, #pattern)
                         ));
                     }
                 });
@@ -471,7 +515,7 @@ pub fn generate_wrapper_method(tool: &ToolMethodInfo, is_async: bool) -> TokenSt
                     if let Some(val) = #param_name.map(|n| n as f64) {
                         if val < #min {
                             return Err(::tokitai::ToolError::validation_error(
-                                format!("参数 '{}' 的值 {} 小于最小值 {}", #schema_name_str, val, #min)
+                                format!("value {} for parameter '{}' is less than minimum {}", #schema_name_str, val, #min)
                             ));
                         }
                     }
@@ -481,7 +525,7 @@ pub fn generate_wrapper_method(tool: &ToolMethodInfo, is_async: bool) -> TokenSt
                     let val = #param_name as f64;
                     if val < #min {
                         return Err(::tokitai::ToolError::validation_error(
-                            format!("参数 '{}' 的值 {} 小于最小值 {}", #schema_name_str, val, #min)
+                            format!("value {} for parameter '{}' is less than minimum {}", #schema_name_str, val, #min)
                         ));
                     }
                 });
@@ -494,7 +538,7 @@ pub fn generate_wrapper_method(tool: &ToolMethodInfo, is_async: bool) -> TokenSt
                     if let Some(val) = #param_name.map(|n| n as f64) {
                         if val > #max {
                             return Err(::tokitai::ToolError::validation_error(
-                                format!("参数 '{}' 的值 {} 大于最大值 {}", #schema_name_str, val, #max)
+                                format!("value {} for parameter '{}' is greater than maximum {}", #schema_name_str, val, #max)
                             ));
                         }
                     }
@@ -504,7 +548,7 @@ pub fn generate_wrapper_method(tool: &ToolMethodInfo, is_async: bool) -> TokenSt
                     let val = #param_name as f64;
                     if val > #max {
                         return Err(::tokitai::ToolError::validation_error(
-                            format!("参数 '{}' 的值 {} 大于最大值 {}", #schema_name_str, val, #max)
+                            format!("value {} for parameter '{}' is greater than maximum {}", #schema_name_str, val, #max)
                         ));
                     }
                 });
@@ -518,7 +562,7 @@ pub fn generate_wrapper_method(tool: &ToolMethodInfo, is_async: bool) -> TokenSt
                         let len = val.len();
                         if len < #min_len {
                             return Err(::tokitai::ToolError::validation_error(
-                                format!("参数 '{}' 的长度 {} 小于最小长度 {}", #schema_name_str, len, #min_len)
+                                format!("length {} for parameter '{}' is less than minimum length {}", #schema_name_str, len, #min_len)
                             ));
                         }
                     }
@@ -528,7 +572,7 @@ pub fn generate_wrapper_method(tool: &ToolMethodInfo, is_async: bool) -> TokenSt
                     let len = #param_name.len();
                     if len < #min_len {
                         return Err(::tokitai::ToolError::validation_error(
-                            format!("参数 '{}' 的长度 {} 小于最小长度 {}", #schema_name_str, len, #min_len)
+                            format!("length {} for parameter '{}' is less than minimum length {}", #schema_name_str, len, #min_len)
                         ));
                     }
                 });
@@ -542,7 +586,7 @@ pub fn generate_wrapper_method(tool: &ToolMethodInfo, is_async: bool) -> TokenSt
                         let len = val.len();
                         if len > #max_len {
                             return Err(::tokitai::ToolError::validation_error(
-                                format!("参数 '{}' 的长度 {} 大于最大长度 {}", #schema_name_str, len, #max_len)
+                                format!("length {} for parameter '{}' is greater than maximum length {}", #schema_name_str, len, #max_len)
                             ));
                         }
                     }
@@ -552,7 +596,7 @@ pub fn generate_wrapper_method(tool: &ToolMethodInfo, is_async: bool) -> TokenSt
                     let len = #param_name.len();
                     if len > #max_len {
                         return Err(::tokitai::ToolError::validation_error(
-                            format!("参数 '{}' 的长度 {} 大于最大长度 {}", #schema_name_str, len, #max_len)
+                            format!("length {} for parameter '{}' is greater than maximum length {}", #schema_name_str, len, #max_len)
                         ));
                     }
                 });
@@ -567,7 +611,7 @@ pub fn generate_wrapper_method(tool: &ToolMethodInfo, is_async: bool) -> TokenSt
                         let remainder = (quotient - quotient.round()).abs();
                         if remainder > 0.0001 {
                             return Err(::tokitai::ToolError::validation_error(
-                                format!("参数 '{}' 的值 {} 不是 {} 的倍数", #schema_name_str, val, #multiple)
+                                format!("value {} for parameter '{}' is not a multiple of {}", #schema_name_str, val, #multiple)
                             ));
                         }
                     }
@@ -579,7 +623,7 @@ pub fn generate_wrapper_method(tool: &ToolMethodInfo, is_async: bool) -> TokenSt
                     let remainder = (quotient - quotient.round()).abs();
                     if remainder > 0.0001 {
                         return Err(::tokitai::ToolError::validation_error(
-                            format!("参数 '{}' 的值 {} 不是 {} 的倍数", #schema_name_str, val, #multiple)
+                            format!("value {} for parameter '{}' is not a multiple of {}", #schema_name_str, val, #multiple)
                         ));
                     }
                 });
@@ -638,10 +682,13 @@ pub fn generate_wrapper_method(tool: &ToolMethodInfo, is_async: bool) -> TokenSt
             match tokio::runtime::Handle::try_current() {
                 Ok(handle) => handle.block_on(async { self.#method_name(#(#param_names),*).await }),
                 Err(_) => return Err(::tokitai::ToolError::internal_error(
-                    "无法在同步上下文中调用异步工具：当前线程没有 tokio 运行时"
+                    "cannot call async tool from sync context: no tokio runtime on current thread"
                 )),
             }
         }
+    } else if tool.is_async {
+        // 异步工具的异步包装：必须 .await future
+        quote! { self.#method_name(#(#param_names),*).await }
     } else {
         quote! { self.#method_name(#(#param_names),*) }
     };

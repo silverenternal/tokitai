@@ -2,6 +2,10 @@
 target/
 **/target/
 
+# Rust backup files (rustfmt, etc.)
+**/*.rs.bk
+*.rs.bk
+
 # IDE
 .idea/
 .vscode/
@@ -16,6 +20,13 @@ Thumbs.db
 # Test artifacts
 tests/ui/*.stderr
 tests/ui/*.stdout
+
+# Test fixture temp directories
+tests/fixtures/tmp/
+**/tmp/
+
+# Node / JS toolchain (for cross-language SDK examples that use it)
+node_modules/
 
 # Build
 **/*.pdb

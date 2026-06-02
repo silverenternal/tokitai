@@ -18,7 +18,11 @@ pub fn extract_params(
     hidden_params: &[String],
     param_validations: &[(String, ParamToolAttrs)],
 ) -> Vec<ParamInfo> {
-    let mut params = Vec::new();
+    // Upper bound: at most every input becomes a param. We over-allocate
+    // by 1 (the trailing reserve) only if we filter out a `self` /
+    // `_self` / hidden arg, but the one extra capacity is cheaper
+    // than an additional `Vec::reserve`.
+    let mut params = Vec::with_capacity(inputs.len());
 
     let param_docs = super::docs::extract_param_docs(fn_attrs);
 
@@ -88,6 +92,11 @@ pub fn extract_params(
                         && param_tool_attrs.multiple_of.is_none()
                     {
                         param_tool_attrs.multiple_of = method_level_attrs.1.multiple_of;
+                    }
+                    if method_level_attrs.1.validate.is_some()
+                        && param_tool_attrs.validate.is_none()
+                    {
+                        param_tool_attrs.validate = method_level_attrs.1.validate.clone();
                     }
                     if method_level_attrs.1.validate_msg.is_some()
                         && param_tool_attrs.validate_msg.is_none()

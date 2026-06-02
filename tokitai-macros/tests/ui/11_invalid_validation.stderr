@@ -3,10 +3,3 @@ error: cannot find attribute `param_tool` in this scope
    |
 13 |         #[param_tool(validate = "invalid_syntax(")]
    |           ^^^^^^^^^^
-   |
-help: consider importing one of these attribute macros
-   |
- 3 + use tokitai::param_tool;
-   |
- 3 + use tokitai_macros::param_tool;
-   |

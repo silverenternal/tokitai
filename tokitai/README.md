@@ -32,7 +32,7 @@ Tokitai 是一个零运行时依赖的过程宏库，只需一个 `#[tool]` 属�
 
 ```toml
 [dependencies]
-tokitai = "0.4.0"
+tokitai = "0.5.0"
 ```
 
 就这一行！所有必需的依赖（serde、serde_json、thiserror）都会自动包含。
@@ -74,7 +74,7 @@ println!("{}", result);  // 30
 
 | 特性 | 说明 |
 |------|------|
-| **零依赖侵入** | 用户只需添加 `tokitai = "0.4.0"` |
+| **零依赖侵入** | 用户只需添加 `tokitai = "0.5.0"` |
 | **编译期生成** | 工具定义在编译期生成，类型错误早发现 |
 | **单一属性** | 只需 `#[tool]`，无需多个标签 |
 | **类型安全** | Rust 类型自动映射到 JSON Schema |
@@ -153,7 +153,7 @@ Tokitai 由三个 crate 组成：
 **99% 的用户只需要：**
 ```toml
 [dependencies]
-tokitai = "0.4.0"
+tokitai = "0.5.0"
 ```
 
 ## 📝 示例

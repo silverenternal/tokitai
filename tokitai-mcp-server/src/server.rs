@@ -739,6 +739,7 @@ impl MultiToolProvider {
                 name: def.name.clone(),
                 description: def.description.clone(),
                 input_schema: schema,
+                output_schema: None,
             };
             self.tool_defs.push(mcp_tool);
         }

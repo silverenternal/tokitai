@@ -1,6 +1,6 @@
 [package]
 name = "tokitai-macros"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2021"
 authors = ["silverenternal <3147264070@qq.com>"]
 license = "MIT OR Apache-2.0"
@@ -33,9 +33,19 @@ thiserror = "1.0"
 trybuild = "1.0"
 tokio = { version = "1.0", features = ["full"] }
 criterion = "0.5"
+proptest = "1.5"
+syn = { version = "2.0", features = ["full"] }
+proc-macro2 = "1.0"
+quote = "1.0"
 
 [features]
 serde = []
+# Tokio executor: when enabled, the macro-generated sync-from-async path will
+# use `tokio::runtime::Handle::block_on` to drive the future. Disable this
+# (`default-features = false` and omit `tokio`) on runtimes such as
+# `async-std` or `smol`; in that case you MUST register a custom
+# `tokitai_core::AsyncExecutor` via `set_async_executor(...)`.
+tokio = []
 
 [[bench]]
 name = "macro_bench"

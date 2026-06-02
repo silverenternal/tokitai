@@ -1,0 +1,12 @@
+# Local data directory — the example writes a SQLite file here at startup.
+data/
+
+# Build artifacts
+target/
+**/target/
+
+# Editor / OS noise
+.idea/
+.vscode/
+.DS_Store
+*.swp

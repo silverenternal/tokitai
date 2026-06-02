@@ -1,0 +1,17 @@
+{
+  "name": "tokitai-client-ts",
+  "version": "0.1.0",
+  "description": "Zero-dependency typed client for Tokitai MCP servers",
+  "type": "module",
+  "main": "tokitai-client.ts",
+  "license": "MIT OR Apache-2.0",
+  "scripts": {
+    "build": "tsc",
+    "start": "node --import tsx example.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.0"
+  }
+}

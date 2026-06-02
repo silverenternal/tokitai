@@ -11,24 +11,28 @@ use crate::tool::types::tool_method::ToolMethodInfo;
 
 /// 生成编译期工具定义函数
 pub fn generate_tool_def_consts(tools: &[ToolMethodInfo]) -> Vec<TokenStream2> {
-    let mut consts = Vec::new();
+    // Each tool emits one primary def + one def per alias. Pre-allocate
+    // an exact-size buffer so the outer `Vec` never reallocates while
+    // we are emitting tokens.
+    let total: usize = tools.len() + tools.iter().map(|t| t.alias.len()).sum::<usize>();
+    let mut consts = Vec::with_capacity(total);
 
     for tool in tools {
         if tool.is_generic {
             let name = &tool.name;
             consts.push(quote! {
                 compile_error!(concat!(
-                    "🔧 工具方法 `",
+                    "🔧 Tool method `",
                     #name,
-                    "` 使用了泛型参数，这不被支持。\n",
-                    "💡 解决方案：\n",
-                    "   1. 使用具体类型：fn ",
+                    "` uses generic parameters, which are not supported.\n",
+                    "💡 Solutions:\n",
+                    "   1. Use a concrete type: fn ",
                     #name,
                     "(data: MyType) -> String\n",
-                    "   2. 使用 serde_json::Value: fn ",
+                    "   2. Use serde_json::Value: fn ",
                     #name,
                     "(data: Value) -> String\n",
-                    "   3. 在方法内部手动反序列化"
+                    "   3. Manually deserialize inside the method"
                 ));
             });
             continue;
@@ -88,7 +92,7 @@ pub fn generate_tool_def_consts(tools: &[ToolMethodInfo]) -> Vec<TokenStream2> {
         for (i, alias_name) in tool.alias.iter().enumerate() {
             let alias_const_name =
                 format_ident!("__TOOL_DEF_ALIAS_{}_{}", tool.name.to_uppercase(), i);
-            let alias_desc = format!("(别名：{}) {}", tool.tool_name, tool.description);
+            let alias_desc = format!("(alias of {}) {}", tool.tool_name, tool.description);
 
             consts.push(quote! {
                 fn #alias_const_name() -> &'static ::tokitai::ToolDefinition {
@@ -109,7 +113,10 @@ pub fn generate_all_tool_defs_array(
     tools: &[ToolMethodInfo],
     impl_type: &Type,
 ) -> Vec<TokenStream2> {
-    let mut defs = Vec::new();
+    // Same upper bound as `generate_tool_def_consts`: one entry per
+    // primary tool + one per alias.
+    let total: usize = tools.len() + tools.iter().map(|t| t.alias.len()).sum::<usize>();
+    let mut defs = Vec::with_capacity(total);
 
     for tool in tools {
         let const_name = format_ident!("__TOOL_DEF_{}", tool.name.to_uppercase());

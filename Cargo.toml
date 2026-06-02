@@ -5,6 +5,7 @@ members = [
     "tokitai",
     "tokitai-mcp-server",
     "examples",
+    "examples/database_tool",
 ]
 resolver = "2"
 

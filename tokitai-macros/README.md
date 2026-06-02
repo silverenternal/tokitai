@@ -23,7 +23,7 @@ Tokitai Macros 提供了 `#[tool]` 过程宏，用于在编译期自动生成 AI
 
 ```toml
 [dependencies]
-tokitai = "0.4.0"
+tokitai = "0.5.0"
 ```
 
 **注意**：通常你不需要直接添加 `tokitai-macros` 依赖，它通过 `tokitai` crate 自动引入。
@@ -66,7 +66,7 @@ println!("结果：{}", result);  // 30
 
 1. **提取文档注释** 作为工具描述
 2. **生成 JSON Schema** 从 Rust 类型自动映射参数
-3. **创建 `TOOL_DEFINITIONS` 常量** 包含所有工具元数据
+3. **创建 `tool_definitions()` 方法** 包含所有工具元数据
 4. **实现 `call_tool` 分发器** 用于运行时调用
 5. **生成参数解析代码** 自动验证和转换参数类型
 

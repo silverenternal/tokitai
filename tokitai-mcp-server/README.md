@@ -22,8 +22,8 @@ Tokitai MCP Server 提供了基于 MCP (Model Context Protocol) 协议的服务�
 
 ```toml
 [dependencies]
-tokitai = "0.4.0"
-tokitai-mcp-server = "0.4.0"
+tokitai = "0.5.0"
+tokitai-mcp-server = "0.5.0"
 tokio = { version = "1", features = ["full"] }
 ```
 

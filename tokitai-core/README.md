@@ -31,7 +31,7 @@ Tokitai Core 提供了 Tokitai AI 工具集成系统的基础类型和 trait。�
 
 ```toml
 [dependencies]
-tokitai-core = "0.3"
+tokitai-core = "0.5"
 ```
 
 ### 基本使用

@@ -11,20 +11,22 @@ use super::param::{
 };
 use crate::tool::types::param::ParamToolAttrs;
 
-/// impl 块级别的工具属性
+/// impl-block-level tool attributes.
 ///
-/// 注意：当前版本中 `name` 和 `description` 字段暂未使用
-/// 保留这些字段是为了未来扩展（如工具注册表功能）
-///
-/// TODO(#42): 实现工具注册表功能，届时将使用这些字段
-/// 计划：https://github.com/silverenternal/tokitai/issues/42
-/// 预计实现：v0.5.0 (2026 Q2)
+/// The `name` and `description` fields are reserved for a future
+/// tool-registry feature (see `silverenternal/tokitai#42`) that
+/// would let users override per-impl tool metadata from a single
+/// place. The current release only uses the per-method `@tool(name=…)`
+/// and `@tool(desc=…)` doc-comment attributes; the impl-level fields
+/// are accepted by the parser for forward compatibility and stored
+/// as dead-code so downstream registry code can adopt them without
+/// another breaking change.
 #[derive(Default)]
 pub struct ToolAttributes {
-    /// 工具名称（保留用于 v0.5.0 的工具注册表功能）
+    /// Reserved for the tool-registry feature.
     #[allow(dead_code)]
     pub name: Option<String>,
-    /// 工具描述（保留用于 v0.5.0 的工具注册表功能）
+    /// Reserved for the tool-registry feature.
     #[allow(dead_code)]
     pub description: Option<String>,
 }
@@ -313,6 +315,7 @@ impl Parse for MethodToolAttrs {
                         "min_items_",
                         "max_items_",
                         "multiple_of_",
+                        "validate_",
                         "validate_msg_",
                         "default_",
                         "example_",
@@ -391,6 +394,9 @@ impl Parse for MethodToolAttrs {
                                     }
                                     "multiple_of_" => {
                                         param_attrs.multiple_of = parse_lit_to_f64(input)?;
+                                    }
+                                    "validate_" => {
+                                        param_attrs.validate = parse_lit_to_string(input)?;
                                     }
                                     "validate_msg_" => {
                                         param_attrs.validate_msg = parse_lit_to_string(input)?;

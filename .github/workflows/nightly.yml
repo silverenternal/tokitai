@@ -1,0 +1,41 @@
+name: Nightly
+
+on:
+  schedule:
+    # Every Monday at 06:00 UTC.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check-nightly:
+    name: Check on nightly Rust
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4.2.2
+
+      - name: Install nightly Rust
+        uses: dtolnay/rust-toolchain@v1.0.0
+        with:
+          toolchain: nightly
+          components: rustfmt, clippy
+
+      - name: Cache cargo registry and build artifacts
+        uses: Swatinem/rust-cache@v2.7.5
+        with:
+          cache-on-failure: true
+
+      # We only run `cargo check` on nightly: full tests are intentionally
+      # skipped because they would be redundant with the stable CI matrix
+      # and the build would take significantly longer. The goal is to catch
+      # breakage from language/dependency changes early.
+      - name: cargo check (all features)
+        run: cargo check --workspace --all-features --all-targets

@@ -81,7 +81,7 @@ fn test_auto_validate_empty_name() {
 
     assert!(result.is_err());
     let err_msg = result.unwrap_err().to_string();
-    assert!(err_msg.contains("验证失败"));
+    assert!(err_msg.contains("validation failed"));
     assert!(err_msg.contains("name"));
 }
 
@@ -101,7 +101,7 @@ fn test_auto_validate_age_out_of_range() {
 
     assert!(result.is_err());
     let err_msg = result.unwrap_err().to_string();
-    assert!(err_msg.contains("验证失败"));
+    assert!(err_msg.contains("validation failed"));
     assert!(err_msg.contains("age"));
 
     // 年龄 <= 0
@@ -116,7 +116,7 @@ fn test_auto_validate_age_out_of_range() {
 
     assert!(result.is_err());
     let err_msg = result.unwrap_err().to_string();
-    assert!(err_msg.contains("验证失败"));
+    assert!(err_msg.contains("validation failed"));
     assert!(err_msg.contains("age"));
 }
 
@@ -154,7 +154,7 @@ fn test_one_of_validation() {
 
     assert!(result.is_err());
     let err_msg = result.unwrap_err().to_string();
-    assert!(err_msg.contains("验证失败"));
+    assert!(err_msg.contains("validation failed"));
     assert!(err_msg.contains("status"));
 
     // 有效的 status
@@ -186,7 +186,7 @@ fn test_min_max_validation() {
 
     assert!(result.is_err());
     let err_msg = result.unwrap_err().to_string();
-    assert!(err_msg.contains("验证失败"));
+    assert!(err_msg.contains("validation failed"));
     assert!(err_msg.contains("amount"));
 
     // 有效值
@@ -218,7 +218,7 @@ fn test_min_max_length_validation() {
 
     assert!(result.is_err());
     let err_msg = result.unwrap_err().to_string();
-    assert!(err_msg.contains("验证失败"));
+    assert!(err_msg.contains("validation failed"));
 
     // keyword 长度 > 20
     let result = service.call_tool(

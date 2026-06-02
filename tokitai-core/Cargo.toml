@@ -1,6 +1,6 @@
 [package]
 name = "tokitai-core"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2021"
 authors = ["silverenternal <3147264070@qq.com>"]
 license = "MIT OR Apache-2.0"
@@ -16,9 +16,12 @@ rust-version = "1.80"
 serde = { version = "1.0", features = ["derive"], optional = true }
 serde_json = { version = "1.0", optional = true }
 
-[dev-dependencies]
-serial_test = "3.0"
-
 [features]
 default = ["serde"]
 serde = ["dep:serde", "dep:serde_json"]
+# Reserved for future runtime-agnostic executor backends
+runtime-agnostic = []
+
+[dev-dependencies]
+serial_test = "3.0"
+futures = "0.3"

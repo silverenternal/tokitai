@@ -34,6 +34,21 @@ use serde::{Deserialize, Serialize};
 ///
 /// This enum represents different types of configurations that can be applied
 /// to tools and their parameters.
+///
+/// # Example
+///
+/// ```rust
+/// use tokitai_core::ToolConfig;
+///
+/// // Override the description of a tool:
+/// let c1 = ToolConfig::Desc("Look up a user by id".to_string());
+///
+/// // Add per-parameter metadata to the generated JSON Schema:
+/// let c2 = ToolConfig::ParamMin {
+///     name: "age".to_string(),
+///     min: 0.0,
+/// };
+/// ```
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum ToolConfig {
@@ -42,49 +57,130 @@ pub enum ToolConfig {
     /// Tool tags for categorization
     Tags(Vec<String>),
     /// Parameter description override
-    ParamDesc { name: String, desc: String },
+    ParamDesc {
+        /// Name of the parameter whose description is being overridden.
+        name: String,
+        /// New description for the parameter.
+        desc: String,
+    },
     /// Parameter example value
     ParamExample {
+        /// Name of the parameter this example applies to.
         name: String,
+        /// Example value to surface in the generated JSON Schema.
         example: serde_json::Value,
     },
     /// Parameter default value
     ParamDefault {
+        /// Name of the parameter receiving the default value.
         name: String,
+        /// Default value to surface in the generated JSON Schema.
         default: serde_json::Value,
     },
     /// Parameter required flag
-    ParamRequired { name: String, required: bool },
+    ParamRequired {
+        /// Name of the parameter whose `required` flag is being toggled.
+        name: String,
+        /// New `required` value (`true` enforces the parameter).
+        required: bool,
+    },
     /// Parameter minimum value (for numbers)
-    ParamMin { name: String, min: f64 },
+    ParamMin {
+        /// Name of the parameter receiving the minimum constraint.
+        name: String,
+        /// Lower bound for the parameter (inclusive).
+        min: f64,
+    },
     /// Parameter maximum value (for numbers)
-    ParamMax { name: String, max: f64 },
+    ParamMax {
+        /// Name of the parameter receiving the maximum constraint.
+        name: String,
+        /// Upper bound for the parameter (inclusive).
+        max: f64,
+    },
     /// Parameter minimum length (for strings)
-    ParamMinLength { name: String, min_length: u64 },
+    ParamMinLength {
+        /// Name of the parameter receiving the minimum-length constraint.
+        name: String,
+        /// Minimum string length (inclusive).
+        min_length: u64,
+    },
     /// Parameter maximum length (for strings)
-    ParamMaxLength { name: String, max_length: u64 },
+    ParamMaxLength {
+        /// Name of the parameter receiving the maximum-length constraint.
+        name: String,
+        /// Maximum string length (inclusive).
+        max_length: u64,
+    },
     /// Parameter regex pattern (for strings)
-    ParamPattern { name: String, pattern: String },
+    ParamPattern {
+        /// Name of the parameter receiving the pattern constraint.
+        name: String,
+        /// Regular expression the value must match.
+        pattern: String,
+    },
     /// Parameter minimum items (for arrays)
-    ParamMinItems { name: String, min_items: u64 },
+    ParamMinItems {
+        /// Name of the parameter receiving the minimum-items constraint.
+        name: String,
+        /// Minimum number of array elements.
+        min_items: u64,
+    },
     /// Parameter maximum items (for arrays)
-    ParamMaxItems { name: String, max_items: u64 },
+    ParamMaxItems {
+        /// Name of the parameter receiving the maximum-items constraint.
+        name: String,
+        /// Maximum number of array elements.
+        max_items: u64,
+    },
     /// Parameter multiple of (for numbers)
-    ParamMultipleOf { name: String, multiple_of: f64 },
+    ParamMultipleOf {
+        /// Name of the parameter receiving the multiple-of constraint.
+        name: String,
+        /// Value the parameter must be a multiple of.
+        multiple_of: f64,
+    },
 }
 
 impl ToolConfig {
     /// Create a description configuration.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::ToolConfig;
+    ///
+    /// let c = ToolConfig::desc("Look up a user by id");
+    /// assert!(matches!(c, ToolConfig::Desc(_)));
+    /// ```
     pub fn desc<S: Into<String>>(desc: S) -> Self {
         ToolConfig::Desc(desc.into())
     }
 
     /// Create a tags configuration.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::ToolConfig;
+    ///
+    /// let c = ToolConfig::tags(vec!["read".to_string(), "user".to_string()]);
+    /// assert!(matches!(c, ToolConfig::Tags(_)));
+    /// ```
     pub fn tags(tags: Vec<String>) -> Self {
         ToolConfig::Tags(tags)
     }
 
     /// Create a parameter description configuration.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::ToolConfig;
+    ///
+    /// let c = ToolConfig::param_desc("id", "User identifier");
+    /// assert!(matches!(c, ToolConfig::ParamDesc { .. }));
+    /// ```
     pub fn param_desc<N: Into<String>, D: Into<String>>(name: N, desc: D) -> Self {
         ToolConfig::ParamDesc {
             name: name.into(),
@@ -93,6 +189,16 @@ impl ToolConfig {
     }
 
     /// Create a parameter example configuration.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::ToolConfig;
+    /// use serde_json::json;
+    ///
+    /// let c = ToolConfig::param_example("id", json!("user-42"));
+    /// assert!(matches!(c, ToolConfig::ParamExample { .. }));
+    /// ```
     pub fn param_example<N: Into<String>>(name: N, example: serde_json::Value) -> Self {
         ToolConfig::ParamExample {
             name: name.into(),
@@ -101,6 +207,16 @@ impl ToolConfig {
     }
 
     /// Create a parameter default configuration.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::ToolConfig;
+    /// use serde_json::json;
+    ///
+    /// let c = ToolConfig::param_default("limit", json!(10));
+    /// assert!(matches!(c, ToolConfig::ParamDefault { .. }));
+    /// ```
     pub fn param_default<N: Into<String>>(name: N, default: serde_json::Value) -> Self {
         ToolConfig::ParamDefault {
             name: name.into(),
@@ -109,6 +225,15 @@ impl ToolConfig {
     }
 
     /// Create a parameter required configuration.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::ToolConfig;
+    ///
+    /// let c = ToolConfig::param_required("id", true);
+    /// assert!(matches!(c, ToolConfig::ParamRequired { required: true, .. }));
+    /// ```
     pub fn param_required<N: Into<String>>(name: N, required: bool) -> Self {
         ToolConfig::ParamRequired {
             name: name.into(),
@@ -117,6 +242,15 @@ impl ToolConfig {
     }
 
     /// Create a parameter minimum configuration.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::ToolConfig;
+    ///
+    /// let c = ToolConfig::param_min("age", 0.0);
+    /// assert!(matches!(c, ToolConfig::ParamMin { min, .. } if min == 0.0));
+    /// ```
     pub fn param_min<N: Into<String>>(name: N, min: f64) -> Self {
         ToolConfig::ParamMin {
             name: name.into(),
@@ -125,6 +259,15 @@ impl ToolConfig {
     }
 
     /// Create a parameter maximum configuration.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::ToolConfig;
+    ///
+    /// let c = ToolConfig::param_max("age", 120.0);
+    /// assert!(matches!(c, ToolConfig::ParamMax { max, .. } if max == 120.0));
+    /// ```
     pub fn param_max<N: Into<String>>(name: N, max: f64) -> Self {
         ToolConfig::ParamMax {
             name: name.into(),
@@ -133,6 +276,15 @@ impl ToolConfig {
     }
 
     /// Create a parameter minimum length configuration.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::ToolConfig;
+    ///
+    /// let c = ToolConfig::param_min_length("username", 3);
+    /// assert!(matches!(c, ToolConfig::ParamMinLength { min_length: 3, .. }));
+    /// ```
     pub fn param_min_length<N: Into<String>>(name: N, min_length: u64) -> Self {
         ToolConfig::ParamMinLength {
             name: name.into(),
@@ -141,6 +293,15 @@ impl ToolConfig {
     }
 
     /// Create a parameter maximum length configuration.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::ToolConfig;
+    ///
+    /// let c = ToolConfig::param_max_length("username", 32);
+    /// assert!(matches!(c, ToolConfig::ParamMaxLength { max_length: 32, .. }));
+    /// ```
     pub fn param_max_length<N: Into<String>>(name: N, max_length: u64) -> Self {
         ToolConfig::ParamMaxLength {
             name: name.into(),
@@ -149,6 +310,15 @@ impl ToolConfig {
     }
 
     /// Create a parameter pattern configuration.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::ToolConfig;
+    ///
+    /// let c = ToolConfig::param_pattern("email", r"^[^@]+@[^@]+$");
+    /// assert!(matches!(c, ToolConfig::ParamPattern { .. }));
+    /// ```
     pub fn param_pattern<N: Into<String>, P: Into<String>>(name: N, pattern: P) -> Self {
         ToolConfig::ParamPattern {
             name: name.into(),
@@ -157,6 +327,15 @@ impl ToolConfig {
     }
 
     /// Create a parameter minimum items configuration.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::ToolConfig;
+    ///
+    /// let c = ToolConfig::param_min_items("tags", 1);
+    /// assert!(matches!(c, ToolConfig::ParamMinItems { min_items: 1, .. }));
+    /// ```
     pub fn param_min_items<N: Into<String>>(name: N, min_items: u64) -> Self {
         ToolConfig::ParamMinItems {
             name: name.into(),
@@ -165,6 +344,15 @@ impl ToolConfig {
     }
 
     /// Create a parameter maximum items configuration.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::ToolConfig;
+    ///
+    /// let c = ToolConfig::param_max_items("tags", 10);
+    /// assert!(matches!(c, ToolConfig::ParamMaxItems { max_items: 10, .. }));
+    /// ```
     pub fn param_max_items<N: Into<String>>(name: N, max_items: u64) -> Self {
         ToolConfig::ParamMaxItems {
             name: name.into(),
@@ -173,6 +361,15 @@ impl ToolConfig {
     }
 
     /// Create a parameter multiple of configuration.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::ToolConfig;
+    ///
+    /// let c = ToolConfig::param_multiple_of("step", 0.5);
+    /// assert!(matches!(c, ToolConfig::ParamMultipleOf { multiple_of, .. } if multiple_of == 0.5));
+    /// ```
     pub fn param_multiple_of<N: Into<String>>(name: N, multiple_of: f64) -> Self {
         ToolConfig::ParamMultipleOf {
             name: name.into(),
@@ -215,6 +412,15 @@ pub struct ToolConfigRegistry {
 
 impl ToolConfigRegistry {
     /// Create a new empty registry.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::ToolConfigRegistry;
+    ///
+    /// let registry = ToolConfigRegistry::new();
+    /// assert!(!registry.has_config("any_tool"));
+    /// ```
     pub fn new() -> Self {
         Self {
             configs: Arc::new(RwLock::new(HashMap::new())),

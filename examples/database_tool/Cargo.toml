@@ -1,0 +1,40 @@
+[package]
+name = "database_tool"
+version = "0.5.0"
+edition = "2021"
+publish = false
+description = "Real-world example: Tokitai MCP server wired to a SQLite database via sqlx."
+license = "MIT OR Apache-2.0"
+
+# This crate is intentionally a workspace member so it can be run with
+# `cargo run -p database_tool`. It pulls in `sqlx` and friends locally; the
+# Tokitai workspace itself is not modified.
+
+[dependencies]
+# Tokitai (re-exported MCP helpers + macros).
+tokitai = { path = "../../tokitai", features = ["mcp"] }
+# `tokitai-core` is a direct dependency of the user crate because the
+# generated `#[tool]` impl block refers to it via `::tokitai_core::*`.
+tokitai-core = { path = "../../tokitai-core" }
+# Standalone MCP server crate (axum + tracing). Pulled in by path because
+# the crate is not yet published on crates.io.
+tokitai-mcp-server = { path = "../../tokitai-mcp-server" }
+
+# Database
+sqlx = { version = "0.8", default-features = false, features = [
+    "runtime-tokio-rustls",
+    "sqlite",
+    "macros",
+    "chrono",
+] }
+
+# Async / runtime / observability / ser
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+thiserror = "1.0"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }

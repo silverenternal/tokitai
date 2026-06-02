@@ -1,8 +1,8 @@
-error: 🔧 工具方法 `generic_method` 使用了泛型参数，这不被支持。
-       💡 解决方案：
-          1. 使用具体类型：fn generic_method(data: MyType) -> String
-          2. 使用 serde_json::Value: fn generic_method(data: Value) -> String
-          3. 在方法内部手动反序列化
+error: 🔧 Tool method `generic_method` uses generic parameters, which are not supported.
+       💡 Solutions:
+          1. Use a concrete type: fn generic_method(data: MyType) -> String
+          2. Use serde_json::Value: fn generic_method(data: Value) -> String
+          3. Manually deserialize inside the method
  --> tests/ui/08_generic_method.rs:8:1
   |
 8 | #[tool]

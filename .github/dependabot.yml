@@ -1,0 +1,59 @@
+version: 2
+
+updates:
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "UTC"
+    # Group all patch + minor Cargo updates into a single PR so reviewers are
+    # not flooded. Major bumps are intentionally kept separate so they can be
+    # reviewed and audited one at a time.
+    groups:
+      cargo-minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    # Major version bumps of `axum` and `tokio` are deferred manually because
+    # the workspace pins specific minor versions of these (axum = 0.7,
+    # tokio = 1) and they ship breaking changes across major versions that
+    # are not always caught by the `cargo build` matrix.
+    ignore:
+      - dependency-name: "axum"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "tokio"
+        update-types: ["version-update:semver-major"]
+    labels:
+      - "dependencies"
+      - "cargo"
+    commit-message:
+      prefix: "deps"
+      prefix-development: "deps(dev)"
+      include: "scope"
+    # Keep at most 5 open Cargo Dependabot PRs to avoid pile-up.
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "UTC"
+    groups:
+      actions-minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "ci"
+    open-pull-requests-limit: 5

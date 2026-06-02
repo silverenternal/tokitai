@@ -21,7 +21,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! tokitai = "0.3.3"
+//! tokitai = "0.4"
 //! ```
 //!
 //! Then use the `#[tool]` macro:
@@ -62,7 +62,8 @@
 //!
 //! 1. Extracts doc comments as tool descriptions
 //! 2. Generates JSON Schema for parameters from Rust types
-//! 3. Creates `TOOL_DEFINITIONS` constant with all tool metadata
+//! 3. Generates a `__get_tool_definitions()` helper and implements
+//!    `tokitai_core::ToolProvider::tool_definitions()`
 //! 4. Implements `call_tool` dispatcher for runtime invocation
 //! 5. Generates parameter parsing and validation code
 //!
@@ -85,31 +86,33 @@
 //! For each `#[tool]` impl block, the macro generates:
 //!
 //! ```rust,ignore
-//! // 1. Tool definitions constant
+//! // 1. Tool definitions helper + `ToolProvider` trait impl
 //! impl Calculator {
-//!     pub const TOOL_DEFINITIONS: &'static [ToolDefinition] = &[
-//!         ToolDefinition {
-//!             name: "add",
-//!             description: "Add two numbers together",
-//!             input_schema: "{\"type\":\"object\",\"properties\":{\"a\":{\"type\":\"integer\"},\"b\":{\"type\":\"integer\"}},\"required\":[\"a\",\"b\"]}",
-//!         },
-//!         // ... more tools
-//!     ];
+//!     fn __get_tool_definitions() -> &'static [ToolDefinition] {
+//!         static TOOLS: ::std::sync::LazyLock<::std::vec::Vec<ToolDefinition>> =
+//!             ::std::sync::LazyLock::new(|| vec![
+//!                 ToolDefinition {
+//!                     name: "add",
+//!                     description: "Add two numbers together",
+//!                     input_schema: "{\"type\":\"object\",\"properties\":{\"a\":{\"type\":\"integer\"},\"b\":{\"type\":\"integer\"}},\"required\":[\"a\",\"b\"]}",
+//!                 },
+//!                 // ... more tools
+//!             ]);
+//!         &TOOLS
+//!     }
 //! }
-//!
-//! // 2. ToolProvider trait implementation
 //! impl ToolProvider for Calculator {
 //!     fn tool_definitions() -> &'static [ToolDefinition] {
-//!         Self::tool_definitions()
+//!         Self::__get_tool_definitions()
 //!     }
 //! }
 //!
-//! // 3. call_tool dispatcher
+//! // 2. call_tool dispatcher
 //! impl Calculator {
 //!     pub fn call_tool(&self, name: &str, args: &Value) -> Result<Value, ToolError> {
 //!         match name {
-//!             "add" => self.__call_add(args).await,
-//!             "multiply" => self.__call_multiply(args).await,
+//!             "add" => self.__call_add(args),
+//!             "multiply" => self.__call_multiply(args),
 //!             _ => Err(ToolError::not_found(format!("Unknown tool: {}", name))),
 //!         }
 //!     }
@@ -180,6 +183,7 @@
 //! - [`tokitai`](https://crates.io/crates/tokitai) - Main crate with runtime support
 //! - [`tokitai-core`](https://crates.io/crates/tokitai-core) - Core types and traits
 
+mod error;
 mod tool;
 
 use proc_macro::TokenStream;
@@ -244,9 +248,10 @@ use proc_macro::TokenStream;
 ///
 /// The macro generates:
 ///
-/// 1. `const TOOL_DEFINITIONS: &'static [ToolDefinition]` - Compile-time tool definitions
-/// 2. `fn call_tool(&self, name: &str, args: &Value) -> Result<Value, ToolError>` - Tool dispatcher
-/// 3. Wrapper functions for each tool with JSON parameter parsing
+/// 1. `fn __get_tool_definitions() -> &'static [ToolDefinition]` - lazy-initialized tool definitions
+/// 2. `impl ToolProvider` - exposes `tool_definitions()` to the runtime
+/// 3. `fn call_tool(&self, name: &str, args: &Value) -> Result<Value, ToolError>` - Tool dispatcher
+/// 4. Wrapper functions for each tool with JSON parameter parsing
 ///
 /// ## Features
 ///
@@ -510,3 +515,59 @@ pub fn param_tool(_attr: TokenStream, item: TokenStream) -> TokenStream {
 pub fn config(item: TokenStream) -> TokenStream {
     tool::config(item)
 }
+
+// ---------------------------------------------------------------------------
+// Hidden compile-time hooks used by `tokitai-macros/tests/property_based_test.rs`.
+//
+// These are NOT part of the public API and are not re-exported by `tokitai`.
+// They exist solely to bridge proptest (a runtime testing framework) with
+// the `#[tool]` macro (which only runs at compile time):
+//
+// * `__property_expand` runs the `tool` proc-macro on its `item`
+//   argument and emits a `&'static str` literal containing the
+//   rendered expansion. The runtime test compares that string
+//   against a hand-curated snapshot.
+//
+// * `__property_would_error` runs the same pipeline and emits a
+//   `bool` literal — `true` if the expansion contains a
+//   `compile_error!` invocation, `false` otherwise.
+//
+// The tests file is at
+// `tokitai-macros/tests/property_based_test.rs`; see the
+// "Property-based testing" doc under `docs/internal/` for
+// the rationale and design.
+// ---------------------------------------------------------------------------
+#[doc(hidden)]
+#[proc_macro]
+pub fn __property_expand(item: TokenStream) -> TokenStream {
+    use proc_macro2::Literal;
+    use proc_macro2::TokenStream as TokenStream2;
+
+    let result = tool::tool(TokenStream::new(), item);
+    let result_ts2: TokenStream2 = result.into();
+    let rendered = result_ts2.to_string();
+    // Use a `Literal::string` so the macro expansion is a
+    // syntactically-valid Rust string literal no matter what
+    // characters (quotes, backslashes, ...) appear in the
+    // rendered expansion.
+    let lit = Literal::string(&rendered);
+    quote::quote! { #lit }.into()
+}
+
+#[doc(hidden)]
+#[proc_macro]
+pub fn __property_would_error(item: TokenStream) -> TokenStream {
+    use proc_macro2::TokenStream as TokenStream2;
+
+    let result = tool::tool(TokenStream::new(), item);
+    let result_ts2: TokenStream2 = result.into();
+    let rendered = result_ts2.to_string();
+    let would_error = rendered.contains("compile_error !") || rendered.contains("compile_error!");
+    let b = if would_error { "true" } else { "false" };
+    let lit: TokenStream2 = b.parse().expect("bool literal parses");
+    quote::quote! { #lit }.into()
+}
+
+// Note: proc-macro crates may only export items tagged with `#[proc_macro]`,
+// `#[proc_macro_derive]`, or `#[proc_macro_attribute]`. Runtime helpers like
+// `tool_type_schema` / `tool_output_schema` belong in `tokitai-core`, not here.

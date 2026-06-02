@@ -9,6 +9,7 @@ publish = false
 
 [dependencies]
 tokitai = { path = "../tokitai", features = ["http-server"] }
+tokitai-mcp-server = { path = "../tokitai-mcp-server" }
 tokitai-core = { path = "../tokitai-core", features = ["serde"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -54,3 +55,22 @@ path = "mcp_server_demo.rs"
 [[example]]
 name = "mcp_http_server"
 path = "mcp_http_server.rs"
+
+[[example]]
+name = "runtime_agnostic"
+path = "runtime_agnostic.rs"
+
+[[example]]
+name = "dev_assistant"
+path = "dev_assistant.rs"
+
+[[example]]
+name = "param_attrs"
+path = "param_attrs.rs"
+
+[[example]]
+name = "validate_transform_alias"
+path = "validate_transform_alias.rs"
+
+[dev-dependencies]
+futures = "0.3"

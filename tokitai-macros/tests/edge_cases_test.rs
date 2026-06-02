@@ -314,7 +314,10 @@ fn test_numeric_boundaries() {
         }),
     );
     assert!(result.is_err());
-    assert!(result.unwrap_err().to_string().contains("小于最小值"));
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("is less than minimum"));
 
     // 超出最大值应该失败
     let result = tools.call_tool(
@@ -325,5 +328,8 @@ fn test_numeric_boundaries() {
         }),
     );
     assert!(result.is_err());
-    assert!(result.unwrap_err().to_string().contains("大于最大值"));
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("is greater than maximum"));
 }

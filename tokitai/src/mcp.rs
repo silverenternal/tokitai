@@ -27,15 +27,21 @@ use tokitai_core::ToolDefinition;
 #[cfg(feature = "mcp")]
 use async_trait::async_trait;
 
-/// MCP 工具定义格式
+/// MCP tool definition format
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct McpTool {
     pub name: String,
     pub description: String,
     pub input_schema: serde_json::Value,
+    /// Output schema (advertises the return type of the tool). Populated by
+    /// `to_mcp_tools` when the tool's return type has a `#[tool_type]` schema
+    /// registered in the global `TYPE_SCHEMA_CACHE`. `None` for tools whose
+    /// return type is not registered (e.g. primitives, plain `serde_json::Value`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_schema: Option<serde_json::Value>,
 }
 
-/// 将 tokitai 工具定义转换为 MCP 格式
+/// Converts tokitai tool definitions to MCP format
 pub fn to_mcp_tools(tools: &[ToolDefinition]) -> Vec<McpTool> {
     tools
         .iter()
@@ -44,16 +50,17 @@ pub fn to_mcp_tools(tools: &[ToolDefinition]) -> Vec<McpTool> {
                 name: t.name.to_string(),
                 description: t.description.to_string(),
                 input_schema: schema,
+                output_schema: None,
             }),
             Err(e) => {
-                log::warn!("工具 '{}' 的 schema 解析失败：{}", t.name, e);
+                log::warn!("failed to parse schema for tool '{}': {}", t.name, e);
                 None
             }
         })
         .collect()
 }
 
-/// MCP 工具调用请求
+/// MCP tool call request
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct McpToolCall {
     pub name: String,
@@ -61,7 +68,7 @@ pub struct McpToolCall {
     pub arguments: serde_json::Value,
 }
 
-/// MCP 工具调用响应
+/// MCP tool call response
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct McpToolResponse {
     pub success: bool,
@@ -72,6 +79,10 @@ pub struct McpToolResponse {
 }
 
 impl McpToolResponse {
+    /// Build a successful response wrapping `result`.
+    ///
+    /// Sets `success: true`, stores `result` in the `result` field, and
+    /// leaves `error` as `None`.
     pub fn success(result: serde_json::Value) -> Self {
         Self {
             success: true,
@@ -80,6 +91,10 @@ impl McpToolResponse {
         }
     }
 
+    /// Build a failure response with the given error `message`.
+    ///
+    /// Sets `success: false`, stores the message in the `error` field, and
+    /// leaves `result` as `None`.
     pub fn error(message: impl Into<String>) -> Self {
         Self {
             success: false,
@@ -93,12 +108,13 @@ impl McpToolResponse {
 // MCP Server Trait - 核心抽象
 // ============================================================================
 
-/// MCP 服务器 trait
+/// MCP server trait
 ///
-/// 提供 MCP 协议所需的工具列表和调用接口。
-/// 此 trait 会自动为所有 `#[tool]` 类型实现，无需手动实现。
+/// Provides the tool list and call interface required by the MCP protocol.
+/// This trait is automatically implemented for all `#[tool]` types and does
+/// not need to be implemented manually.
 ///
-/// # 示例
+/// # Examples
 ///
 /// ```rust,ignore
 /// use tokitai::{tool, mcp::McpServer};
@@ -113,7 +129,7 @@ impl McpToolResponse {
 ///     }
 /// }
 ///
-/// // 自动实现了 McpServer
+/// // McpServer is automatically implemented
 /// let server = MyTools::new_mcp_server();
 /// let tools = server.list_tools().await;
 /// let result = server.call_tool("greet", &json!({"name": "Alice"})).await;
@@ -121,13 +137,13 @@ impl McpToolResponse {
 #[cfg(feature = "mcp")]
 #[async_trait]
 pub trait McpServer: Sized + Send + Sync {
-    /// 获取所有可用的工具定义
+    /// Returns all available tool definitions
     async fn list_tools(&self) -> Vec<McpTool>;
 
-    /// 调用指定工具
+    /// Invokes the specified tool
     async fn call_tool(&self, name: &str, arguments: &serde_json::Value) -> McpToolResponse;
 
-    /// 获取工具数量
+    /// Returns the number of tools
     async fn tool_count(&self) -> usize {
         self.list_tools().await.len()
     }
@@ -137,10 +153,11 @@ pub trait McpServer: Sized + Send + Sync {
 // 为所有 #[tool] 类型自动实现 McpServer
 // ============================================================================
 
-/// MCP 服务器包装器
+/// MCP server wrapper
 ///
-/// 将任何实现了 `ToolProvider` 和 `ToolCaller` 的类型包装为 MCP 服务器。
-/// 这是 `#[tool]` 宏自动实现 `McpServer` 的基础。
+/// Wraps any type implementing `ToolProvider` and `ToolCaller` as an MCP
+/// server. This is the foundation on which the `#[tool]` macro automatically
+/// implements `McpServer`.
 #[cfg(feature = "mcp")]
 pub struct McpServerWrapper<T> {
     inner: T,
@@ -151,17 +168,17 @@ impl<T> McpServerWrapper<T>
 where
     T: tokitai_core::ToolProvider + tokitai_core::ToolCaller + Clone + Send + Sync + 'static,
 {
-    /// 创建新的 MCP 服务器包装器
+    /// Creates a new MCP server wrapper
     pub fn new(inner: T) -> Self {
         Self { inner }
     }
 
-    /// 获取内部工具实例
+    /// Returns the inner tool instance
     pub fn inner(&self) -> &T {
         &self.inner
     }
 
-    /// 转换为 MCP 工具定义
+    /// Converts to MCP tool definitions
     pub fn to_mcp_tools(&self) -> Vec<McpTool> {
         to_mcp_tools(T::tool_definitions())
     }
@@ -190,20 +207,21 @@ where
 // 宏辅助：为 #[tool] 类型生成 McpServer 实现
 // ============================================================================
 
-/// 为类型生成 McpServer 实现的宏
+/// Macro that generates an `McpServer` implementation for a type
 ///
-/// 此宏由 `#[tool]` 宏内部自动调用，用户无需手动使用。
+/// This macro is invoked automatically by the `#[tool]` macro and does not
+/// need to be called manually by users.
 #[macro_export]
 macro_rules! impl_mcp_server {
     ($type:ty) => {
         impl $type {
-            /// 创建 MCP 服务器实例
+            /// Creates a new MCP server instance
             #[cfg(feature = "mcp")]
             pub fn new_mcp_server() -> $crate::mcp::McpServerWrapper<Self> {
                 $crate::mcp::McpServerWrapper::new(Self::default())
             }
 
-            /// 获取 MCP 工具定义列表
+            /// Returns the list of MCP tool definitions
             #[cfg(feature = "mcp")]
             pub fn mcp_tool_definitions() -> Vec<$crate::mcp::McpTool> {
                 $crate::mcp::to_mcp_tools(<Self as $crate::ToolProvider>::tool_definitions())
@@ -216,15 +234,15 @@ macro_rules! impl_mcp_server {
 // MCP HTTP 服务器（可选功能，需要 http-server feature）
 // ============================================================================
 
-/// MCP HTTP 服务器配置
+/// MCP HTTP server configuration
 #[cfg(feature = "http-server")]
 #[derive(Debug, Clone)]
 pub struct McpHttpConfig {
-    /// 监听地址
+    /// The listen address
     pub host: String,
-    /// 监听端口
+    /// The listen port
     pub port: u16,
-    /// 是否启用 CORS
+    /// Whether CORS is enabled
     pub cors_enabled: bool,
 }
 
@@ -239,11 +257,11 @@ impl Default for McpHttpConfig {
     }
 }
 
-/// MCP HTTP 服务器
+/// MCP HTTP server
 ///
-/// 提供基于 HTTP 的 MCP 协议实现。
+/// Provides an HTTP-based MCP protocol implementation.
 ///
-/// # 示例
+/// # Examples
 ///
 /// ```rust,ignore
 /// use tokitai::{tool, mcp::McpHttpServer};
@@ -277,7 +295,7 @@ impl<T> McpHttpServer<T>
 where
     T: tokitai_core::ToolProvider + Clone + Send + Sync + 'static,
 {
-    /// 创建新的 MCP HTTP 服务器
+    /// Creates a new MCP HTTP server
     pub fn new(inner: T) -> Self {
         Self {
             inner,
@@ -285,18 +303,18 @@ where
         }
     }
 
-    /// 创建带配置的服务器
+    /// Creates a server with the given configuration
     pub fn with_config(inner: T, config: McpHttpConfig) -> Self {
         Self { inner, config }
     }
 
-    /// 运行服务器
+    /// Runs the server
     ///
-    /// # 参数
+    /// # Parameters
     ///
-    /// - `addr` - 监听地址，格式为 "host:port"
+    /// - `addr` - the listen address, in "host:port" format
     ///
-    /// # 示例
+    /// # Examples
     ///
     /// ```rust,ignore
     /// server.run("127.0.0.1:8080").await?;
@@ -345,7 +363,7 @@ where
     }
 }
 
-/// 应用状态（用于独立 HTTP 服务器）
+/// Application state (used by the standalone HTTP server)
 #[cfg(feature = "http-server")]
 pub struct AppState {
     pub tools: Vec<McpTool>,
@@ -353,7 +371,7 @@ pub struct AppState {
 
 #[cfg(feature = "http-server")]
 impl AppState {
-    /// 创建新的应用状态
+    /// Creates a new application state
     pub fn new(tools: Vec<McpTool>) -> Self {
         Self { tools }
     }
@@ -363,7 +381,7 @@ impl AppState {
 // SSE (Server-Sent Events) 支持
 // ============================================================================
 
-/// MCP SSE 消息
+/// MCP SSE message
 #[cfg(all(feature = "http-server", feature = "runtime"))]
 #[derive(Debug, Clone, Serialize)]
 pub struct McpSseMessage {
@@ -373,6 +391,9 @@ pub struct McpSseMessage {
 
 #[cfg(all(feature = "http-server", feature = "runtime"))]
 impl McpSseMessage {
+    /// Build an SSE message advertising a `tools/list` event whose payload is
+    /// the serialized `tools`. Used by the HTTP transport to push a fresh
+    /// tool catalogue to subscribers.
     pub fn tool_list(tools: Vec<McpTool>) -> Self {
         Self {
             event: "tools/list".to_string(),
@@ -380,6 +401,9 @@ impl McpSseMessage {
         }
     }
 
+    /// Build an SSE message advertising a `tool/result` event whose payload
+    /// is the serialized `result`. Used by the HTTP transport to push a
+    /// tool call outcome to subscribers.
     pub fn tool_result(result: McpToolResponse) -> Self {
         Self {
             event: "tool/result".to_string(),

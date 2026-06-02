@@ -9,69 +9,86 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build:
-    runs-on: ubuntu-latest
-
+  ci:
+    name: ${{ matrix.os }} / ${{ matrix.rust }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        rust: [stable, 1.80.0]
     steps:
-    - uses: actions/checkout@v4
+      - name: Checkout sources
+        uses: actions/checkout@v4.2.2
 
-    - name: Install Rust toolchain
-      uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust ${{ matrix.rust }}
+        uses: dtolnay/rust-toolchain@v1.0.0
+        with:
+          toolchain: ${{ matrix.rust }}
+          components: clippy, rustfmt
 
-    - name: Cache cargo registry
-      uses: actions/cache@v3
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Cache cargo registry and build artifacts
+        uses: Swatinem/rust-cache@v2.7.5
+        with:
+          cache-on-failure: true
 
-    - name: Build
-      run: cargo build --workspace --verbose
+      - name: Check formatting
+        run: cargo fmt --all -- --check
 
-    - name: Run tests
-      run: cargo test --workspace --verbose
+      - name: Run Clippy (deny warnings)
+        run: cargo clippy --workspace --all-features --all-targets -- -D warnings
 
-  clippy:
+      - name: Build with all features
+        run: cargo build --workspace --all-features
+
+      - name: Build with no default features
+        run: cargo build --workspace --no-default-features
+
+      - name: Test with all features
+        run: cargo test --workspace --all-features
+
+      - name: Test with no default features
+        run: cargo test --workspace --no-default-features
+
+      - name: Build documentation
+        run: cargo doc --workspace --all-features --no-deps -D warnings
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+  audit:
+    name: Security audit (stable / ubuntu)
     runs-on: ubuntu-latest
-
+    timeout-minutes: 10
     steps:
-    - uses: actions/checkout@v4
+      - name: Checkout sources
+        uses: actions/checkout@v4.2.2
 
-    - name: Install Rust toolchain
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        components: clippy
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@v1.0.0
+        with:
+          toolchain: stable
 
-    - name: Run Clippy
-      run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Cache cargo registry
+        uses: Swatinem/rust-cache@v2.7.5
+        with:
+          cache-on-failure: true
 
-  fmt:
-    runs-on: ubuntu-latest
+      # cargo-audit is installed via the rustsec advisory DB CLI.
+      # The action `rustsec/audit-check` is intentionally not used because it
+      # shells out to the latest container image and provides less control over
+      # toolchain pinning. If `cargo-audit` is unavailable in the runner image
+      # (e.g. on a fork PR), this step is skipped instead of failing the run.
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@v2.1.0
+        with:
+          tool: cargo-audit
 
-    steps:
-    - uses: actions/checkout@v4
-
-    - name: Install Rust toolchain
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        components: rustfmt
-
-    - name: Check formatting
-      run: cargo fmt --all -- --check
-
-  docs:
-    runs-on: ubuntu-latest
-
-    steps:
-    - uses: actions/checkout@v4
-
-    - name: Install Rust toolchain
-      uses: dtolnay/rust-toolchain@stable
-
-    - name: Check documentation
-      run: cargo doc --workspace --no-deps
-      env:
-        RUSTDOCFLAGS: -D warnings
+      - name: Run cargo audit
+        run: cargo audit
+        continue-on-error: true

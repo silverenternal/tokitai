@@ -1,0 +1,38 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Smoke Test API",
+    "version": "0.1.0",
+    "description": "Minimal OpenAPI 3 spec used by tokitai/tests/wrap_smoke_test.rs."
+  },
+  "paths": {
+    "/users/{id}": {
+      "get": {
+        "operationId": "getUser",
+        "summary": "Look up a user by id",
+        "description": "Returns the user with the given id.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "A user object" }
+        }
+      }
+    },
+    "/users": {
+      "get": {
+        "operationId": "listUsers",
+        "summary": "List all users",
+        "description": "Returns every registered user.",
+        "responses": {
+          "200": { "description": "A JSON array of users" }
+        }
+      }
+    }
+  }
+}

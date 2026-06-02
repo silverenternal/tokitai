@@ -352,12 +352,24 @@ fn generate_for_impl(mut impl_item: ItemImpl, _attrs: ToolAttributes) -> TokenSt
 
     // ToolCaller trait 实现 - 直接委托给 impl 块中生成的 call_tool 方法
     // 使用完全限定语法避免递归调用
-    let tool_caller_impl = quote! {
-        impl ::tokitai_core::ToolCaller for #impl_type {
-            fn call_tool(&self, name: &str, args: &::tokitai_core::serde_types::Value) -> Result<::tokitai_core::serde_types::Value, ::tokitai_core::ToolError> {
-                // 直接调用 impl 块中生成的 call_tool 方法
-                // Rust 方法解析规则会优先选择 impl 块中的具体方法
-                self.call_tool(name, args)
+    // 如果有异步工具，则委托给 call_tool_sync（同步包装器内部使用 block_on 调用异步方法）
+    let has_async = tool_methods.iter().any(|t| t.is_async);
+    let tool_caller_impl = if has_async {
+        quote! {
+            impl ::tokitai_core::ToolCaller for #impl_type {
+                fn call_tool(&self, name: &str, args: &::tokitai_core::serde_types::Value) -> Result<::tokitai_core::serde_types::Value, ::tokitai_core::ToolError> {
+                    // 异步 impl：委托给 call_tool_sync（内部使用 block_on）。
+                    Self::call_tool_sync(self, name, args)
+                }
+            }
+        }
+    } else {
+        quote! {
+            impl ::tokitai_core::ToolCaller for #impl_type {
+                fn call_tool(&self, name: &str, args: &::tokitai_core::serde_types::Value) -> Result<::tokitai_core::serde_types::Value, ::tokitai_core::ToolError> {
+                    // 同步 impl：直接调用 impl 块中生成的 call_tool。
+                    self.call_tool(name, args)
+                }
             }
         }
     };

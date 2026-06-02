@@ -1,0 +1,32 @@
+[package]
+name = "sample-consumer-crate"
+version = "0.1.0"
+edition = "2021"
+description = "Blank-slate consumer crate used as the canonical fixture for scripts/measure-consumer-impact.sh"
+license = "MIT OR Apache-2.0"
+publish = false
+
+# This crate lives inside the tokitai workspace tree, but it is NOT
+# a member — it is a stand-alone fixture that the measurement script
+# copies into a temporary scratch directory and compiles on its own.
+# The empty `[workspace]` table tells cargo to treat the manifest as
+# the root of an independent single-crate workspace, which is exactly
+# what we want for the "user's crate" measurement scenario.
+[workspace]
+
+[dependencies]
+# Path-based dependency on the local tokitai checkout. This is the
+# default for users who run the script from a clone of the tokitai
+# repo. If you publish or move tokitai, swap this for
+# `tokitai = "0.5"` (or whatever the current major is) in the same
+# way you would for a real consumer crate.
+tokitai = { path = "/home/hugo/codes/tokitai/tokitai/tokitai" }
+# `#[tool]` emits `::tokitai_core::...` paths into the consumer
+# crate, so `tokitai-core` must be a *direct* dependency, not just
+# a transitive one via `tokitai`. This is the same pattern that
+# real consumers follow.
+tokitai-core = { path = "/home/hugo/codes/tokitai/tokitai/tokitai-core" }
+serde_json = "1.0"
+
+[lib]
+path = "src/lib.rs"

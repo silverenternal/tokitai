@@ -22,7 +22,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! tokitai = "0.3.3"
+//! tokitai = "0.4"
 //! ```
 //!
 //! That's it! All required dependencies (serde, serde_json, thiserror) are included automatically.
@@ -248,5 +248,7 @@ pub use tokitai_macros::{
     tool_required, tool_transform, tool_type, tool_validate,
 };
 
-/// Library version
+/// Version string of this `tokitai` crate, sourced from the package's
+/// `Cargo.toml` at compile time. Useful for diagnostics and for emitting
+/// version-aware MCP responses.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

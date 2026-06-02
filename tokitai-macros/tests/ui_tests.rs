@@ -55,9 +55,9 @@ fn test_generic_method() {
 
 #[test]
 fn test_async_method() {
-    // 这个测试验证异步方法目前不支持（编译失败）
+    // 异步方法现在被支持（编译通过；修复了 #1）
     let t = trybuild::TestCases::new();
-    t.compile_fail("tests/ui/09_async_method.rs");
+    t.pass("tests/ui/09_async_method.rs");
 }
 
 #[test]

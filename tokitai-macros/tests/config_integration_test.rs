@@ -1,6 +1,13 @@
-//! 配置宏集成测试：验证配置是否真正应用到 TOOL_DEFINITIONS
+//! Configuration-macro integration test.
 //!
-//! 运行测试：cargo test -p tokitai-macros --test config_integration_test --features serde
+//! This file pins the current behaviour of the `#[tool]` / `config!`
+//! pair. The `config!` macro is accepted by the parser and emits
+//! runtime overrides, but `tool_definitions()` is generated as a
+//! compile-time const table and currently ignores the runtime
+//! overrides. A future registry feature (see
+//! `silverenternal/tokitai#42`) is the planned fix.
+//!
+//! Run with: `cargo test -p tokitai-macros --test config_integration_test --features serde`
 
 #![cfg(feature = "serde")]
 
@@ -10,7 +17,11 @@ use tokitai::ToolProvider;
 use tokitai::{config, tool};
 
 // ============================================================================
-// 测试：配置宏覆盖的描述是否在 TOOL_DEFINITIONS 中生效
+// Regression test: `config!` is parsed and registered, but the
+// current `tool_definitions()` table does not yet apply the
+// runtime overrides. The expected behaviour is documented as
+// assertions below; if the registry feature ships, these
+// assertions are the contract the implementation must satisfy.
 // ============================================================================
 
 #[derive(Default)]
@@ -18,7 +29,11 @@ struct IntegrationTestTools;
 
 #[tool]
 impl IntegrationTestTools {
-    /// 默认描述 - 应该被配置覆盖
+    /// Default description. The `config!` block below intends to
+    /// override this at runtime, but the override is not yet
+    /// applied to the `tool_definitions()` table — see the
+    /// `test_config_runtime_override_is_pending` test for the
+    /// current-vs-target contract.
     pub fn get_user(&self, id: i32) -> String {
         format!("User {}", id)
     }
@@ -27,41 +42,42 @@ impl IntegrationTestTools {
 config! {
     IntegrationTestTools {
         get_user: {
-            desc: "配置覆盖后的描述",
+            desc: "Configuration-overridden description",
             params: {
-                id: { desc: "用户 ID 参数" }
+                id: { desc: "User ID parameter" }
             }
         }
     }
 }
 
 #[test]
-fn test_config_applies_to_tool_definitions() {
-    // 触发配置初始化
+fn test_config_runtime_override_is_pending() {
+    // Trigger the configuration initialisation so the test fails
+    // loudly if the `config!` block is ever silently dropped.
     let _ = &*__CONFIG_INIT_IntegrationTestTools;
 
-    // 获取工具定义
+    // Fetch the tool definition.
     let tool = &IntegrationTestTools::tool_definitions()[0];
 
-    // ❌ 关键测试：配置是否真正覆盖了描述？
-    // 当前实现：TOOL_DEFINITIONS 是编译期生成的 const，无法被运行时配置覆盖
-    println!("Tool name: {}", tool.name);
-    println!("Tool description: {}", tool.description);
-    println!("Tool input_schema: {}", tool.input_schema);
+    // Current contract (v0.5.0):
+    //   * `tool.description` is taken from the doc comment on the
+    //     method, NOT from the `config!` block.
+    //   * `tool.input_schema` is the compile-time schema; the
+    //     `params: { id: { desc: ... } }` block is recorded for
+    //     the future registry but does not yet reach the schema.
+    //
+    // When the registry feature lands, swap these assertions for:
+    //   assert_eq!(tool.description, "Configuration-overridden description");
+    //   assert_eq!(
+    //       schema["properties"]["id"]["description"].as_str(),
+    //       Some("User ID parameter"),
+    //   );
+    assert_eq!(tool.description, "Default description. The `config!` block below intends to override this at runtime, but the override is not yet applied to the `tool_definitions()` table — see the `test_config_runtime_override_is_pending` test for the current-vs-target contract.");
 
     let schema: Value = serde_json::from_str(&tool.input_schema).unwrap();
-    println!("Parsed schema: {:?}", schema);
-
-    // 测试当前行为（文档注释描述）
-    assert_eq!(tool.description, "默认描述 - 应该被配置覆盖");
-
-    // TODO: 配置宏真正生效后，应该改为：
-    // assert_eq!(tool.description, "配置覆盖后的描述");
-
-    // 测试参数描述
     let param_desc = schema["properties"]["id"]["description"].as_str();
-    println!("Param description: {:?}", param_desc);
-
-    // 当前：参数描述来自 @param 文档注释（没有，所以为空）
-    // TODO: 配置宏真正生效后，应该包含"用户 ID 参数"
+    // The `id` parameter has no `@param` doc comment, so its
+    // description in the schema is `None`. The `config!` block's
+    // per-param description is not yet wired in.
+    assert!(param_desc.is_none());
 }
