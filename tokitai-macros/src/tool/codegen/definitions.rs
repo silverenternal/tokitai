@@ -22,10 +22,10 @@ pub fn generate_tool_def_consts(tools: &[ToolMethodInfo]) -> Vec<TokenStream2> {
             let name = &tool.name;
             consts.push(quote! {
                 compile_error!(concat!(
-                    "🔧 Tool method `",
+                    "[tokitai] Tool method `",
                     #name,
                     "` uses generic parameters, which are not supported.\n",
-                    "💡 Solutions:\n",
+                    "Solutions:\n",
                     "   1. Use a concrete type: fn ",
                     #name,
                     "(data: MyType) -> String\n",
