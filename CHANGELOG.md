@@ -5,48 +5,72 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.5.0] - 2026-06-02
 
-### Performance ⚡
+### Breaking ⚠️
 
-- **50% 性能提升** - 通过系统化 `#[inline]` 优化
-  - `tool_definitions_access`: 764ps → 421ps (-45%)
-  - `tool_lookup`: 1.56ns → 750ps (-52%)
-  - `schema_pretty_print`: 1.19μs → 568ns (-53%)
-  - `tool_call_simple`: 307ns → 152ns (-50%)
-  - `tool_call_multi_param`: 685ns → 534ns (-35%)
-- 优化热点路径：`SchemaGenConfig` Builder 方法（17 个函数）
-- 优化提取函数：`extract_param_info`, `extract_doc_comments`
-- 优化代码生成：`generate_schema_json_*` 系列函数
-
-### Fixed 🐛
-
-- **P0: Workspace profile 配置修复** - 将 `[profile.release]` 从 `tokitai/Cargo.toml` 移到 workspace 根目录
-  - 消除 `profiles for the non root package will be ignored` 警告
-- **P1: 文档版本号统一** - 将所有文档中的 `0.3.3` 更新为 `0.4.0`
-  - `docs/USAGE.md`, `tokitai/docs/USAGE.md`, `PROMOTION.md`
-- **P2: 宏警告抑制改进** - 使用 `TOKITAI_QUIET` 环境变量控制宏警告输出
-  - 添加 `build.rs` 自动设置环境变量（测试/示例环境）
-  - 修复 `cfg!(test)` 在过程宏中的误用
-- **P0: Clippy 警告清理** - 修复 12 个 `default()` 调用警告
-  - `tokitai-mcp-server/tests/integration_test.rs`: 使用 unit struct 直接初始化
-- **P1: 测试警告输出抑制** - 使用 `cfg!(test)` 抑制测试环境下的宏警告输出
-  - 参数默认值警告（Option 类型无 default/example）
-  - 验证/转换表达式解析失败警告
-  - context=async 不匹配警告
+- No public API break relative to 0.4.0. (`TOOL_DEFINITIONS` const → `tool_definitions()` method was already shipped in 0.4.0; see the 0.4.0 entry for the migration steps.)
+- One known macro bug ("duplicate `__call_X`" on mixed sync/async impls) is fixed — affected users may simply have to delete a workaround.
+- The `tokitai_core::AsyncExecutor` trait gained a `block_on_dyn(&mut self, ...)` method (the old `block_on` static helper remains for backwards compatibility).
 
 ### Added 📚
 
+- **Wrap feature stabilisation (X-series)** — 编译期优化 X1–X8, integrating `#[wrap]`, `#[openapi]`, `#[openapi_op]`, `#[delegate]`, `#[retry]`, `#[rate_limit]`, and `#[circuit_breaker]` into the same codegen pipeline as `#[tool]`.
+- **Resilience decorators** — `#[retry]`, `#[rate_limit]`, and `#[circuit_breaker]` can now wrap individual `#[tool]` methods; the three are described in `docs/wrap-architecture.md` and the per-macro pages under `docs/reference/`.
+- **Delegate macro** — `#[delegate]` forwards an inner struct's public methods as tools on the outer impl, removing the need to hand-write `match` dispatch.
+- **OpenAPI bridge** — `#[openapi]` and `#[openapi_op]` read an OpenAPI 3 spec and expose every operation (or a whitelisted subset) as a `#[tool]`.
+- **Runtime-agnostic async executor** — `tokitai_core::AsyncExecutor`, `set_async_executor`, `block_on_async`, and `block_on_dyn` let you drive `#[tool]` async methods from any runtime (Tokio, `futures::executor::block_on`, an embedded executor, etc.).
+- **Cross-language SDK examples** — `examples/py/`, `examples/js/`, `examples/go/`, and `examples/curl/` are runnable reference clients against `tokitai-mcp-server`. The HTTP+JSON contract is documented in `docs/CROSS_LANGUAGE.md`.
+- **New end-to-end example** — `examples/dev_assistant.rs` (file/git/calc tools) is now the downstream-consumer regression test; see `BUGS_FOUND.md` for the regression net.
+- **Documentation sweep (Y-series)** — 新增 Y1–Y8 文档节 (`docs/wrap-architecture.md`, `docs/wrap-cheatsheet.md`, expanded `docs/migration/v0.4-to-v0.5.md`).
 - **build.rs 脚本** - 自动配置环境变量抑制测试/示例中的宏警告
   - `tokitai-macros/build.rs`: 测试环境安静模式
   - `examples/build.rs`: 示例环境安静模式
 
 ### Changed 🔄
 
+- **Design philosophy clarification** — `tokitai` is an **in-process** tool-call library. The `#[tool]` macro generates type-safe `__call_*` wrappers and the `call_tool` dispatcher runs them in your Rust process — zero network hops, zero IPC round-trips after `serde_json::Value` parsing. `tokitai-mcp-server` (and the `mcp` / `http-server` features on `tokitai`) are **optional out-of-process wrappers** that expose the same tool set over HTTP / stdio / SSE; they are not the core. See the `🧭 设计理念` callout in `README.md` for the canonical wording.
 - **宏警告控制逻辑重构** - `tokitai-macros/src/tool/mod.rs::should_show_warnings()`
   - 优先检查 `TOKITAI_SHOW_WARNINGS` 环境变量
   - 其次检查 `TOKITAI_QUIET` 环境变量
   - 默认显示警告
+- **版本同步** - workspace 所有 crate 版本统一从 `0.4.0` 升至 `0.5.0`
+- **Error message localisation** — Wrapper-generated `__call_*` strings, the dispatcher fallback, and the `tokitai_core::ToolError` constructors now all use English. Previously the wrappers hard-coded Chinese strings, which caused a single user run to see both languages.
+
+### Performance ⚡
+
+- **50% 性能提升** - 通过系统化 `#[inline]` 优化 (X1–X8 系列, 详细基准见 `docs/performance.md` 和 `docs/internal/schema-generation-optimization.md`)
+- 优化热点路径：`SchemaGenConfig` Builder 方法（17 个函数）
+- 优化提取函数：`extract_param_info`, `extract_doc_comments`
+- 优化代码生成：`generate_schema_json_*` 系列函数
+
+### Fixed 🐛
+
+The eight defects previously documented in `BUGS_FOUND.md` (repurposed as a
+regression-test report for this release) are all fixed. The full mapping from
+defect to locking test is in `BUGS_FOUND.md`; the short list is:
+
+- **Mixed async + sync methods** in a single `#[tool]` impl no longer produce duplicate `__call_<name>` definitions.
+- **Per-parameter `#[tool(default_* = "...")]`** (method-level form) and **`#[tool(validate_<param> = "...")]`** are wired through to runtime behaviour — they used to be accepted by the parser but ignored.
+- **Schema/default consistency** — a parameter that has a `default_*` value is no longer listed in the schema's `required` array, and calls that omit it now succeed using the default.
+- **Alias description format** — alias descriptions no longer carry a Chinese `（别名：…）` prefix; they match the primary tool's description.
+- **Single-language error surface** — wrapper-generated "missing required parameter" / "parameter type mismatch" / "unknown tool" messages are all in English, matching the rest of the runtime.
+
+Additional fix-ups from the W1–W4 round:
+
+- **W1 (P0): Workspace profile 配置修复** - 将 `[profile.release]` 从 `tokitai/Cargo.toml` 移到 workspace 根目录
+  - 消除 `profiles for the non root package will be ignored` 警告
+- **W2 (P1): 文档版本号统一** - 将所有文档中的 `0.3.3` 更新为 `0.4.0`
+  - `docs/USAGE.md`, `PROMOTION.md`
+- **W3 (P2): 宏警告抑制改进** - 使用 `TOKITAI_QUIET` 环境变量控制宏警告输出
+  - 添加 `build.rs` 自动设置环境变量（测试/示例环境）
+  - 修复 `cfg!(test)` 在过程宏中的误用
+- **W4 (P0): Clippy 警告清理** - 修复 12 个 `default()` 调用警告
+  - `tokitai-mcp-server/tests/integration_test.rs`: 使用 unit struct 直接初始化
+- **W4 (P1): 测试警告输出抑制** - 使用 `cfg!(test)` 抑制测试环境下的宏警告输出
+  - 参数默认值警告（Option 类型无 default/example）
+  - 验证/转换表达式解析失败警告
+  - context=async 不匹配警告
 
 ## [0.4.0] - 2026-03-10
 
@@ -76,9 +100,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **P0: 示例代码编译错误** - `examples/mcp_server_demo.rs` 参数属性冲突
 - **P1: 文档旧 API 引用** - 清理 36+ 处 `TOOL_DEFINITIONS` → `tool_definitions()`
-  - `tokitai-core/docs/*.md` (12 处)
-  - `tokitai/docs/*.md` (12 处)
-  - `tokitai-macros/docs/*.md` (12 处)
+  - 集中于 `docs/` 根目录与 `tokitai/docs/` 子目录
 - **P2: 文档块语法错误** - 宏示例使用 ` ```text` 而非 ` ```rust,ignore`
 
 ### Added 📚

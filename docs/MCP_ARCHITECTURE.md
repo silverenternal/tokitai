@@ -1,7 +1,7 @@
 # Tokitai x MCP 架构指南
 
-**版本**: 0.4.0
-**最后更新**: 2026-03-10
+**版本**: 0.5.0
+**最后更新**: 2026-06-02
 
 ---
 
@@ -51,8 +51,8 @@ Tokitai 的核心理念与 MCP 协议完美结合，让 Rust 成为编写"AI 原
 
 ```toml
 [dependencies]
-tokitai = "0.4.0"
-tokitai-mcp-server = "0.4"  # 可选：MCP 服务器脚手架
+tokitai = { version = "0.5.0", features = ["mcp"] }
+tokitai-mcp-server = "0.5"  # 可选：MCP 服务器脚手架
 tokio = { version = "1", features = ["full"] }
 serde_json = "1.0"
 ```
@@ -96,7 +96,7 @@ let tools_json = serde_json::to_string_pretty(&mcp_tools)?;
 ### 4. 处理 AI 调用
 
 ```rust
-use tokitai::json;
+use serde_json::json;
 
 let calc = Calculator::default();
 
@@ -339,9 +339,9 @@ impl Calculator {
 ```rust
 let calc = Calculator::default();
 
-// 参数类型错误会返回错误
+// Parameter type mismatch returns an error
 let result = calc.call_tool("add", &json!({
-    "a": "not a number",  // 错误：应该是整数
+    "a": "not a number",  // wrong: should be an integer
     "b": 20
 }));
 

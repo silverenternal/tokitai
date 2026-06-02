@@ -1,6 +1,6 @@
 # Tokitai 使用指南
 
-**版本**: 0.4.0 | **最后更新**: 2026-03-10
+**版本**: 0.5.0 | **最后更新**: 2026-06-02
 
 ## 目录
 
@@ -21,7 +21,7 @@
 
 ```toml
 [dependencies]
-tokitai = "0.4.0"
+tokitai = "0.5.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 ```
@@ -62,7 +62,7 @@ let result = calc.call_tool("add", &serde_json::json!({"a": 10, "b": 20}))?;
 
 ```toml
 [dependencies]
-tokitai = "0.4.0"
+tokitai = "0.5.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 ```
@@ -71,7 +71,7 @@ serde_json = "1.0"
 
 ```toml
 [dependencies]
-tokitai = { version = "0.4.0", default-features = false }
+tokitai = { version = "0.5.0", default-features = false }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 ```
@@ -249,7 +249,7 @@ impl SearchEngine {
 ```rust
 use tokitai::ToolProvider;
 
-// 获取所有工具定义（v0.4.0+ 现在是方法而非常量）
+// 获取所有工具定义（v0.5.0+ 现在是方法而非常量）
 let tools = Calculator::tool_definitions();
 
 // 获取工具数量
@@ -285,14 +285,14 @@ let result = calc.call_tool("query", &json!({"sql": "SELECT *"})).await;
 use tokitai::ToolError;
 
 match calc.call_tool("divide", &json!({"a": 10, "b": 0})) {
-    Ok(result) => println!("结果：{}", result),
+    Ok(result) => println!("Result: {}", result),
     Err(ToolError { kind: tokitai::ToolErrorKind::ValidationError, message }) => {
-        eprintln!("验证错误：{}", message);
+        eprintln!("Validation error: {}", message);
     }
     Err(ToolError { kind: tokitai::ToolErrorKind::NotFound, message }) => {
-        eprintln!("工具未找到：{}", message);
+        eprintln!("Tool not found: {}", message);
     }
-    Err(e) => eprintln!("其他错误：{:?}", e),
+    Err(e) => eprintln!("Other error: {:?}", e),
 }
 ```
 
@@ -357,10 +357,10 @@ pub struct ToolError {
 
 | 变体 | 值 | 描述 |
 |------|-----|------|
-| `ToolErrorKind::ValidationError` | 0 | 参数验证失败 |
-| `ToolErrorKind::NotFound` | 1 | 工具未找到 |
-| `ToolErrorKind::InternalError` | 2 | 内部错误 |
-| `ToolErrorKind::TypeError` | 3 | 类型错误 |
+| `ToolErrorKind::ValidationError` | 0 | Validation failed |
+| `ToolErrorKind::NotFound` | 1 | Tool not found |
+| `ToolErrorKind::InternalError` | 2 | Internal error |
+| `ToolErrorKind::TypeError` | 3 | Type error |
 
 ### 宏属性
 
@@ -403,7 +403,7 @@ impl MyStruct {
 
 ## 工具描述三种方式
 
-Tokitai v0.3.4 支持三种灵活的工具描述方式：
+Tokitai v0.5.0 支持三种灵活的工具描述方式：
 
 ### 方式 1：文档注释（推荐）
 
@@ -584,7 +584,7 @@ error[E0433]: failed to resolve: use of undeclared crate or module `serde_json`
 
 ```toml
 [dependencies]
-tokitai = { version = "0.4.0", features = ["serde"] }
+tokitai = { version = "0.5.0", features = ["serde"] }
 serde_json = "1.0"
 ```
 
@@ -593,7 +593,7 @@ serde_json = "1.0"
 #### 错误：异步方法在没有运行时的情况下调用
 
 ```
-Error: 异步工具调用需要 tokio 运行时
+Error: async tool calls require a tokio runtime
 ```
 
 **原因**: 异步工具方法需要 tokio 运行时。
@@ -608,10 +608,10 @@ async fn main() {
 }
 ```
 
-#### 错误：工具未找到
+#### Error: Tool not found
 
 ```
-Error: 工具未找到：unknown_tool
+Error: Tool not found: unknown_tool
 ```
 
 **原因**: 调用了不存在的工具名称。

@@ -1,11 +1,11 @@
-use tokitai::ToolProvider;
-
 //! Tokitai 入门项目 - 主程序
 //!
 //! 演示如何：
 //! 1. 定义工具
 //! 2. 获取工具定义
 //! 3. 处理 AI 工具调用请求
+
+use tokitai::ToolProvider;
 
 mod ai_client;
 mod tools;

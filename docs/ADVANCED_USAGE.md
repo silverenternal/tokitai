@@ -1,6 +1,6 @@
 # Tokitai 高级用法指南
 
-**版本**: 0.4.0 | **最后更新**: 2026-03-10
+**版本**: 0.5.0 | **最后更新**: 2026-06-02
 
 本文档介绍 Tokitai 的高级功能和最佳实践。
 
@@ -351,7 +351,7 @@ impl PersonalAssistant {
                 self.note_manager.call_tool(name, args)
                     .map_err(|e| e.to_string())
             }
-            _ => Err(format!("未知工具：{}", name)),
+            _ => Err(format!("unknown tool: {}", name)),
         }
     }
 }
@@ -393,13 +393,13 @@ println!("温度：{}°C", weather.temperature);
 match calculator.call_tool("divide", &json!({"a": 10, "b": 0})) {
     Ok(result) => println!("结果：{}", result),
     Err(tokitai::ToolError { kind: tokitai::ToolErrorKind::ValidationError, message }) => {
-        eprintln!("参数验证错误：{}", message);
+        eprintln!("Parameter validation error: {}", message);
     }
     Err(tokitai::ToolError { kind: tokitai::ToolErrorKind::NotFound, message }) => {
-        eprintln!("工具未找到：{}", message);
+        eprintln!("Tool not found: {}", message);
     }
     Err(e) => {
-        eprintln!("内部错误：{:?}", e);
+        eprintln!("Internal error: {:?}", e);
     }
 }
 ```
@@ -487,7 +487,7 @@ let result = service.call_tool(name, &args)?;
 let result: serde_json::Value = service.call_tool(name, &args)?;
 ```
 
-### 运行时错误：参数类型错误
+### Runtime error: Parameter type mismatch
 
 确保 JSON 参数类型与 Rust 类型匹配：
 
@@ -504,6 +504,6 @@ json!({"a": 10, "b": 20})
 
 ## 获取更多帮助
 
-- [基础使用文档](docs/USAGE.md)
-- [AI 集成指南](docs/AI_INTEGRATION.md)
+- [基础使用文档](USAGE.md)
+- [AI 集成指南](AI_INTEGRATION.md)
 - [GitHub Issues](https://github.com/silverenternal/tokitai/issues)

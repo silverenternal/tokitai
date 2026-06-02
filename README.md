@@ -1,9 +1,13 @@
 # Tokitai
 
+> **📌 推荐版本: 0.5.0** (released 2026-06-02). 见 [CHANGELOG](CHANGELOG.md#050---2026-06-02) 和 [v0.4 → v0.5 迁移指南](docs/migration/v0.4-to-v0.5.md)。
+
 [![Crates.io](https://img.shields.io/crates/v/tokitai.svg)](https://crates.io/crates/tokitai)
 [![Documentation](https://docs.rs/tokitai/badge.svg)](https://docs.rs/tokitai)
 [![License](https://img.shields.io/crates/l/tokitai)](LICENSE)
 [![Build Status](https://img.shields.io/github/actions/workflow/status/silverenternal/tokitai/ci.yml)](https://github.com/silverenternal/tokitai/actions)
+
+> **🧭 设计理念**: Tokitai 本身是**进程内 (in-process)** 工具调用 — 编译期生成类型安全的 `__call_*` 包装函数,`call_tool` 在你的 Rust 进程内存里直接 dispatch,**零网络、零序列化到 `serde_json::Value` 之后的 IPC 往返**。MCP / HTTP / stdio 等网络协议只是众多**可选的进程外 (out-of-process) 包装**之一,不是核心。
 
 ## 🎯 一行贴纸，让 AI 调用你的 Rust 代码
 
@@ -32,8 +36,8 @@ Tokitai 是一个过程宏库，只需一个 `#[tool]` 属性，即可将你的 
 
 ```toml
 [dependencies]
-tokitai = "0.4.0"
-tokitai-mcp-server = "0.4"  # 可选：MCP 服务器脚手架
+tokitai = "0.5.0"
+tokitai-mcp-server = "0.5"  # 可选：MCP 服务器脚手架
 tokio = { version = "1", features = ["full"] }
 serde_json = "1.0"
 ```
@@ -115,8 +119,11 @@ cargo run --example basic_usage
 # MCP 服务器示例
 cargo run --example mcp_builder_demo -p tokitai-mcp-server
 
-# 快速聊天示例（交互式）
-cargo run --example quick_chat
+# 多工具聊天
+cargo run --example multi_tool_chat
+
+# 端到端回归测试
+cargo run --example dev_assistant
 ```
 
 ## 📚 完整文档
@@ -126,17 +133,36 @@ cargo run --example quick_chat
 - **[类型系统](docs/USAGE.md)** - Rust 类型到 JSON Schema 的映射
 - **[AI 集成](docs/AI_INTEGRATION.md)** - 与 AI 提供商集成的指南
 - **[架构说明](docs/ARCHITECTURE.md)** - 项目架构和设计
+- **[Wrap 架构](docs/wrap-architecture.md)** - `#[wrap]` / `#[openapi]` / `#[delegate]` / `#[retry]` 等自动包裹宏
+- **[Wrap 速查表](docs/wrap-cheatsheet.md)** - Wrap 功能一页速查
+- **[Cross-Language SDK Guide](docs/CROSS_LANGUAGE.md)** - HTTP+JSON protocol and SDK quickstarts for Python, JS/TS, Go, curl
 - **[API 文档](https://docs.rs/tokitai)** - 完整的 API 参考
 
 ## ✨ 核心特性
 
 | 特性 | 说明 |
 |------|------|
-| **最小依赖侵入** | 用户只需添加 `tokitai = "0.4.0`，运行时仅需 serde + serde_json |
+| **最小依赖侵入** | 用户只需添加 `tokitai = "0.5"`，运行时仅需 serde + serde_json |
 | **编译期生成** | 工具定义在编译期生成，类型错误早发现 |
 | **单一属性** | 只需 `#[tool]`，无需多个标签 |
 | **类型安全** | Rust 类型自动映射到 JSON Schema |
 | **供应商中立** | 支持任何 AI/LLM 提供商 |
+
+## 🧩 Wrap 特性（v0.5+）
+
+除了核心的 `#[tool]` 宏，Tokitai 还提供一组**自动包裹**宏，用于把已有客户端 / OpenAPI 规约 / 弹性策略直接暴露为工具：
+
+| 宏 | 用途 |
+|----|------|
+| `#[wrap]` | 用白名单方式挑选第三方客户端的方法，生成 `new(client)` 构造器 |
+| `#[openapi]` / `#[openapi_op]` | 读取 OpenAPI 3 规约，按 `operationId` 把整组 HTTP 接口暴露为工具 |
+| `#[delegate]` | 无需手写 `match` 分发，把内层方法直接转发为工具 |
+| `#[retry]` | 在工具体内插入指数退避重试循环 |
+| `#[rate_limit]` | 在工具调用前插入无锁令牌桶限流 |
+| `#[circuit_breaker]` | 三态熔断器，v1 仅观察、不熔断 |
+
+完整说明见 [Wrap 架构](docs/wrap-architecture.md) 与 [Wrap 速查表](docs/wrap-cheatsheet.md)；
+各宏的逐项参数见 `docs/reference/` 下的同名页面。
 
 ## 📋 类型映射
 
@@ -199,7 +225,7 @@ Tokitai 由三个 crate 组成：
 **99% 的用户只需要：**
 ```toml
 [dependencies]
-tokitai = "0.4.0"
+tokitai = "0.5.0"
 ```
 
 ## ⚙️ 要求
@@ -211,8 +237,8 @@ tokitai = "0.4.0"
 
 Licensed under either of:
 
-- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE))
-- MIT License ([LICENSE-MIT](LICENSE))
+- Apache License, Version 2.0 ([LICENSE](LICENSE))
+- MIT License ([LICENSE](LICENSE))
 
 at your option.
 
@@ -229,12 +255,41 @@ at your option.
 - `mcp_server_demo.rs` - MCP 服务器示例
 - `mcp_http_server.rs` - HTTP 服务器示例
 - `ollama_integration.rs` - Ollama AI 集成
+- `dev_assistant.rs` - 端到端集成示例：文件/代码搜索 + Git + 计算器（v0.5 起作为下游回归测试）
+- `multi_tool_chat.rs` - 多工具聊天
+- `param_attrs.rs` - 参数级属性演示
+- `validate_transform_alias.rs` - 验证 / 转换 / 别名演示
+- `debug_tools.rs` - 调试工具
+- `wrap_openapi.rs` - `#[openapi]` 文档示例（仅文档用）
+- `runtime_agnostic.rs` - 运行时无关的 async executor 桥接
+- `database_tool/` - 真实示例：Tokitai + MCP HTTP + SQLite (sqlx)
+- `starter_project/` - 可复制的入门模板
+
+> 占位 `#[wrap]` / `#[delegate]` / `#[retry]` / `#[rate_limit]` / `#[circuit_breaker]`
+> 示例 (`wrap_native.rs` / `delegate_method.rs` / `resilient_tool.rs`) 已移至
+> [`examples/deprecated/`](examples/deprecated/)，对应属性尚未在 0.5.0 中开放。
+
+### 🌐 Cross-Language SDK（HTTP+JSON 客户端参考实现）
+
+`tokitai-mcp-server` 暴露的 HTTP+JSON 协议可以用任何语言调用；参考实现：
+
+- Python — [`examples/py/`](examples/py/) — async client on `httpx`; `pip install -e .`
+- JavaScript / TypeScript — [`examples/js/`](examples/js/) — zero-runtime-dep `fetch` client for Node 18+, browsers, Deno, Bun; `npm install && npm start`
+- Go — [`examples/go/`](examples/go/) — std-lib only; `go build ./...`, `go run ./cmd/list-tools`
+- `curl` — [`examples/curl/`](examples/curl/) — `bash` + `curl` + `jq`; zero install, great for CI
+
+Start the server in a separate terminal with
+`cargo run -p tokitai-mcp-server --example mcp_builder_demo` (binds
+`http://127.0.0.1:8080`); the SDKs above will talk to it out of the
+box. Override the host with `BASE_URL` (curl), an env var (Go), or the
+constructor argument (Python, JS). Full protocol spec and per-language
+quickstarts in [Cross-Language SDK Guide](docs/CROSS_LANGUAGE.md).
 
 ## 🔒 API 稳定承诺
 
 Tokitai 遵循 [语义化版本](https://semver.org/)，详细的 API 稳定政策见 [API 稳定承诺](docs/API_STABILITY.md)。
 
-**当前状态**: v0.4.x 系列 - 核心 API 已稳定，v1.0.0 计划中。
+**当前状态**: v0.5.x 系列 - 核心 API 已稳定，v1.0.0 计划中。
 
 ---
 

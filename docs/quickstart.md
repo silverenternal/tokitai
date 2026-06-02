@@ -4,10 +4,11 @@
 
 ```toml
 [dependencies]
-tokitai = "0.4.0"
+tokitai = "0.5.0"
+serde_json = "1.0"
 ```
 
-就这一行！所有必需的依赖（serde、serde_json、thiserror）都会自动包含。
+就这一行！所有必需的依赖（serde、thiserror）都会自动包含；只需要再添加 `serde_json` 来构造/解析 JSON。
 
 ## 2. 定义工具
 
@@ -38,9 +39,9 @@ impl Calculator {
 let tools = Calculator::tool_definitions();
 
 // 转换为 JSON 发送给 AI
-let json = tokitai::json!({
+let json = serde_json::json!({
     "tools": tools.iter().map(|t| {
-        tokitai::json!({
+        serde_json::json!({
             "name": t.name,
             "description": t.description,
             "input_schema": t.input_schema
@@ -70,7 +71,7 @@ println!("{}", serde_json::to_string_pretty(&json)?);
 ## 4. 处理 AI 调用
 
 ```rust
-use tokitai::json;
+use serde_json::json;
 
 let calc = Calculator::default();
 
@@ -97,8 +98,11 @@ println!("结果：{}", result);  // 30
 # 基础使用示例
 cargo run --example basic_usage
 
-# 快速聊天示例（交互式）
-cargo run --example quick_chat
+# MCP 服务器示例
+cargo run --example mcp_builder_demo -p tokitai-mcp-server
+
+# 多工具聊天
+cargo run --example multi_tool_chat
 ```
 
 ## 下一步

@@ -61,9 +61,8 @@ impl MyTool {
 
 ## 学习资源
 
-- [5 分钟快速上手](../../README.md#5-分钟快速上手)
+- [5 分钟快速上手](../../README.md#5-分钟快速开始)
 - [完整使用指南](../../docs/USAGE.md)
-- [Skill 文件模板](../../docs/SKILL_TEMPLATE.md)
 - [API 文档](https://docs.rs/tokitai)
 
 ## 许可证
