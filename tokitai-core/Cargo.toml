@@ -23,5 +23,5 @@ serde = ["dep:serde", "dep:serde_json"]
 runtime-agnostic = []
 
 [dev-dependencies]
-serial_test = "3.0"
+serial_test = "3.5"
 futures = "0.3"
