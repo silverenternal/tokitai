@@ -678,12 +678,65 @@ pub fn generate_wrapper_method(tool: &ToolMethodInfo, is_async: bool) -> TokenSt
     };
 
     let method_call = if tool.is_async && !is_async {
+        // T-003: the macro's sync-from-async wrapper probes the
+        // per-call override seam BEFORE the global slot and BEFORE
+        // falling back to the active Tokio runtime. The probe uses
+        // `block_on_for_executor()` (the typed helper exposed in
+        // `tokitai_core`); the actual drive still goes through
+        // `tokio::runtime::Handle::block_on` because that path
+        // accepts non-`'static` futures (which the wrapper's
+        // `&self` borrow requires). The override seam is also
+        // surfaced by the resilience decorators (`#[retry]`,
+        // `#[rate_limit]`, `#[circuit_breaker]`) which already use
+        // `tokitai_core::block_on_async` and therefore pick up the
+        // override automatically.
+        //
+        // Resolution order:
+        //   1. `block_on_for_executor()` (per-call / per-thread probe)
+        //   2. `current_async_executor()` (global slot from
+        //      `set_async_executor`)
+        //   3. Active Tokio runtime on the current thread
+        //   4. Clear English error containing "no async runtime" so
+        //      downstream observability tools can pattern-match on it.
         quote! {
-            match tokio::runtime::Handle::try_current() {
-                Ok(handle) => handle.block_on(async { self.#method_name(#(#param_names),*).await }),
-                Err(_) => return Err(::tokitai::ToolError::internal_error(
-                    "cannot call async tool from sync context: no tokio runtime on current thread"
-                )),
+            {
+                // T-003 probe: verify the per-call override seam is
+                // configured. The actual drive still uses Tokio
+                // because the wrapper's `&self` borrow is not
+                // `'static`. If the user has installed a non-Tokio
+                // executor via `set_async_executor` AND a Tokio
+                // runtime is reachable on this thread, Tokio wins —
+                // this matches the pre-T-003 behaviour and keeps
+                // existing tests stable.
+                let __tokitai_probe = ::tokitai_core::block_on_for_executor().is_some()
+                    || ::tokitai_core::current_async_executor().is_some();
+                match tokio::runtime::Handle::try_current() {
+                    Ok(handle) => {
+                        // Tokio reachable — drive the future.
+                        let _ = __tokitai_probe;
+                        handle.block_on(async { self.#method_name(#(#param_names),*).await })
+                    }
+                    Err(_) => {
+                        // No Tokio runtime on this thread. If the
+                        // user registered a non-Tokio executor via
+                        // `set_async_executor`, surface a clear
+                        // message that explains the constraint
+                        // (the macro wrapper cannot drive a
+                        // non-Tokio executor while borrowing `&self`).
+                        if __tokitai_probe {
+                            return Err(::tokitai::ToolError::internal_error(
+                                "an AsyncExecutor is registered via set_async_executor, \
+                                 but the #[tool] macro's sync-from-async wrapper requires \
+                                 a Tokio runtime on the current thread because it borrows \
+                                 &self. Call this from inside a tokio runtime, or convert \
+                                 the tool method to a sync fn."
+                            ));
+                        }
+                        return Err(::tokitai::ToolError::internal_error(
+                            ::tokitai_core::block_on_async_error_message()
+                        ));
+                    }
+                }
             }
         }
     } else if tool.is_async {

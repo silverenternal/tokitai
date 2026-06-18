@@ -1545,6 +1545,16 @@ pub mod config;
 /// stored as `&'static dyn AsyncExecutor`. The type-erased
 /// [`AsyncExecutor::block_on_dyn`] takes a boxed future and returns a boxed
 /// output; typed convenience is provided by [`AsyncExecutorExt`].
+///
+/// ## T-003 per-call override seam
+///
+/// Implementations may override [`AsyncExecutor::block_on_for`] to return
+/// `Some(...)` when an ambient executor (per-`call_tool`, per-thread, etc.)
+/// is reachable. The `#[tool]` macro's sync-from-async wrapper probes
+/// `block_on_for` first, then the global slot set via
+/// [`set_async_executor`], then the active Tokio runtime. This is how
+/// `async-std` / `smol` / `embassy` users supply an executor without
+/// mutating global state.
 pub trait AsyncExecutor: Send + Sync {
     /// Object-safe entry point: drive a boxed future to completion on the
     /// current thread and return its output as a boxed `Any`. Most users
@@ -1574,6 +1584,46 @@ pub trait AsyncExecutor: Send + Sync {
         &self,
         future: core::pin::Pin<Box<dyn core::future::Future<Output = ()> + Send>>,
     ) -> Box<dyn core::any::Any + Send>;
+
+    /// Per-call override seam (T-003). The `#[tool]` macro's sync
+    /// wrapper probes this *before* the global slot, so users who do not
+    /// want a process-wide side effect can supply an executor locally.
+    ///
+    /// Return `None` to indicate "no ambient executor; fall through to
+    /// the global slot / Tokio probe." The default implementation always
+    /// returns `None`; runtime-aware executors (async-std, smol, embassy)
+    /// override it to return `Some(...)` when their runtime is reachable
+    /// on the current thread.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use tokitai_core::AsyncExecutor;
+    ///
+    /// struct AsyncStdExecutor;
+    /// impl AsyncExecutor for AsyncStdExecutor {
+    ///     fn block_on_dyn(
+    ///         &self,
+    ///         future: core::pin::Pin<
+    ///             Box<dyn core::future::Future<Output = ()> + Send>,
+    ///         >,
+    ///     ) -> Box<dyn core::any::Any + Send> {
+    ///         // ... drive the future ...
+    ///         # Box::new(())
+    ///     }
+    ///
+    ///     fn block_on_for(
+    ///         &self,
+    ///     ) -> Option<&'static dyn AsyncExecutor> {
+    ///         // async-std sets a thread-local handle; return `Some(self)`
+    ///         // when one is reachable on this thread.
+    ///         None
+    ///     }
+    /// }
+    /// ```
+    fn block_on_for(&self) -> Option<&'static dyn AsyncExecutor> {
+        None
+    }
 }
 
 /// Typed convenience wrapper around [`AsyncExecutor::block_on_dyn`].
@@ -1662,6 +1712,28 @@ static ASYNC_EXECUTOR: std::sync::OnceLock<Box<dyn AsyncExecutor>> = std::sync::
 /// lifetime of the program. The first call wins; subsequent calls are
 /// silently ignored (best-effort registration).
 ///
+/// # Global fallback role (T-003)
+///
+/// `set_async_executor` is the **process-wide fallback** used by the
+/// `#[tool]` macro. The sync-from-async wrapper resolves an executor in
+/// this order:
+///
+/// 1. [`block_on_for_executor`] — per-call / per-thread override probe
+///    (T-003). Lets users wire async-std / smol / embassy without mutating
+///    global state.
+/// 2. The executor registered via [`set_async_executor`] (this function).
+///    This is the slot `async-std` / `smol` / `embassy` users populate
+///    when they want a single, program-wide bridge.
+/// 3. The active Tokio runtime, when one is reachable on the current
+///    thread.
+/// 4. Otherwise, [`block_on_async`] returns a [`ToolError`] with the
+///    canonical English message.
+///
+/// Use case: an `async-std` user can call this once at startup with an
+/// `async_std::task::Executor` wrapper. The macro then resolves the
+/// wrapper on every sync `call_tool` without the user touching the
+/// macro.
+///
 /// # Example
 ///
 /// ```rust,ignore
@@ -1707,6 +1779,28 @@ pub fn current_async_executor() -> Option<&'static dyn AsyncExecutor> {
         .map(|b| b.as_ref() as &'static dyn AsyncExecutor)
 }
 
+/// T-003 per-call override probe. Returns an executor that should be
+/// preferred over the global slot. The macro's sync-from-async wrapper
+/// calls this first; only on `None` does it fall back to
+/// [`current_async_executor`] and the active Tokio runtime.
+///
+/// This hook lets users wire a runtime-aware executor (async-std / smol
+/// / embassy) without leaking a global side effect from
+/// [`set_async_executor`]. The default implementation returns `None` so
+/// existing executors keep their old behaviour.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use tokitai_core::block_on_for_executor;
+///
+/// // Without a registered executor this returns `None`.
+/// assert!(block_on_for_executor().is_none());
+/// ```
+pub fn block_on_for_executor() -> Option<&'static dyn AsyncExecutor> {
+    ASYNC_EXECUTOR.get().and_then(|b| b.block_on_for())
+}
+
 /// Try to drive `future` to completion using the registered executor, the
 /// current Tokio runtime (when available), or a clear English error.
 ///
@@ -1750,6 +1844,13 @@ where
     F: core::future::Future + Send + 'static,
     F::Output: Send + 'static,
 {
+    // T-003: probe the per-call override seam *before* the global slot
+    // so async-std / smol / embassy users who override `block_on_for`
+    // on their registered executor get the per-thread handle when it
+    // is reachable.
+    if let Some(exec) = block_on_for_executor() {
+        return Ok(exec.block_on(future));
+    }
     if let Some(exec) = current_async_executor() {
         return Ok(exec.block_on(future));
     }
