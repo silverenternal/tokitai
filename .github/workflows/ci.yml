@@ -8,6 +8,12 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # Pinned rustc version used to (re)generate trybuild UI snapshots in
+  # tokitai-macros/tests/ui/*.stderr. The Makefile target
+  # `refresh-ui-snapshots` reads the same variable so local re-blesses
+  # match CI. Bump both in lockstep when the workspace adopts a new
+  # compiler for snapshot generation.
+  RUSTC_VERSION: "1.96.0"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -93,3 +99,27 @@ jobs:
       - name: Run cargo audit
         run: cargo audit
         continue-on-error: true
+
+  ui-snapshot-audit:
+    name: UI snapshot audit (stable / ubuntu)
+    # T-009: pins the rustc version used to (re)generate trybuild snapshots
+    # and verifies that every tokitai-macros/tests/ui/*.stderr has a
+    # matching .rs fixture and that the RUSTC_VERSION sidecar at
+    # tokitai-macros/tests/ui/RUSTC_VERSION is present. Failure here
+    # means an orphan .stderr or a missing version stamp will break
+    # downstream re-blesses. See scripts/audit-ui-snapshots.sh.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4.2.2
+
+      - name: Install Rust ${{ env.RUSTC_VERSION }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUSTC_VERSION }}
+
+      - name: Audit trybuild UI snapshots
+        run: bash scripts/audit-ui-snapshots.sh
+        env:
+          RUSTC_VERSION: ${{ env.RUSTC_VERSION }}
