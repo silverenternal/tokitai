@@ -44,6 +44,14 @@
 #                     Per-impl timing is much less noisy than
 #                     wall-clock because it isolates macro cost
 #                     from link / codegen / toml parsing.
+#   TOKITAI_PROFILE_BUDGET
+#                     T-014: when set (in bytes), the macro emits
+#                     `cargo:warning=impl <Type> -> <N> tools,
+#                      schema_bytes=<B> exceeds budget=<N>` for any
+#                     impl whose combined schema byte count exceeds
+#                     the threshold. The script parses these lines
+#                     and prints them as a "Budget warnings" section
+#                     so users can see which impls to split.
 #
 # Exit codes:
 #   0   measurement completed (results may be reported as N/A)
@@ -266,6 +274,44 @@ parse_profile_warnings() {
     | sed -E 's|cargo:warning=impl ([^ ]+) -> ([0-9]+) tools, ms=([0-9]+)|\1 \3|'
 }
 
+# T-014: parse the per-impl token-cost line that the macro
+# emits when `TOKITAI_PROFILE=1` is set. The format is
+#
+#     cargo:warning=impl <TYPE> -> <TOOLS> tools, schema_bytes=<B>, est_tokens=<T>
+#
+# We grep for the `schema_bytes=` substring so we do not collide
+# with the T-011 ms-only warning format. The output is one
+# `<TYPE> <TOOLS> <SCHEMA_BYTES> <EST_TOKENS>` tuple per line.
+parse_token_cost_warnings() {
+    # $1: path to cargo log file
+    # prints one `<TYPE> <TOOLS> <SCHEMA_BYTES> <EST_TOKENS>`
+    # tuple per line on stdout.
+    local log_file=$1
+    if [ ! -f "$log_file" ]; then
+        return 0
+    fi
+    grep -oE 'cargo:warning=impl [^ ]+ -> [0-9]+ tools, schema_bytes=[0-9]+, est_tokens=[0-9]+' \
+        "$log_file" \
+    | sed -E 's|cargo:warning=impl ([^ ]+) -> ([0-9]+) tools, schema_bytes=([0-9]+), est_tokens=([0-9]+).*|\1 \2 \3 \4|'
+}
+
+# T-014: parse the per-impl budget-exceeded warning. The format
+# is
+#
+#     cargo:warning=impl <TYPE> -> <TOOLS> tools, schema_bytes=<B> exceeds budget=<N>; ...
+#
+# Output is one `<TYPE> <TOOLS> <SCHEMA_BYTES> <BUDGET>` tuple
+# per line. An empty result means no impl blew the budget.
+parse_budget_warnings() {
+    local log_file=$1
+    if [ ! -f "$log_file" ]; then
+        return 0
+    fi
+    grep -oE 'cargo:warning=impl [^ ]+ -> [0-9]+ tools, schema_bytes=[0-9]+ exceeds budget=[0-9]+' \
+        "$log_file" \
+    | sed -E 's|cargo:warning=impl ([^ ]+) -> ([0-9]+) tools, schema_bytes=([0-9]+) exceeds budget=([0-9]+).*|\1 \2 \3 \4|'
+}
+
 run_cargo_check() {
     # $1: sub-target dir name (e.g. "baseline" or "augmented")
     # emits the elapsed time on stdout, returns cargo's exit code.
@@ -299,6 +345,12 @@ run_cargo_check() {
     local profile_env=""
     if [ -n "${TOKITAI_PROFILE:-}" ]; then
         profile_env="TOKITAI_PROFILE=$TOKITAI_PROFILE"
+    fi
+    # T-014: also forward TOKITAI_PROFILE_BUDGET so the macro's
+    # budget-gate path is exercised inside the cargo subprocess.
+    # Empty values are filtered so we do not litter the env.
+    if [ -n "${TOKITAI_PROFILE_BUDGET:-}" ]; then
+        profile_env="$profile_env TOKITAI_PROFILE_BUDGET=$TOKITAI_PROFILE_BUDGET"
     fi
     ( cd "$SCRATCH" && \
       CARGO_TARGET_DIR="$target_dir" \
@@ -577,6 +629,44 @@ if [ -n "${TOKITAI_PROFILE:-}" ]; then
     log "    and quote-rendering time dominate in some impls."
     log "  * CI captures the per-impl median as an artifact and"
     log "    fails if median regresses >20% (see .github/workflows/ci.yml)."
+    log ""
+fi
+
+# T-014: token-cost report. Emitted whenever TOKITAI_PROFILE is
+# set OR the user built with TOKITAI_PROFILE_BUDGET set. The
+# report is informational; it does not gate the script's exit
+# code (a large impl that exceeds the budget is a *hint*, not
+# a regression). CI captures the warnings as the
+# `per-impl-token-cost` artifact and the `budget-violations`
+# artifact, both keyed by the schema byte count so the
+# regression-detection logic can compare across runs.
+TOKEN_LOG="$TARGET_DIR_BASE/augmented/cargo.log"
+if [ -f "$TOKEN_LOG" ]; then
+    log ""
+    log "=========================================================="
+    log "  Tokitai per-impl token-cost report (T-014)"
+    log "=========================================================="
+    log "  schema_bytes + est_tokens per #[tool] impl block:"
+    if [ -n "${TOKITAI_PROFILE:-}" ]; then
+        parse_token_cost_warnings "$TOKEN_LOG" \
+            | awk '{ printf "    %-40s %5s tools, %8s B, ~%5s tokens\n", $1, $2, $3, $4 }'
+    else
+        log "    (TOKITAI_PROFILE not set -- no per-impl token-cost lines available."
+        log "     Re-run with TOKITAI_PROFILE=1 to populate this section.)"
+    fi
+    log ""
+    log "  budget-exceeded impl blocks:"
+    if [ -n "${TOKITAI_PROFILE_BUDGET:-}" ]; then
+        parse_budget_warnings "$TOKEN_LOG" \
+            | awk -v b="$TOKITAI_PROFILE_BUDGET" \
+                  '{ printf "    %-40s %5s tools, %8s B exceeds budget=%s\n", $1, $2, $3, b }'
+        local_violations=$(parse_budget_warnings "$TOKEN_LOG" | wc -l | tr -d ' ')
+        log "    -> ${local_violations} impl block(s) exceeded budget=${TOKITAI_PROFILE_BUDGET}"
+    else
+        log "    (TOKITAI_PROFILE_BUDGET not set -- no budget check was performed."
+        log "     Re-run with TOKITAI_PROFILE_BUDGET=8192 to populate this section.)"
+    fi
+    log "=========================================================="
     log ""
 fi
 

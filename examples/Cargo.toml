@@ -80,5 +80,9 @@ path = "wrap_demo.rs"
 name = "dynamic_tools"
 path = "dynamic_tools.rs"
 
+[[example]]
+name = "budget_check"
+path = "budget_check.rs"
+
 [dev-dependencies]
 futures = "0.3"

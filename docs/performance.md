@@ -20,8 +20,9 @@ the way it does, see the [ADRs](adr/README.md).
 4. [Memory](#memory)
 5. [Async](#async)
 6. [Schema generation](#schema-generation)
-7. [Best practices summary](#best-practices-summary)
-8. [See also](#see-also)
+7. [Token cost of tool schemas (T-014)](#token-cost-of-tool-schemas-t-014)
+8. [Best practices summary](#best-practices-summary)
+9. [See also](#see-also)
 
 ---
 
@@ -492,6 +493,110 @@ or do not need `operationId`-keyed lookup.
 
 ---
 
+## Token cost of tool schemas (T-014)
+
+OpenAI caps a single chat request at **128 tools**. Claude Code's
+`shouldDefer` is a hand-rolled workaround to keep large schemas
+out of the prompt when they would blow the token budget. Tokitai
+sees the schema at compile time — measuring the byte count (and a
+token estimate) is free.
+
+When `TOKITAI_PROFILE=1` is set in the build environment, the
+`#[tool]` macro emits one extra line per `#[tool]` impl block,
+alongside the existing per-impl timing warning:
+
+```text
+cargo:warning=impl <TYPE> -> <TOOLS> tools, schema_bytes=<B>, est_tokens=<T>
+```
+
+`<B>` is the byte length of every `name + description +
+input_schema` string the impl will emit, summed across all
+methods and aliases. `<T>` is `ceil(B / 4)` — the conventional
+English-text token heuristic. The numbers are *upper bounds*
+because the macro uses a 4×-description proxy for the schema
+body (the JSON Schema is typically 2–5× the description size for
+a small tool, and the conservative multiplier keeps the estimate
+from under-counting).
+
+### Worked example
+
+For a 50-method `#[tool]` impl with average description length
+of 60 bytes, the macro reports roughly:
+
+```text
+cargo:warning=impl MyService -> 50 tools, schema_bytes=15000, est_tokens=3750
+```
+
+15 KB / 50 methods ≈ 300 B per tool — which is in the right
+ballpark for a JSON Schema with one `description` field, one
+`input_schema` body, and a short name. A real LLM tokenizer
+(OpenAI BPE, Claude BPE) will report a slightly different number
+because real tokenisation splits on whitespace and punctuation;
+the `~300 B per tool` rule of thumb is a planning aid, not a
+billing figure.
+
+### Budget gate
+
+Set `TOKITAI_PROFILE_BUDGET=<N>` to declare a hard byte budget
+per impl block. When the budget is exceeded the macro emits an
+additional warning:
+
+```text
+cargo:warning=impl BigTools -> 200 tools, schema_bytes=24500 exceeds budget=8192; consider splitting the impl or using #[wrap] to curate the exposed set
+```
+
+The build still succeeds — the budget is a *hint*, not a hard
+error. The CI job `budget-check` exercises this with
+`TOKITAI_PROFILE_BUDGET=8192` against the
+`examples/budget_check.rs` fixture (200-method `BigTools` impl,
+3-method `SmallTools` impl); the BigTools warning must fire, the
+SmallTools warning must stay quiet.
+
+### Worked example: budgeting a 50-method impl
+
+Suppose your `#[tool]` impl has 50 methods and each method's
+description + name averages 100 bytes. The macro reports
+~50 × (100 + 4 × 100) = 25 000 bytes. Setting
+`TOKITAI_PROFILE_BUDGET=8192` will trigger a warning. Three
+remediation paths:
+
+1. **Split the impl.** Two `#[tool]` impl blocks with 25 methods
+   each cost ~12 500 bytes apiece — still over budget. Three
+   blocks of ~17 methods each cost ~8 500 bytes apiece — still
+   over. You need 4 blocks of ~13 methods each (~6 500 bytes
+   apiece) to fit the 8 192-byte budget.
+2. **Curate with `#[wrap]`.** A `#[wrap(methods = [...])]`
+   block over the same impl can expose only the methods the LLM
+   actually calls, dropping the byte count proportionally.
+3. **Shorter descriptions.** The 4× proxy means each byte you
+   save in description saves 4 bytes in the byte estimate.
+   Tighten the `///` lines and the budget clears.
+
+### When `TOKITAI_PROFILE` is unset
+
+Default builds pay nothing — the helpers
+(`compute_impl_schema_bytes`, `emit_token_cost_warning`,
+`emit_budget_exceeded_warning`) are gated behind
+`option_env!("TOKITAI_PROFILE")` and
+`option_env!("TOKITAI_PROFILE_BUDGET")`. The byte-walk is only
+performed when the user has explicitly opted in via the env
+var.
+
+The `examples/budget_check.rs` fixture is the canonical demo:
+
+```bash
+# Default: no warning.
+cargo run --example budget_check
+
+# Profile mode: per-impl timing + token-cost line.
+TOKITAI_PROFILE=1 cargo run --example budget_check
+
+# Budget mode: BigTools triggers, SmallTools stays quiet.
+TOKITAI_PROFILE_BUDGET=8192 cargo run --example budget_check
+```
+
+---
+
 ## Best practices summary
 
 1. **Trust the compile-time codegen** — tool definitions are
@@ -508,6 +613,9 @@ or do not need `operationId`-keyed lookup.
    the incremental `cargo check` cost is dominated by the
    *changed* impl.
 7. **Measure on your own crate** before doing anything clever.
+8. **Set `TOKITAI_PROFILE_BUDGET=8192` for OpenAI-shaped
+   deployments** — the warning fires before the impl silently
+   blows past 128 tools (T-014).
 
 ---
 

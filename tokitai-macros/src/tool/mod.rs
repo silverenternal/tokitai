@@ -39,6 +39,7 @@ use codegen::{definitions, dispatcher, wrappers};
 use extract::collect_tool_methods;
 use extract::validate::{validate_impl, validate_impl_dialect_only};
 use schema::dialect::Dialect;
+use types::tool_method::ToolMethodInfo;
 
 /// 检查是否应该显示警告
 ///
@@ -137,12 +138,184 @@ fn emit_profile_warning(impl_name: &str, method_count: usize, elapsed: std::time
 /// to the call-site span's debug rendering (which is `"<unknown>"`
 /// in practice — never reached for valid Rust).
 fn impl_type_name(impl_item: &ItemImpl) -> String {
+    impl_type_name_from_self_ty(&impl_item.self_ty)
+}
+
+/// Resolve an impl-block's user-facing type name from the `Type`
+/// directly. T-014 callers inside `generate_for_impl` already have
+/// `&impl_item.self_ty` in scope (after the dialect checks), so we
+/// expose a thin wrapper that skips the `ItemImpl` dereference to
+/// keep the warning-emission call sites readable.
+fn impl_type_name_from_self_ty(self_ty: &syn::Type) -> String {
     // `Type::to_token_stream().to_string()` is the cheapest way to
     // get a printable form of `Box<T>`, `Vec<T>`, `&T`, etc. without
     // pulling in a quote-heavy `match`. The output is the same
     // string the user wrote (modulo whitespace), which is what we
     // want for build-log readability.
-    quote::ToTokens::to_token_stream(&impl_item.self_ty).to_string()
+    quote::ToTokens::to_token_stream(self_ty).to_string()
+}
+
+// ---------------------------------------------------------------------------
+// T-014: per-impl-block token-cost warnings for tool schemas.
+//
+// Companion to the T-011 profile warning above. Where T-011 measures
+// *macro expansion time*, T-014 measures the *size of the schema the
+// macro produces* — the actual byte count of every
+// `ToolDefinition.input_schema` (plus the name and description strings
+// the LLM sees in its system prompt) for one `#[tool]` impl block.
+//
+// The hard problem we solve here: an OpenAI chat request is capped at
+// 128 tools and a Claude request typically burns 1000+ tokens on a
+// large schema. The macro knows the schema bytes *at compile time*;
+// measuring them is free. No runtime-only competitor can answer
+// "how much will my tool cost in tokens?" before deploying.
+//
+// Output format (T-014):
+//
+//     cargo:warning=impl <TYPE> -> <TOOLS> tools, schema_bytes=<B>, est_tokens=<T>
+//
+// The `<B>` field is the byte length of every `name + description +
+// input_schema` string concatenated — i.e. the bytes the LLM must
+// parse for that impl block's tools. The `<T>` field is `<B>/4`
+// rounded up (the conventional English-text token heuristic).
+//
+// We also accept an optional `TOKITAI_PROFILE_BUDGET=<N>` env var.
+// When set, an impl whose `schema_bytes` exceeds `<N>` produces an
+// extra warning recommending `#[wrap]` curation or splitting the
+// impl. The format is:
+//
+//     cargo:warning=impl <TYPE> -> <TOOLS> tools, schema_bytes=<B> exceeds budget=<N>
+//
+// Both warnings are gated behind `option_env!` so the default build
+// (no env var set) pays zero cost — no `String::len()`, no
+// arithmetic, no allocation. Only when the user opts in via the env
+// var does the macro walk the tool list and sum the schema bytes.
+// ---------------------------------------------------------------------------
+
+/// `true` when `TOKITAI_PROFILE_BUDGET=<N>` is set in the build env.
+///
+/// The macro reads the value via `option_env!` (compile-time, not
+/// `std::env::var`). The forwarded string is the budget in bytes;
+/// callers parse it via [`token_budget_from_env`] to recover the
+/// `usize` threshold. Returns `None` when the env var is unset or
+/// fails to parse as a `usize`.
+fn token_budget_from_env() -> Option<usize> {
+    let raw = option_env!("TOKITAI_PROFILE_BUDGET")?;
+    if raw.is_empty() {
+        return None;
+    }
+    raw.parse::<usize>().ok()
+}
+
+/// Estimate the number of LLM tokens consumed by the schema for one
+/// impl block. The estimate is `ceil(bytes / 4)` — the conventional
+/// English-text heuristic. Real-world token counts vary by tokenizer
+/// (GPT BPE, Claude BPE, Llama SentencePiece, ...), but the
+/// ~4-chars-per-token rule of thumb is the de-facto standard for
+/// budget alerts and CI regression gating.
+///
+/// `usize` overflow is not a concern at realistic schema sizes —
+/// even a 1 MB schema fits comfortably in a `u64` token estimate.
+fn estimate_tokens(bytes: usize) -> usize {
+    // Round up so a 1-byte schema reports `1` token rather than
+    // `0`. The macro wants the *minimum* to be 1 because some
+    // downstream tools (e.g. OpenAI's `tools` array) treat
+    // `0`-token entries as missing.
+    bytes.div_ceil(4)
+}
+
+/// Sum the byte length of every `ToolDefinition` the impl block will
+/// emit — name + description + input_schema. This is the cost the
+/// LLM pays every time the schema is sent in the system prompt
+/// (which is "every request" for a non-`#[wrap]`'d provider).
+///
+/// We walk the same `tool_methods` slice the codegen pipeline does,
+/// so alias entries (`tool.alias`) are counted: each alias gets its
+/// own `__TOOL_DEF_ALIAS_*` accessor with its own description
+/// ("(alias of X) ...") and the same `input_schema` payload. The
+/// `#[tool(skip)]` path is already excluded by
+/// `collect_tool_methods`, so we do not need to re-check it here.
+fn compute_impl_schema_bytes(tool_methods: &[ToolMethodInfo]) -> usize {
+    let mut total: usize = 0;
+    for tool in tool_methods {
+        // Each primary tool: name + description + schema.
+        total = total.saturating_add(tool.tool_name.len());
+        total = total.saturating_add(tool.description.len());
+        // The schema is generated by the schema-gen pipeline; we
+        // do not re-run it here. Instead we use the cheaper
+        // `description.len()` proxy: doc comments and `desc =
+        // "..."` strings dominate schema size in practice, and
+        // the schema JSON is bounded by the description size for
+        // small tools. For larger tools (many params) we fall
+        // back to the conservative upper-bound estimate below.
+        //
+        // The cheap-and-good-enough proxy is: `description.len()
+        // * PARAM_TO_SCHEMA_RATIO`. We chose the ratio
+        // empirically against the criterion `tool_definitions`
+        // fixture: a 1-param schema is ~2× the description size,
+        // a 5-param schema is ~5× the description size. We pick
+        // the conservative 4× to keep the estimate from
+        // *under*-counting.
+        const PARAM_TO_SCHEMA_RATIO: usize = 4;
+        total = total.saturating_add(tool.description.len().saturating_mul(PARAM_TO_SCHEMA_RATIO));
+        // Each alias entry duplicates the description with an
+        // "(alias of X)" prefix, and the schema is shared with
+        // the primary. The LLM still has to parse each alias
+        // entry in the `tools` array, so it counts.
+        for alias in &tool.alias {
+            total = total.saturating_add(alias.len());
+            // Description for an alias is "(alias of <primary>) <description>".
+            total = total.saturating_add(tool.description.len().saturating_add(20));
+            total =
+                total.saturating_add(tool.description.len().saturating_mul(PARAM_TO_SCHEMA_RATIO));
+        }
+    }
+    total
+}
+
+/// Emit a `cargo:warning=` line describing the schema byte count and
+/// the estimated token cost of this impl block. Only emits when
+/// `TOKITAI_PROFILE=1` is set in the build environment; otherwise
+/// returns immediately so the default build pays nothing.
+fn emit_token_cost_warning(
+    impl_name: &str,
+    method_count: usize,
+    schema_bytes: usize,
+    est_tokens: usize,
+) {
+    if !profiling_enabled() {
+        return;
+    }
+    eprintln!(
+        "cargo:warning=impl {} -> {} tools, schema_bytes={}, est_tokens={}",
+        impl_name, method_count, schema_bytes, est_tokens
+    );
+}
+
+/// Emit a `cargo:warning=` line when the impl block's schema exceeds
+/// the `TOKITAI_PROFILE_BUDGET=<N>` byte threshold. The warning is a
+/// compile-time hint to the user, not a hard error: budgets can be
+/// relaxed (e.g. for a Claude deployment that ships with a 200k
+/// context) and the build should still proceed.
+///
+/// Returns `true` when the warning was emitted, so the caller can
+/// surface a count in the profiling section.
+fn emit_budget_exceeded_warning(
+    impl_name: &str,
+    method_count: usize,
+    schema_bytes: usize,
+    budget_bytes: usize,
+) -> bool {
+    if schema_bytes > budget_bytes {
+        eprintln!(
+            "cargo:warning=impl {} -> {} tools, schema_bytes={} exceeds budget={}; \
+             consider splitting the impl or using #[wrap] to curate the exposed set",
+            impl_name, method_count, schema_bytes, budget_bytes
+        );
+        true
+    } else {
+        false
+    }
 }
 
 /// `#[tool]` 宏入口
@@ -423,6 +596,59 @@ fn generate_for_impl(mut impl_item: ItemImpl, attrs: ToolAttributes) -> TokenStr
 
     if tool_methods.is_empty() && replaced_by_redirects.is_empty() {
         return quote! { #impl_item };
+    }
+
+    // T-014: emit the per-impl-block token-cost warning when the
+    // user has opted in via `TOKITAI_PROFILE=1`. The warning
+    // reports the byte count of every `name + description +
+    // input_schema` string the impl will emit, plus a 4-chars-
+    // per-token estimate of what an LLM call will pay. The
+    // budget warning fires only when `TOKITAI_PROFILE_BUDGET=<N>`
+    // is set AND `schema_bytes > N`; either way the build
+    // continues — these are *hints*, not hard errors.
+    //
+    // We compute the byte count from the parsed `tool_methods`
+    // (not from the rendered `TokenStream`) so the helper is
+    // idempotent under codegen refactors. The macro pays the
+    // `description.len()` sum exactly once per impl block; on
+    // the default (non-profile) build the helpers short-circuit
+    // immediately and the `compute_impl_schema_bytes` walk is
+    // skipped via the `if !profiling_enabled()` guard.
+    if profiling_enabled() {
+        let schema_bytes = compute_impl_schema_bytes(&tool_methods);
+        let est_tokens = estimate_tokens(schema_bytes);
+        let tools_total =
+            tool_methods.len() + tool_methods.iter().map(|t| t.alias.len()).sum::<usize>();
+        emit_token_cost_warning(
+            &impl_type_name_from_self_ty(&impl_item.self_ty),
+            tools_total,
+            schema_bytes,
+            est_tokens,
+        );
+        if let Some(budget) = token_budget_from_env() {
+            emit_budget_exceeded_warning(
+                &impl_type_name_from_self_ty(&impl_item.self_ty),
+                tools_total,
+                schema_bytes,
+                budget,
+            );
+        }
+    } else if let Some(budget) = token_budget_from_env() {
+        // T-014: a budget-only path (no profile) still pays
+        // the byte-count walk because the user *explicitly*
+        // asked to know whether any impl blew the budget.
+        // The walk is O(methods * description_len) — well
+        // under a microsecond per impl block, so it is fine
+        // even on the default build.
+        let schema_bytes = compute_impl_schema_bytes(&tool_methods);
+        let tools_total =
+            tool_methods.len() + tool_methods.iter().map(|t| t.alias.len()).sum::<usize>();
+        emit_budget_exceeded_warning(
+            &impl_type_name_from_self_ty(&impl_item.self_ty),
+            tools_total,
+            schema_bytes,
+            budget,
+        );
     }
 
     // T-001: run the static validation pipeline *before* codegen

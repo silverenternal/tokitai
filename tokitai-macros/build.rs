@@ -39,4 +39,26 @@ fn main() {
             println!("cargo:rustc-env=TOKITAI_PROFILE={}", value);
         }
     }
+
+    // T-014: forward the optional schema-byte budget. The macro
+    // reads `option_env!("TOKITAI_PROFILE_BUDGET")` and emits a
+    // `cargo:warning=... exceeds budget=...` line per impl block
+    // whose combined `name + description + input_schema` byte
+    // count exceeds the threshold. The default build (no env
+    // var) skips the budget gate entirely; setting
+    // `TOKITAI_PROFILE_BUDGET=8192` (8 KB ≈ 2 000 tokens) is a
+    // reasonable starting point for an OpenAI-shaped provider.
+    //
+    // The value is forwarded verbatim — even non-numeric strings
+    // — so users can write `TOKITAI_PROFILE_BUDGET=64KB` as a
+    // self-documenting form; the macro's `parse::<usize>` will
+    // then fail to parse it and quietly disable the budget
+    // check (this is the same behaviour as setting an empty
+    // value). Users who want the gate *on* should stick to
+    // a plain integer like `8192` or `65536`.
+    if let Ok(value) = std::env::var("TOKITAI_PROFILE_BUDGET") {
+        if !value.is_empty() {
+            println!("cargo:rustc-env=TOKITAI_PROFILE_BUDGET={}", value);
+        }
+    }
 }

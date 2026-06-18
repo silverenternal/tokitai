@@ -180,3 +180,144 @@ jobs:
           name: per-impl-profile
           path: profile-baseline.txt
           if-no-files-found: error
+
+  budget-check:
+    # T-014: build the `budget_check` example with
+    # `TOKITAI_PROFILE_BUDGET=8192` and assert that the macro
+    # emits a `cargo:warning=... exceeds budget=...` line for
+    # the deliberately large `BigTools` impl block (200 methods)
+    # but NOT for the small `SmallTools` impl (3 methods). The
+    # warning is informational — the build still succeeds — but
+    # CI captures the warning text as an artifact so the
+    # regression-detection logic can flag any impl that newly
+    # blows the budget.
+    name: Per-impl budget check (stable / ubuntu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4.2.2
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+
+      - name: Cache cargo registry and build artifacts
+        uses: Swatinem/rust-cache@v2.7.5
+        with:
+          cache-on-failure: true
+
+      - name: Build budget_check example with TOKITAI_PROFILE_BUDGET
+        env:
+          TOKITAI_PROFILE_BUDGET: "8192"
+        run: |
+          set -euo pipefail
+          cd examples
+          # The budget warning is emitted via `cargo:warning=`
+          # which `cargo build` writes to stderr. We capture
+          # both stdout and stderr so the file is grep-friendly.
+          cargo build --example budget_check 2>&1 \
+            | tee build-with-budget.log \
+            | grep -E 'cargo:warning=impl ' || true
+
+          # Assert the BigTools impl (200 methods) triggered the
+          # budget warning. The expected line is
+          # `cargo:warning=impl BigTools -> 200 tools, schema_bytes=N exceeds budget=8192`.
+          if ! grep -qE 'cargo:warning=impl BigTools -> [0-9]+ tools, schema_bytes=[0-9]+ exceeds budget=8192' \
+              build-with-budget.log; then
+            echo "::error::expected budget-exceeded warning for BigTools not emitted; the macro is not wired through build.rs"
+            exit 1
+          fi
+
+          # Assert the SmallTools impl (3 methods) did NOT
+          # trigger the warning. 3 × small-method description
+          # bytes is well below 8 192. The CI gate here is
+          # "the budget path actually fires when it should and
+          # stays quiet when it shouldn't" — a regression in
+          # either direction is a bug.
+          if grep -qE 'cargo:warning=impl SmallTools -> [0-9]+ tools, schema_bytes=[0-9]+ exceeds budget=8192' \
+              build-with-budget.log; then
+            echo "::error::SmallTools should NOT trigger the budget warning; the macro is over-counting"
+            exit 1
+          fi
+
+          # Capture the BigTools line as the
+          # `budget-violations` artifact. We strip the cargo
+          # formatter prefix so the file is one `<Type> <bytes>`
+          # tuple per line, easy to diff.
+          grep -E 'cargo:warning=impl ' build-with-budget.log \
+            | sed -E 's|.*cargo:warning=impl ([^ ]+) -> ([0-9]+) tools, schema_bytes=([0-9]+) exceeds budget=8192.*|\1 \3|' \
+            | sort > budget-violations.txt
+          echo "## budget-check baseline (TOKITAI_PROFILE_BUDGET=8192)" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat budget-violations.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          if [ ! -s budget-violations.txt ]; then
+            echo "::error::budget-violations.txt is empty; the macro is not emitting cargo:warning=... exceeds budget=... lines"
+            exit 1
+          fi
+
+      - name: Upload budget artifact
+        uses: actions/upload-artifact@v4.4.0
+        with:
+          name: budget-violations
+          path: examples/budget-violations.txt
+          if-no-files-found: error
+
+  token-cost-baseline:
+    # T-014: capture the per-impl `schema_bytes` + `est_tokens`
+    # for every `#[tool]` impl in the workspace. This is the
+    # companion artifact to `per-impl-profile`; the regression-
+    # detection logic compares both across runs and flags a
+    # >20% byte drift. We deliberately run with
+    # `TOKITAI_PROFILE=1` (no budget) so the line is emitted
+    # for *every* impl, not just the over-budget ones.
+    name: Per-impl token-cost baseline (stable / ubuntu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4.2.2
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+
+      - name: Cache cargo registry and build artifacts
+        uses: Swatinem/rust-cache@v2.7.5
+        with:
+          cache-on-failure: true
+
+      - name: Build examples with TOKITAI_PROFILE
+        env:
+          TOKITAI_PROFILE: "1"
+        run: |
+          set -euo pipefail
+          # Collect the per-impl token-cost lines into a stable
+          # text artifact. The line format is
+          # `cargo:warning=impl <Type> -> <N> tools, schema_bytes=<B>, est_tokens=<T>`;
+          # we strip the cargo formatter prefix to produce one
+          # `<Type> <N> <B> <T>` tuple per line.
+          cargo build --workspace --all-features --examples 2>&1 \
+            | grep -E 'cargo:warning=impl .* schema_bytes=' \
+            | sed -E 's|.*cargo:warning=impl ([^ ]+) -> ([0-9]+) tools, schema_bytes=([0-9]+), est_tokens=([0-9]+).*|\1 \2 \3 \4|' \
+            | sort > token-cost-baseline.txt
+          echo "## per-impl token-cost baseline (T-014)" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat token-cost-baseline.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          if [ ! -s token-cost-baseline.txt ]; then
+            echo "::error::token-cost-baseline.txt is empty; the macro is not emitting cargo:warning=impl ... schema_bytes=... lines"
+            exit 1
+          fi
+
+      - name: Upload token-cost artifact
+        uses: actions/upload-artifact@v4.4.0
+        with:
+          name: per-impl-token-cost
+          path: token-cost-baseline.txt
+          if-no-files-found: error
