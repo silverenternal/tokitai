@@ -7,4 +7,4 @@ pub(crate) mod params;
 pub(crate) mod tool_info;
 pub(crate) mod validate;
 
-pub(crate) use tool_info::collect_tool_methods;
+pub(crate) use tool_info::{collect_replaced_by_redirects, collect_tool_methods};

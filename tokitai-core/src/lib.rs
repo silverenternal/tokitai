@@ -642,6 +642,11 @@ impl ToolDefinition {
     /// field will be emitted as an empty object (`{}`) so the surrounding
     /// envelope remains a valid OpenAI tool descriptor.
     ///
+    /// T-013: when the tool has a deprecation marker, the description
+    /// is suffixed with a `[DEPRECATED ...]` annotation. The OpenAI
+    /// spec does not standardize a `_meta` envelope, so we surface the
+    /// deprecation as visible text the LLM can read.
+    ///
     /// # Example
     ///
     /// ```rust
@@ -660,11 +665,12 @@ impl ToolDefinition {
     #[cfg(feature = "serde")]
     pub fn to_openai_function(&self) -> serde_json::Value {
         let parameters = self.parse_input_schema_or_empty();
+        let description = self.deprecated_description_suffix();
         serde_json::json!({
             "type": "function",
             "function": {
                 "name": self.name,
-                "description": self.description,
+                "description": description,
                 "parameters": parameters,
             }
         })
@@ -687,6 +693,12 @@ impl ToolDefinition {
     /// field will be emitted as an empty object (`{}`) so the surrounding
     /// envelope remains a valid Anthropic tool descriptor.
     ///
+    /// T-013: when the tool has a deprecation marker, the description
+    /// is suffixed with a `[DEPRECATED ...]` annotation that the LLM
+    /// can read. Anthropic does not standardize a top-level
+    /// `_meta.deprecated` field for tool definitions, so the
+    /// description suffix is the supported carrier.
+    ///
     /// # Example
     ///
     /// ```rust
@@ -705,9 +717,10 @@ impl ToolDefinition {
     #[cfg(feature = "serde")]
     pub fn to_anthropic_tool(&self) -> serde_json::Value {
         let input_schema = self.parse_input_schema_or_empty();
+        let description = self.deprecated_description_suffix();
         serde_json::json!({
             "name": self.name,
-            "description": self.description,
+            "description": description,
             "input_schema": input_schema,
         })
     }
@@ -730,6 +743,12 @@ impl ToolDefinition {
     /// field will be emitted as an empty object (`{}`) so the surrounding
     /// envelope remains a valid MCP tool descriptor.
     ///
+    /// T-013: when the tool has a deprecation marker, the envelope
+    /// includes a `_meta` object with `deprecated`, `deprecatedSince`,
+    /// `removeIn`, and `replacedBy` fields. MCP-aware clients can
+    /// surface these directly to the user; the description is also
+    /// suffixed with `[DEPRECATED ...]` for older clients.
+    ///
     /// # Example
     ///
     /// ```rust
@@ -748,11 +767,70 @@ impl ToolDefinition {
     #[cfg(feature = "serde")]
     pub fn to_mcp_tool(&self) -> serde_json::Value {
         let input_schema = self.parse_input_schema_or_empty();
-        serde_json::json!({
+        let description = self.deprecated_description_suffix();
+        let mut envelope = serde_json::json!({
             "name": self.name,
-            "description": self.description,
+            "description": description,
             "inputSchema": input_schema,
-        })
+        });
+        // T-013: surface structured deprecation metadata on the MCP
+        // envelope. The object key is `_meta` per the MCP 2025-06-18
+        // spec; the absence of any deprecation field means the tool
+        // is current.
+        if self.deprecated_since.is_some() || self.remove_in.is_some() || self.replaced_by.is_some()
+        {
+            let mut meta = serde_json::Map::new();
+            meta.insert("deprecated".to_string(), serde_json::Value::Bool(true));
+            if let Some(since) = self.deprecated_since.as_deref() {
+                meta.insert(
+                    "deprecatedSince".to_string(),
+                    serde_json::Value::String(since.to_string()),
+                );
+            }
+            if let Some(remove_in) = self.remove_in.as_deref() {
+                meta.insert(
+                    "removeIn".to_string(),
+                    serde_json::Value::String(remove_in.to_string()),
+                );
+            }
+            if let Some(replaced_by) = self.replaced_by.as_deref() {
+                meta.insert(
+                    "replacedBy".to_string(),
+                    serde_json::Value::String(replaced_by.to_string()),
+                );
+            }
+            envelope["_meta"] = serde_json::Value::Object(meta);
+        }
+        envelope
+    }
+
+    /// T-013: helper for the provider-envelope emitters. Returns
+    /// `self.description` (no copy when no deprecation is set) or
+    /// `self.description` suffixed with a `[DEPRECATED ...]` marker
+    /// the LLM can read. Kept private so callers always go through
+    /// `to_openai_function` / `to_anthropic_tool` / `to_mcp_tool`.
+    #[cfg(feature = "serde")]
+    fn deprecated_description_suffix(&self) -> alloc::string::String {
+        if self.deprecated_since.is_none() && self.remove_in.is_none() && self.replaced_by.is_none()
+        {
+            return self.description.clone();
+        }
+        let mut suffix = alloc::string::String::from(" [DEPRECATED");
+        if let Some(since) = self.deprecated_since.as_deref() {
+            suffix.push_str(&alloc::format!(" since={}", since));
+        }
+        if let Some(remove_in) = self.remove_in.as_deref() {
+            suffix.push_str(&alloc::format!(" remove_in={}", remove_in));
+        }
+        if let Some(replaced_by) = self.replaced_by.as_deref() {
+            if !replaced_by.is_empty() {
+                suffix.push_str(&alloc::format!(" replaced_by={}", replaced_by));
+            }
+        }
+        suffix.push(']');
+        let mut out = self.description.clone();
+        out.push_str(&suffix);
+        out
     }
 
     /// Parse `input_schema` into a `serde_json::Value`, falling back to an
@@ -765,6 +843,171 @@ impl ToolDefinition {
         serde_json::from_str::<serde_json::Value>(&self.input_schema)
             .unwrap_or_else(|_| serde_json::json!({}))
     }
+
+    /// T-013: returns `true` when this tool's `remove_in` version is at
+    /// or before `current_version` and the version strings are
+    /// comparable as SemVer (three numeric components separated by
+    /// `.`). Returns `false` when:
+    ///
+    /// * `remove_in` is `None`
+    /// * `current_version` is `None` (no version gating configured at
+    ///   the dispatcher level)
+    /// * either string fails to parse as SemVer — we fail open so a
+    ///   typo in a version string never silently removes a live tool.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::ToolDefinition;
+    ///
+    /// let tool = ToolDefinition::new("legacy", "Old API", "{}")
+    ///     .with_deprecated("1.0.0", "2.0.0", "modern");
+    /// assert!(tool.is_removed(Some("2.0.0")));
+    /// assert!(tool.is_removed(Some("3.0.0")));
+    /// assert!(!tool.is_removed(Some("1.5.0")));
+    /// assert!(!tool.is_removed(None));
+    /// ```
+    pub fn is_removed(&self, current_version: Option<&str>) -> bool {
+        let (Some(remove_in), Some(current)) = (self.remove_in.as_deref(), current_version) else {
+            return false;
+        };
+        match (parse_semver(remove_in), parse_semver(current)) {
+            (Some(rm), Some(cur)) => cur >= rm,
+            _ => false,
+        }
+    }
+
+    /// T-013: returns the structured `Removed` error a caller should
+    /// receive when `is_removed(current)` is `true`. The error message
+    /// includes the `remove_in` version and, when set, the
+    /// `replaced_by` successor so the LLM client (or a human reader)
+    /// has the context to retry with the new name.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::ToolDefinition;
+    /// use tokitai_core::ToolErrorKind;
+    ///
+    /// let tool = ToolDefinition::new("legacy", "Old API", "{}")
+    ///     .with_deprecated("1.0.0", "2.0.0", "modern");
+    /// let err = tool.removed_error(Some("2.5.0"));
+    /// assert_eq!(err.kind, ToolErrorKind::Removed);
+    /// assert!(err.message.contains("2.0.0"));
+    /// assert!(err.message.contains("modern"));
+    /// ```
+    #[cfg(feature = "serde")]
+    pub fn removed_error(&self, current_version: Option<&str>) -> ToolError {
+        let remove_in = self.remove_in.as_deref().unwrap_or("?");
+        let message = match (current_version, self.replaced_by.as_deref()) {
+            (Some(cur), Some(repl)) if !repl.is_empty() => alloc::format!(
+                "tool `{}` was removed in version {} (current: {}); use `{}` instead",
+                self.name,
+                remove_in,
+                cur,
+                repl
+            ),
+            (Some(cur), _) => alloc::format!(
+                "tool `{}` was removed in version {} (current: {})",
+                self.name,
+                remove_in,
+                cur
+            ),
+            (None, Some(repl)) if !repl.is_empty() => alloc::format!(
+                "tool `{}` was removed in version {}; use `{}` instead",
+                self.name,
+                remove_in,
+                repl
+            ),
+            (None, _) => {
+                alloc::format!("tool `{}` was removed in version {}", self.name, remove_in)
+            }
+        };
+        ToolError::removed(message)
+    }
+}
+
+/// Parse a SemVer-like version string (three numeric components
+/// separated by `.`) into a `(u32, u32, u32)` tuple. Returns `None`
+/// on any malformed input — we fail open elsewhere so a typo in a
+/// version string never silently removes a live tool.
+pub(crate) fn parse_semver(s: &str) -> Option<(u32, u32, u32)> {
+    let s = s.trim();
+    // Strip an optional `v` prefix and any pre-release / build
+    // metadata, since neither affects ordering for T-013's
+    // purposes (major.minor.patch only).
+    let s = s.strip_prefix('v').unwrap_or(s);
+    let core = s.split(['-', '+']).next().unwrap_or(s);
+    let mut parts = core.split('.');
+    let major = parts.next()?.parse::<u32>().ok()?;
+    let minor = parts.next()?.parse::<u32>().ok()?;
+    let patch = parts.next()?.parse::<u32>().ok()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    Some((major, minor, patch))
+}
+
+/// T-013: process-wide current version used to gate `remove_in`
+/// removal at the dispatcher. Set via [`set_current_version`]; if
+/// never set, the macro's `__call_*` wrappers run tools regardless
+/// of their `remove_in` field. Wrapped in a `Mutex` so test
+/// binaries (and programs that bump their version dynamically) can
+/// override the slot; the production hot path takes a brief read
+/// lock per call.
+#[cfg(feature = "serde")]
+static CURRENT_VERSION: std::sync::Mutex<Option<alloc::string::String>> =
+    std::sync::Mutex::new(None);
+
+/// T-013: install a process-wide current version. The `#[tool]`
+/// macro's sync wrapper compares this value against each tool's
+/// `remove_in` field; when `remove_in <= current` the call returns
+/// `ToolError::Removed` and the user is directed to `replaced_by`.
+///
+/// Call once at program startup, or whenever the running version
+/// changes. If the version is unknown, simply do not call this
+/// function — the call path stays open.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use tokitai_core::set_current_version;
+///
+/// set_current_version("2.5.0");
+/// ```
+#[cfg(feature = "serde")]
+pub fn set_current_version(version: impl Into<alloc::string::String>) {
+    if let Ok(mut guard) = CURRENT_VERSION.lock() {
+        *guard = Some(version.into());
+    }
+}
+
+/// T-013: clear any previously-registered current version. After
+/// this call the macro stops gating `remove_in` until
+/// [`set_current_version`] is called again. Useful in tests that
+/// need to exercise the "no gating" path mid-suite.
+#[cfg(feature = "serde")]
+pub fn clear_current_version() {
+    if let Ok(mut guard) = CURRENT_VERSION.lock() {
+        *guard = None;
+    }
+}
+
+/// T-013: return the currently registered program version, or
+/// `None` when [`set_current_version`] was never called.
+///
+/// # Example
+///
+/// ```rust
+/// use tokitai_core::current_version;
+///
+/// // Without a registered version the result is `None`.
+/// // (This doctest runs in a fresh process so it asserts `None`.)
+/// let _ = current_version();
+/// ```
+#[cfg(feature = "serde")]
+pub fn current_version() -> Option<alloc::string::String> {
+    CURRENT_VERSION.lock().ok().and_then(|guard| guard.clone())
 }
 
 impl core::fmt::Display for ToolDefinition {
@@ -1010,6 +1253,26 @@ impl ToolError {
             message,
         }
     }
+
+    /// Shortcut to build a `Removed` variant (T-013) with the given
+    /// message. Returned by the macro's `__call_*` wrapper when the
+    /// tool's `remove_in` version is at or before the program's
+    /// current version.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::{ToolError, ToolErrorKind};
+    ///
+    /// let err = ToolError::removed("tool removed in 1.0.0; use new_thing");
+    /// assert_eq!(err.kind, ToolErrorKind::Removed);
+    /// ```
+    pub fn removed(message: &'static str) -> Self {
+        Self {
+            kind: ToolErrorKind::Removed,
+            message,
+        }
+    }
 }
 
 #[cfg(feature = "serde")]
@@ -1081,6 +1344,26 @@ impl ToolError {
             message: message.into(),
         }
     }
+
+    /// Shortcut to build a `Removed` variant with the given message.
+    /// T-013: returned by the macro's `__call_*` wrapper when the
+    /// tool's `remove_in` version is at or before the program's
+    /// current version.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::{ToolError, ToolErrorKind};
+    ///
+    /// let err = ToolError::removed("tool removed in 1.0.0; use new_thing");
+    /// assert_eq!(err.kind, ToolErrorKind::Removed);
+    /// ```
+    pub fn removed(message: impl Into<crate::serde_types::String>) -> Self {
+        Self {
+            kind: ToolErrorKind::Removed,
+            message: message.into(),
+        }
+    }
 }
 
 /// Classification of a [`ToolError`] for structured error handling.
@@ -1090,9 +1373,10 @@ impl ToolError {
 /// ```rust
 /// use tokitai_core::ToolErrorKind;
 ///
-/// // The four classifications:
+/// // The five classifications:
 /// assert_ne!(ToolErrorKind::ValidationError, ToolErrorKind::NotFound);
 /// assert_ne!(ToolErrorKind::InternalError, ToolErrorKind::TypeError);
+/// assert_ne!(ToolErrorKind::Removed, ToolErrorKind::NotFound);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -1106,6 +1390,11 @@ pub enum ToolErrorKind {
     InternalError = 2,
     /// Type error - parameter type mismatch
     TypeError = 3,
+    /// Removed - the tool's `remove_in` version is at or before the
+    /// program's current version (T-013). Callers should consult
+    /// `ToolError::message` (and `replaced_by` if present) to
+    /// discover the successor.
+    Removed = 4,
 }
 
 /// Compile-time tool registry trait.

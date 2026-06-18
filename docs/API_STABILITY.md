@@ -14,7 +14,66 @@ Tokitai follows [Semantic Versioning 2.0](https://semver.org/spec/v2.0.0.html):
 
 ---
 
-## v0.5.x series - stable API
+## Tool versioning (T-013)
+
+`#[tool]` is the first-class surface for managing the lifecycle of
+a tool. Each `#[tool]` attribute can carry four fields that work
+together to encode the deprecation schedule:
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `version` | string | The version of the tool that introduced this method. Surface as `ToolDefinition.version`. |
+| `deprecated_since` | string | Version since which the method has been deprecated. Surface as `ToolDefinition.deprecated_since`. |
+| `remove_in` | string | Version at or after which the macro refuses to call the method. Surface as `ToolDefinition.remove_in`. |
+| `replaced_by` | string | Name of the tool that succeeds this one. Surface as `ToolDefinition.replaced_by`. |
+
+### Lifecycle stages
+
+| Stage | Marker | Runtime behaviour |
+|-------|--------|-------------------|
+| **Current** | No `deprecated_*` attribute | Calls succeed; the LLM client sees no deprecation marker. |
+| **Deprecated** | `deprecated = true` (or any of the lifecycle fields) | Calls succeed; the provider envelope (`to_openai_function` / `to_anthropic_tool` / `to_mcp_tool`) carries a deprecation marker (MCP `_meta.deprecated` + `deprecatedSince`, OpenAI / Anthropic description suffix) the LLM can read. |
+| **Removed** | `remove_in <= current_version` | Calls return `ToolError::Removed` (new variant, `kind = ToolErrorKind::Removed`). The error message names the removed tool, the `remove_in` boundary, and — when one is configured — the `replaced_by` successor so the caller can retry with the new name. |
+
+### Activation
+
+The dispatcher only gates on `remove_in` once the program has
+called `tokitai::set_current_version("X.Y.Z")`. Without a current
+version the call path is open and `remove_in` is informational.
+This matches `tokitai_core::set_async_executor` ergonomics: set
+once at startup, ignore if unknown.
+
+```rust
+use tokitai::set_current_version;
+
+fn main() {
+    set_current_version(env!("CARGO_PKG_VERSION"));
+    // ... runtime proceeds; tools with `remove_in <= current` now error.
+}
+```
+
+### `replaced_by` redirect
+
+When the caller names a tool that is not in the active match
+arms (e.g. it was deleted from the impl block) but a `replaced_by`
+link is still registered, the dispatcher's fallback arm
+re-invokes `call_tool` with the successor. If the successor also
+does not exist the call returns `NotFound` after one redirect hop
+— the dispatcher does not loop.
+
+### SemVer
+
+`remove_in` and the program-wide current version are compared
+with the canonical SemVer comparison `(major, minor, patch)`. A
+typo in either string fails open (no gating) so a malformed
+version never silently removes a live tool. Pre-release and build
+metadata (`-alpha.1`, `+build.42`) are ignored for ordering.
+
+To enforce strict SemVer at the macro level, add a follow-up
+`#[tool(version_policy = "semver")]` attribute (T-013 design
+question Q-5, deferred to a later release).
+
+---
 
 The following APIs are stable across the v0.5.x series:
 

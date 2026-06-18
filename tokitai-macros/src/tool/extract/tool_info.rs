@@ -30,6 +30,44 @@ pub fn collect_tool_methods(impl_item: &ItemImpl) -> Vec<ToolMethodInfo> {
     tools
 }
 
+/// T-013: collect `replaced_by` redirect entries from any method on
+/// the impl that opted into a `replaced_by` (including methods that
+/// were dropped from the active `__call_*` match arms by
+/// `#[tool(skip)]` or `visible = false`). Each entry is the
+/// `(from, to)` pair: the caller-named `from` string and the
+/// successor's `to` string.
+///
+/// Skipped methods still need their redirect entries so the
+/// dispatcher's `_ => replaced_by` arm can route calls to the
+/// successor. Active methods' redirects are added too — they are
+/// harmless because the active match arm wins first; the redirect
+/// only fires when the source name is *not* in the match.
+pub fn collect_replaced_by_redirects(impl_item: &ItemImpl) -> Vec<(String, String)> {
+    let mut entries = Vec::new();
+    for item in &impl_item.items {
+        if let ImplItem::Fn(fn_item) = item {
+            if !matches!(fn_item.vis, Visibility::Public(_)) {
+                continue;
+            }
+            for attr in &fn_item.attrs {
+                if attr.path().is_ident("tool") {
+                    if let Ok(args) = attr.parse_args::<MethodToolAttrs>() {
+                        if let Some(replaced_by) = args.replaced_by {
+                            if !replaced_by.is_empty() {
+                                let from =
+                                    args.name.unwrap_or_else(|| fn_item.sig.ident.to_string());
+                                entries.push((from, replaced_by));
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    entries
+}
+
 /// 提取工具方法信息
 pub fn extract_tool_info(fn_item: &ImplItemFn) -> Option<ToolMethodInfo> {
     let method_name = fn_item.sig.ident.to_string();

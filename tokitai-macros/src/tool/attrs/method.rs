@@ -93,41 +93,58 @@ impl Parse for MethodToolAttrs {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         if input.peek(Ident) {
             let key: Ident = input.fork().parse()?;
-            if key == "skip" {
-                input.parse::<Ident>()?;
-                if input.peek(token::Comma) {
-                    input.parse::<token::Comma>()?;
+            // `skip` is special: it is the only attribute that
+            // historically did not accept any companion keys
+            // (`#[tool(skip)]`). T-013 added the requirement for
+            // `#[tool(skip, replaced_by = "...", version = "...")]`
+            // so a removed tool can keep its `replaced_by` link
+            // even when its method is filtered out of the active
+            // dispatcher. The skip fast-path now only fires when
+            // there is exactly one token (`skip`) and nothing else.
+            if key == "skip" && !input.peek2(token::Eq) {
+                let is_just_skip = input.peek2(token::Comma) && !input.peek3(Ident);
+                // T-013: only short-circuit when the attribute body
+                // is exactly `skip` (optionally followed by a single
+                // trailing comma). For any other shape, fall through
+                // to the full key/value parser so companion
+                // attributes (notably `replaced_by`) survive.
+                if is_just_skip {
+                    input.parse::<Ident>()?;
+                    if input.peek(token::Comma) {
+                        input.parse::<token::Comma>()?;
+                    }
+                    return Ok(MethodToolAttrs {
+                        name: None,
+                        desc: None,
+                        skip: true,
+                        deprecated: false,
+                        replaced_by: None,
+                        deprecated_note: None,
+                        deprecated_since: None,
+                        remove_in: None,
+                        version: None,
+                        visible: true,
+                        tags: Vec::new(),
+                        group: None,
+                        return_description: None,
+                        context: None,
+                        example_input: None,
+                        param_order: None,
+                        hidden_params: Vec::new(),
+                        example_output: None,
+                        alias: Vec::new(),
+                        allow: Vec::new(),
+                        cache: None,
+                        rate_limit: None,
+                        param_validations: Vec::new(),
+                    });
                 }
-                return Ok(MethodToolAttrs {
-                    name: None,
-                    desc: None,
-                    skip: true,
-                    deprecated: false,
-                    replaced_by: None,
-                    deprecated_note: None,
-                    deprecated_since: None,
-                    remove_in: None,
-                    version: None,
-                    visible: true,
-                    tags: Vec::new(),
-                    group: None,
-                    return_description: None,
-                    context: None,
-                    example_input: None,
-                    param_order: None,
-                    hidden_params: Vec::new(),
-                    example_output: None,
-                    alias: Vec::new(),
-                    allow: Vec::new(),
-                    cache: None,
-                    rate_limit: None,
-                    param_validations: Vec::new(),
-                });
             }
         }
 
         let mut name = None;
         let mut desc = None;
+        let mut should_skip = false;
         let mut deprecated = false;
         let mut replaced_by = None;
         let mut deprecated_note = None;
@@ -154,6 +171,16 @@ impl Parse for MethodToolAttrs {
             let key: Ident = input.parse()?;
 
             match key.to_string().as_str() {
+                "skip" => {
+                    // T-013: `#[tool(skip, replaced_by = "...", ...)]`
+                    // now shares the rest of the attribute body with
+                    // the full parser, so companion keys (notably
+                    // `replaced_by` and `version`) survive.
+                    should_skip = true;
+                    if input.peek(token::Comma) {
+                        let _ = input.parse::<token::Comma>()?;
+                    }
+                }
                 "deprecated" => {
                     if input.peek(token::Eq) {
                         input.parse::<token::Eq>()?;
@@ -444,7 +471,7 @@ impl Parse for MethodToolAttrs {
         Ok(MethodToolAttrs {
             name,
             desc,
-            skip: false,
+            skip: should_skip,
             deprecated,
             replaced_by,
             deprecated_note,

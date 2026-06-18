@@ -219,8 +219,13 @@ impl ToolTypeAttrs {
 /// impl 块级别的工具属性
 fn generate_for_impl(mut impl_item: ItemImpl, _attrs: ToolAttributes) -> TokenStream2 {
     let tool_methods = collect_tool_methods(&impl_item);
+    // T-013: collect the full `replaced_by` table even when all
+    // active methods are skipped. The dispatcher's redirect arm
+    // still needs the entries so a removed/renamed tool's old
+    // name can be routed to its successor.
+    let replaced_by_redirects = extract::collect_replaced_by_redirects(&impl_item);
 
-    if tool_methods.is_empty() {
+    if tool_methods.is_empty() && replaced_by_redirects.is_empty() {
         return quote! { #impl_item };
     }
 
@@ -301,9 +306,20 @@ fn generate_for_impl(mut impl_item: ItemImpl, _attrs: ToolAttributes) -> TokenSt
     let impl_type = &impl_item.self_ty;
     let tool_def_consts = definitions::generate_tool_def_consts(&tool_methods);
     let all_tool_defs = definitions::generate_all_tool_defs_array(&tool_methods, impl_type);
-    let call_tool_methods = dispatcher::generate_call_tool_method(&tool_methods);
+    let call_tool_methods =
+        dispatcher::generate_call_tool_method(&tool_methods, &replaced_by_redirects);
     let helper_methods = wrappers::generate_helper_methods(&tool_methods);
     let tool_count_const = definitions::generate_tool_count_const(&tool_methods);
+    // T-013: when the impl has no active methods (only
+    // `replaced_by` redirects), the `__TOOL_COUNT` const is not
+    // emitted. Fall back to deriving the count from the static
+    // tool definitions slice at call time so `ToolProvider` is
+    // still satisfied.
+    let tool_count_const_or_fallback = if tool_methods.is_empty() {
+        quote! { Self::__get_tool_definitions().len() }
+    } else {
+        quote! { Self::__TOOL_COUNT }
+    };
 
     let mut new_items: Vec<ImplItem> = impl_item.items.clone();
 
@@ -411,7 +427,13 @@ fn generate_for_impl(mut impl_item: ItemImpl, _attrs: ToolAttributes) -> TokenSt
 
             /// 【P3 优化】编译期工具计数
             fn tool_count() -> usize {
-                Self::__TOOL_COUNT
+                // T-013: `__TOOL_COUNT` is only emitted when at
+                // least one active method exists. When the impl
+                // is all-skipped-but-with-redirects we fall back
+                // to deriving the count from the static tool
+                // definitions slice so the impl still satisfies
+                // the trait contract.
+                #tool_count_const_or_fallback
             }
         }
 

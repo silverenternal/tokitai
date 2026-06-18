@@ -222,6 +222,12 @@ pub use tokitai_core::{
     ParamType, ToolCaller, ToolDefinition, ToolError, ToolErrorKind, ToolProvider,
 };
 
+// T-013: re-export the version-gating helpers so users can set a
+// program-wide current version from their `main` without depending
+// on `tokitai-core` directly.
+#[cfg(feature = "serde")]
+pub use tokitai_core::{clear_current_version, current_version, set_current_version};
+
 // Re-export serde_json for convenience (users don't need to add extra dependency)
 pub use serde_json::{json, Map, Value};
 
