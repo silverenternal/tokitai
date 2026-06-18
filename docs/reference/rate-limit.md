@@ -213,6 +213,6 @@ additive.
 - Rustdoc:
   [`tokitai-macros/src/lib.rs`](../../tokitai-macros/src/lib.rs)
   (`pub fn rate_limit`).
-- Example: [`examples/resilient_tool.rs`](../../examples/deprecated/resilient_tool.rs) (placeholder; see [`deprecated/`](../../examples/deprecated/)).
+- **tracking-issue:** [#34](https://github.com/silverenternal/tokitai/issues/34) (attribute not yet exported in 0.5.x).
 - Example: [`examples/runtime_agnostic.rs`](../../examples/runtime_agnostic.rs)
   shows how to register an `AsyncExecutor`.

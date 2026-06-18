@@ -261,16 +261,19 @@ More examples live under the [examples directory](examples/):
 - `param_attrs.rs` — per-parameter attributes
 - `validate_transform_alias.rs` — validation / transformation / aliases
 - `debug_tools.rs` — debugging utilities
-- `wrap_openapi.rs` — `#[openapi]` documentation example (docs-only)
+- `wrap_demo.rs` — `#[tool]` + `MultiToolProvider` composition pattern that `#[wrap]` / `#[delegate]` are designed to wrap (runnable today; see `examples/deprecated/README.md` for the attribute export schedule)
 - `runtime_agnostic.rs` — runtime-agnostic async executor bridge
 - `database_tool/` — realistic example: Tokitai + MCP HTTP + SQLite (sqlx)
 - `starter_project/` — copy-paste-ready starter template
 
-> Placeholder examples for `#[wrap]` / `#[delegate]` / `#[retry]` /
-> `#[rate_limit]` / `#[circuit_breaker]`
-> (`wrap_native.rs` / `delegate_method.rs` / `resilient_tool.rs`) have been
-> moved to [`examples/deprecated/`](examples/deprecated/); the corresponding
-> attributes are not yet exposed in 0.5.0.
+> The `#[wrap]` / `#[delegate]` / `#[retry]` / `#[rate_limit]` /
+> `#[circuit_breaker]` / `#[openapi]` attributes are implemented in
+> `tokitai-macros` but are **not yet exposed** through the public
+> `tokitai` / `tokitai_macros` re-exports as of 0.5.x. The
+> [`examples/deprecated/`](examples/deprecated/) directory
+> contains only a `README.md` with a tracking-issue table for
+> each attribute. The reference docs under `docs/wrap-architecture.md`
+> describe the planned public API.
 
 ### Cross-language SDK (HTTP+JSON client references)
 

@@ -232,6 +232,9 @@ and [`tokitai-macros/src/tool/wrap/inject.rs`](../../tokitai-macros/src/tool/wra
 - Rustdoc:
   [`tokitai-macros/src/lib.rs`](../../tokitai-macros/src/lib.rs)
   (`pub fn wrap`).
-- Example: [`examples/wrap_native.rs`](../../examples/deprecated/wrap_native.rs) (placeholder; see [`deprecated/`](../../examples/deprecated/)).
+- Example: [`examples/wrap_demo.rs`](../../examples/wrap_demo.rs) —
+  pattern demo using the stable `#[tool]` + `MultiToolProvider`
+  surface (since `#[wrap]` is not yet exported in 0.5.x).
+- **tracking-issue:** [#31](https://github.com/silverenternal/tokitai/issues/31)
 - Example: [`examples/runtime_agnostic.rs`](../../examples/runtime_agnostic.rs)
-  combines `#[wrap]` with a registered `AsyncExecutor`.
+  combines the wrap pattern with a registered `AsyncExecutor`.

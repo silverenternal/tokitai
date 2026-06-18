@@ -105,10 +105,8 @@ example file under `examples/`. The full list:
 | [`examples/basic_usage.rs`](../../examples/basic_usage.rs) | `#[tool]` |
 | [`examples/param_attrs.rs`](../../examples/param_attrs.rs) | per-parameter `#[tool(...)]` keys |
 | [`examples/validate_transform_alias.rs`](../../examples/validate_transform_alias.rs) | `validate`, `transform`, `alias` |
-| [`examples/wrap_native.rs`](../../examples/deprecated/wrap_native.rs) | `#[wrap]` (placeholder; see [`deprecated/`](../../examples/deprecated/)) |
-| [`examples/wrap_openapi.rs`](../../examples/wrap_openapi.rs) | `#[openapi]`, `#[openapi_op]` |
-| [`examples/delegate_method.rs`](../../examples/deprecated/delegate_method.rs) | `#[delegate]` (placeholder; see [`deprecated/`](../../examples/deprecated/)) |
-| [`examples/resilient_tool.rs`](../../examples/deprecated/resilient_tool.rs) | `#[retry]`, `#[rate_limit]`, `#[circuit_breaker]` (placeholder; see [`deprecated/`](../../examples/deprecated/)) |
+| [`examples/wrap_demo.rs`](../../examples/wrap_demo.rs) | pattern demo for `#[wrap]` / `#[delegate]` curated surfaces (uses the stable `#[tool]` + `MultiToolProvider`; see [`deprecated/`](../../examples/deprecated/) for the export schedule) |
+| [`examples/wrap_openapi.rs`](../../examples/wrap_openapi.rs) | `#[openapi]`, `#[openapi_op]` (tracking-issue: [#36](https://github.com/silverenternal/tokitai/issues/36)) |
 | [`examples/mcp_http_server.rs`](../../examples/mcp_http_server.rs) | full `#[tool]` server with the `tokitai` envelope methods |
 | [`examples/runtime_agnostic.rs`](../../examples/runtime_agnostic.rs) | runtime-agnostic async (registers an `AsyncExecutor`) |
 | [`examples/advanced_types.rs`](../../examples/advanced_types.rs) | `#[tool_type]` and rich struct schemas |
@@ -117,3 +115,5 @@ example file under `examples/`. The full list:
 | [`examples/mcp_server_demo.rs`](../../examples/mcp_server_demo.rs) | the in-process MCP demo |
 | [`examples/debug_tools.rs`](../../examples/debug_tools.rs) | `#[tool]` with debug logging |
 | [`examples/starter_project/`](../../examples/starter_project/) | blank slate you can copy |
+
+> The `#[wrap]` / `#[delegate]` / `#[retry]` / `#[rate_limit]` / `#[circuit_breaker]` / `#[openapi]` attributes are implemented in `tokitai-macros` but are not yet exported in 0.5.x. See [`examples/deprecated/README.md`](../../examples/deprecated/README.md) for the tracking-issue table.

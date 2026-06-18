@@ -188,7 +188,7 @@ exactly once.
 - Rustdoc:
   [`tokitai-macros/src/lib.rs`](../../tokitai-macros/src/lib.rs)
   (`pub fn retry`).
-- Example: [`examples/resilient_tool.rs`](../../examples/deprecated/resilient_tool.rs) (placeholder; see [`deprecated/`](../../examples/deprecated/)).
+- **tracking-issue:** [#33](https://github.com/silverenternal/tokitai/issues/33) (attribute not yet exported in 0.5.x).
 - Example: [`examples/runtime_agnostic.rs`](../../examples/runtime_agnostic.rs)
-  shows registering an `AsyncExecutor` so `#[retry]` does not block
-  a Tokio worker.
+  shows registering an `AsyncExecutor` so the resilience sleep
+  fallback does not block a Tokio worker.

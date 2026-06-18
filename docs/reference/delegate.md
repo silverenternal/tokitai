@@ -213,6 +213,7 @@ and
 - Rustdoc:
   [`tokitai-macros/src/lib.rs`](../../tokitai-macros/src/lib.rs)
   (`pub fn delegate`).
-- Example: [`examples/delegate_method.rs`](../../examples/deprecated/delegate_method.rs)
-  (placeholder; see [`deprecated/`](../../examples/deprecated/)) — full walkthrough
-  with a hand-wired dispatcher.
+- Example: [`examples/wrap_demo.rs`](../../examples/wrap_demo.rs) —
+  the curated forwarding pattern `#[delegate]` is designed to
+  automate (since `#[delegate]` is not yet exported in 0.5.x).
+- **tracking-issue:** [#32](https://github.com/silverenternal/tokitai/issues/32)

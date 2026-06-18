@@ -240,6 +240,6 @@ match arm always takes the `Ok` branch and the breaker never opens.
 - Rustdoc:
   [`tokitai-macros/src/lib.rs`](../../tokitai-macros/src/lib.rs)
   (`pub fn circuit_breaker`).
-- Example: [`examples/resilient_tool.rs`](../../examples/deprecated/resilient_tool.rs) (placeholder; see [`deprecated/`](../../examples/deprecated/)).
+- **tracking-issue:** [#35](https://github.com/silverenternal/tokitai/issues/35) (attribute not yet exported in 0.5.x).
 - Example: [`examples/runtime_agnostic.rs`](../../examples/runtime_agnostic.rs)
   (registers an `AsyncExecutor` for the resilience decorators).

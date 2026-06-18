@@ -218,5 +218,6 @@ and
   (`pub fn openapi`, `pub fn openapi_op`).
 - Example: [`examples/wrap_openapi.rs`](../../examples/wrap_openapi.rs)
   (full source with a fake `openai_chat.json`).
+- **tracking-issue:** [#36](https://github.com/silverenternal/tokitai/issues/36) (attribute not yet exported in 0.5.x).
 - Example: [`examples/mcp_http_server.rs`](../../examples/mcp_http_server.rs)
   serves `#[openapi]`-generated tools over HTTP.

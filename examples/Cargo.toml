@@ -72,5 +72,9 @@ path = "param_attrs.rs"
 name = "validate_transform_alias"
 path = "validate_transform_alias.rs"
 
+[[example]]
+name = "wrap_demo"
+path = "wrap_demo.rs"
+
 [dev-dependencies]
 futures = "0.3"
