@@ -25,6 +25,7 @@ pub(crate) mod types;
 use attrs::method::ToolAttributes;
 use codegen::{definitions, dispatcher, wrappers};
 use extract::collect_tool_methods;
+use extract::validate::validate_impl;
 
 /// 检查是否应该显示警告
 ///
@@ -221,6 +222,32 @@ fn generate_for_impl(mut impl_item: ItemImpl, _attrs: ToolAttributes) -> TokenSt
 
     if tool_methods.is_empty() {
         return quote! { #impl_item };
+    }
+
+    // T-001: run the static validation pipeline *before* codegen
+    // so the user gets the polished `E0xxx` diagnostic anchored
+    // at the offending token, not the cryptic "type not
+    // supported" message the schema generator would otherwise
+    // emit from inside the expansion. Each error carries its
+    // own span (the user-written ident / attribute / parameter),
+    // and `compile_error!` surfaces at that span.
+    let validation_errors = validate_impl(&impl_item);
+    if !validation_errors.is_empty() {
+        // Surface every diagnostic as its own `compile_error!`
+        // invocation so rustc can highlight each one. The first
+        // one stops the build; the rest are reported alongside.
+        let mut tokens = TokenStream2::new();
+        for err in &validation_errors {
+            tokens.extend(err.to_compile_error());
+        }
+        // Still emit the original impl so subsequent errors
+        // (e.g. "no method named `__call_x` found for `&T`")
+        // do not pile on and confuse the user; rustc will
+        // refuse to compile the body regardless.
+        return quote! {
+            #impl_item
+            #tokens
+        };
     }
 
     for tool in &tool_methods {

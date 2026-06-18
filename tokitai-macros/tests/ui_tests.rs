@@ -87,3 +87,12 @@ fn test_complex_return_types() {
     let t = trybuild::TestCases::new();
     t.pass("tests/ui/13_complex_return_types.rs");
 }
+
+#[test]
+fn test_invalid_return_type() {
+    // T-001: an unsupported return type (bare function pointer)
+    // must fail at the user-written method name, not at the
+    // `#[tool]` attribute.
+    let t = trybuild::TestCases::new();
+    t.compile_fail("tests/ui/14_invalid_return_type.rs");
+}

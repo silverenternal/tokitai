@@ -232,6 +232,17 @@ impl MacroError {
         self.code
     }
 
+    /// The source span this error is anchored to. This is the
+    /// offending token in the user's source (e.g. the method
+    /// name, the attribute, the parameter, ...), not the
+    /// `Span::call_site()` of the macro. T-001 makes this
+    /// guarantee load-bearing: every `compile_error!` emitted by
+    /// the macro surfaces at this span so editors jump straight
+    /// to the user's code.
+    pub fn span(&self) -> Span {
+        self.span
+    }
+
     /// Render the diagnostic as a `compile_error!` invocation.
     ///
     /// rustc's `compile_error!` accepts a single string literal; the

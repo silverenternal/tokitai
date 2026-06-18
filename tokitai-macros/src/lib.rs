@@ -568,6 +568,74 @@ pub fn __property_would_error(item: TokenStream) -> TokenStream {
     quote::quote! { #lit }.into()
 }
 
+// ---------------------------------------------------------------------------
+// T-001 span probe — hidden proc-macro used by
+// `tokitai-macros/tests/error_span_test.rs`.
+//
+// Accepts a *string literal* of Rust source code (a struct +
+// impl block pair) and runs the validation pipeline. Returns a
+// `&'static str` containing one line per `MacroError`:
+//
+//     <code> | <rendered-compile_error>
+//
+// We accept a string literal (rather than a token stream) so
+// the input parses deterministically as a `syn::File`; the
+// proc-macro2 token stream path is ambiguous in test contexts
+// and parses as a macro invocation instead of a top-level
+// item.
+// ---------------------------------------------------------------------------
+#[doc(hidden)]
+#[proc_macro]
+pub fn __error_spans(item: TokenStream) -> TokenStream {
+    use proc_macro2::TokenStream as TokenStream2;
+    use quote::ToTokens;
+
+    // Convert to proc_macro2 and parse the input as a single
+    // `syn::LitStr`. `LitStr::value()` knows how to unescape the
+    // literal's content (handles `\n`, `\\`, `\"`, `\u{...}`),
+    // which the proc_macro::Literal::to_string() source form
+    // does not.
+    let item2: TokenStream2 = item.into();
+    let lit_str: syn::Result<syn::LitStr> = syn::parse2(item2);
+    let src = match lit_str {
+        Ok(ls) => ls.value(),
+        Err(_) => return make_lit("NOT_A_STRING_LITERAL"),
+    };
+
+    let parsed: syn::Result<syn::File> = syn::parse_str(&src);
+    let report = match parsed {
+        Ok(file) => {
+            let mut s = String::new();
+            let mut found = false;
+            for item in &file.items {
+                if let syn::Item::Impl(impl_item) = item {
+                    found = true;
+                    let errs = crate::tool::extract::validate::validate_impl(impl_item);
+                    for err in &errs {
+                        let mut ts2 = TokenStream2::new();
+                        err.to_compile_error().to_tokens(&mut ts2);
+                        let rendered_ts = ts2.to_string();
+                        s.push_str(&format!("{} | {}\n", err.code(), rendered_ts));
+                    }
+                }
+            }
+            if !found {
+                "NO_IMPL_FOUND".to_string()
+            } else {
+                s
+            }
+        }
+        Err(e) => format!("PARSE_ERROR {}\n", e),
+    };
+    make_lit(&report)
+}
+
+#[doc(hidden)]
+fn make_lit(s: &str) -> TokenStream {
+    let lit = proc_macro2::Literal::string(s);
+    quote::quote! { #lit }.into()
+}
+
 // Note: proc-macro crates may only export items tagged with `#[proc_macro]`,
 // `#[proc_macro_derive]`, or `#[proc_macro_attribute]`. Runtime helpers like
 // `tool_type_schema` / `tool_output_schema` belong in `tokitai-core`, not here.

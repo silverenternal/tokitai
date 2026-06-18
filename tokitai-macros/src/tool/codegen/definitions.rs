@@ -3,7 +3,7 @@
 //! 包含 generate_tool_def_consts、generate_all_tool_defs_array 等函数
 
 use proc_macro2::TokenStream as TokenStream2;
-use quote::{format_ident, quote};
+use quote::{format_ident, quote, quote_spanned};
 use syn::Type;
 
 use crate::tool::schema::gen::SchemaGenConfig;
@@ -20,7 +20,14 @@ pub fn generate_tool_def_consts(tools: &[ToolMethodInfo]) -> Vec<TokenStream2> {
     for tool in tools {
         if tool.is_generic {
             let name = &tool.name;
-            consts.push(quote! {
+            // T-001: anchor the `compile_error!` at the user's
+            // method name, not the macro call site. Without this
+            // the editor highlights `#[tool]` (line N) instead of
+            // the offending `fn generic_method<T>(...)` (line M),
+            // and the user has to read the macro output to figure
+            // out which method tripped the rule.
+            let span = tool.ident_span;
+            consts.push(quote_spanned! {span=>
                 compile_error!(concat!(
                     "[tokitai] Tool method `",
                     #name,

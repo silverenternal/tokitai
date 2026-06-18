@@ -1,5 +1,6 @@
 //! 工具方法信息数据结构
 
+use proc_macro2::Span;
 use serde_json::Value;
 use syn::ReturnType;
 
@@ -8,6 +9,12 @@ use super::param::{ParamInfo, ParamToolAttrs};
 /// 工具方法信息
 #[allow(dead_code)]
 pub struct ToolMethodInfo {
+    /// Span of the method's identifier in the user's source.
+    /// T-001: every `compile_error!` emitted by `#[tool]` is
+    /// anchored at this span (or a sub-span of it) so editors
+    /// jump to the user's offending token rather than the
+    /// generated code inside the macro expansion.
+    pub ident_span: Span,
     pub name: String,
     pub tool_name: String,
     pub description: String,

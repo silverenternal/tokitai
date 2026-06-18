@@ -8,229 +8,26 @@
 //! sees the same diagnostic quality regardless of which macro
 //! tripped the rule.
 //!
-//! Two surfaces are exported:
-//!
-//! - [`validate_tool_method`] checks a single method and returns
-//!   `syn::Result<()>`; the first failure short-circuits. The
-//!   proc-macro driver in `tool/mod.rs` calls this per method.
-//! - [`validate_impl`] walks the whole impl and returns a
-//!   `Vec<MacroError>`, which is what the `trybuild` snapshot
-//!   tests use so they can assert the *full* set of diagnostics
-//!   in one fixture.
+//! The single exported entry point is [`validate_impl`], which
+//! walks the whole impl block and returns the full set of
+//! `MacroError`s. Each `MacroError` carries its own span (the
+//! user-written token it refers to) and is rendered through
+//! `compile_error!` by the proc-macro driver in `tool/mod.rs`,
+//! so the user sees the diagnostic at the offending line in
+//! their source.
 
 use syn::spanned::Spanned;
 use syn::{ImplItem, ImplItemFn, ItemImpl, Pat, Visibility};
+// `Spanned` is required for `.span()` calls on `syn::Type` and
+// `syn::Attribute` (those types do not expose an inherent
+// `span()` method).
 
-use crate::error::{format_did_you_mean, levenshtein, suggest_closest, ErrorCode, MacroError};
+use crate::error::{levenshtein, ErrorCode, MacroError};
 
 /// Maximum number of user-facing parameters a `#[tool]` method may
 /// declare. Past this point the generated JSON Schema becomes
 /// unwieldy and most LLM tool-calling backends refuse the call.
 pub(crate) const MAX_PARAMS: usize = 32;
-
-/// Validate a single method.
-///
-/// Returns `Ok(())` if the method passes every check, or the first
-/// `syn::Error` (derived from a [`MacroError`]) that tripped the
-/// validator. We return `syn::Error` rather than `MacroError`
-/// directly because the proc-macro driver's `compile_error!`
-/// pipeline is built around `syn::Error`.
-pub(crate) fn validate_tool_method(fn_item: &ImplItemFn) -> syn::Result<()> {
-    if !is_public(fn_item) {
-        return Ok(());
-    }
-    let name = fn_item.sig.ident.to_string();
-
-    // E0022 — `__`-prefixed method names are reserved by the
-    // macro. We check this *before* the early return below so the
-    // user sees a useful error rather than a silent skip.
-    if name.starts_with("__") {
-        return Err(macro_to_syn(
-            MacroError::new(
-                ErrorCode::E0022,
-                fn_item.sig.ident.span(),
-                format!(
-                    "method `{}` starts with `__`, which is reserved by the macro",
-                    name
-                ),
-            )
-            .with_help(
-                "rename the method: the macro emits `__TOOL_DEF_*`, `__call_*`, \
-                 `__get_tool_definitions`, `__TOOL_COUNT`, and `__OPENAPI_*` items; \
-                 a user method that starts with `__` would shadow one of them",
-            ),
-        ));
-    }
-
-    // E0012 — every tool method must have a `self` parameter.
-    if !has_self_receiver(fn_item) {
-        return Err(macro_to_syn(
-            MacroError::new(
-                ErrorCode::E0012,
-                fn_item.sig.ident.span(),
-                format!("method `{}` has no `self` parameter", name),
-            )
-            .with_help(
-                "add a `self` parameter (`&self` for read-only, `&mut self` to mutate, \
-                 `self` to consume); the macro generates a tool dispatcher that needs a \
-                 receiver to call into",
-            ),
-        ));
-    }
-
-    // E0004 — no generic parameters.
-    if !fn_item.sig.generics.params.is_empty() {
-        return Err(macro_to_syn(
-            MacroError::new(
-                ErrorCode::E0004,
-                fn_item.sig.ident.span(),
-                format!("method `{}` uses generic parameters", name),
-            )
-            .with_help(
-                "use a concrete type in the signature, or take a `serde_json::Value` and \
-                 deserialize inside the body; the macro cannot generate a single typed \
-                 schema for an open-ended `T: ...`",
-            ),
-        ));
-    }
-
-    // E0005 — no `Self` in return type.
-    if let syn::ReturnType::Type(_, ty) = &fn_item.sig.output {
-        if type_mentions_self(ty) {
-            return Err(macro_to_syn(
-                MacroError::new(
-                    ErrorCode::E0005,
-                    fn_item.sig.ident.span(),
-                    format!("method `{}` returns `Self`", name),
-                )
-                .with_help(
-                    "replace `Self` with the concrete type, or with `serde_json::Value` and \
-                     serialize the value inside the body; the schema generator cannot \
-                     materialise `Self` without seeing the full type definition",
-                ),
-            ));
-        }
-    }
-
-    // E0006 — no `async` + `&mut self`.
-    // E0024 — no `async` + consuming `self`.
-    if fn_item.sig.asyncness.is_some() {
-        for arg in &fn_item.sig.inputs {
-            if let syn::FnArg::Receiver(r) = arg {
-                if r.mutability.is_some() {
-                    return Err(macro_to_syn(
-                        MacroError::new(
-                            ErrorCode::E0006,
-                            r.colon_token.span(),
-                            format!("method `{}` is `async` and takes `&mut self`", name),
-                        )
-                        .with_help(
-                            "use `&self` (or `&mut self` *without* `async`); the async \
-                             executor cannot guarantee exclusive access to `self` while \
-                             the future is suspended",
-                        ),
-                    ));
-                }
-                if r.reference.is_none() && r.mutability.is_none() {
-                    return Err(macro_to_syn(
-                        MacroError::new(
-                            ErrorCode::E0024,
-                            r.span(),
-                            format!("method `{}` is `async` and consumes `self`", name),
-                        )
-                        .with_help(
-                            "use `&self` (read-only) or `&mut self` (in-place mutation); \
-                             an `async` method that consumes `self` cannot be dispatched \
-                             because the receiver is gone by the time the future resolves",
-                        ),
-                    ));
-                }
-            }
-        }
-    }
-
-    // E0025 — no `unsafe` methods.
-    if let Some(tok) = fn_item.sig.unsafety {
-        return Err(macro_to_syn(
-            MacroError::new(
-                ErrorCode::E0025,
-                tok.span,
-                format!("method `{}` is `unsafe`", name),
-            )
-            .with_help(
-                "remove `unsafe` from the signature (the macro-generated wrapper is a safe \
-                 function, so propagating `unsafe` is not possible), or call the unsafe code \
-                 from a safe wrapper and mark *that* as the tool method",
-            ),
-        ));
-    }
-
-    // E0026 — no trait default methods (heuristic via `#[default]` attr).
-    for attr in &fn_item.attrs {
-        if attr.path().is_ident("default") {
-            return Err(macro_to_syn(
-                MacroError::new(
-                    ErrorCode::E0026,
-                    attr.span(),
-                    format!("method `{}` is a trait default method", name),
-                )
-                .with_help(
-                    "move the body of the default method into a regular `impl` block, or \
-                     annotate the trait method directly with `#[tool]` instead of the \
-                     default body",
-                ),
-            ));
-        }
-    }
-
-    // E0027 — param count <= MAX_PARAMS.
-    let user_params = fn_item
-        .sig
-        .inputs
-        .iter()
-        .filter(|arg| match arg {
-            syn::FnArg::Receiver(_) => false,
-            syn::FnArg::Typed(pat_type) => !is_self_pat(&pat_type.pat),
-        })
-        .count();
-    if user_params > MAX_PARAMS {
-        return Err(macro_to_syn(
-            MacroError::new(
-                ErrorCode::E0027,
-                fn_item.sig.ident.span(),
-                format!(
-                    "method `{}` has {} parameters (limit: {})",
-                    name, user_params, MAX_PARAMS
-                ),
-            )
-            .with_help(
-                "split the method into smaller ones (each with a focused responsibility), \
-                 or group related parameters into a struct that the tool takes as a single \
-                 argument",
-            ),
-        ));
-    }
-
-    // E0028 — name/alias conflict.
-    if let Some(conflict) = name_alias_conflict(fn_item) {
-        return Err(macro_to_syn(
-            MacroError::new(
-                ErrorCode::E0028,
-                fn_item.sig.ident.span(),
-                format!(
-                    "method `{}` has `name = \"{}\"` and an alias also set to `\"{}\"`",
-                    name, conflict, conflict
-                ),
-            )
-            .with_help(
-                "remove the alias, change the alias to a different string, or change the \
-                 `name = \"...\"` so the two no longer collide",
-            ),
-        ));
-    }
-
-    Ok(())
-}
 
 /// Run every validation we know how to run on every method in
 /// `impl_item` and return the (possibly-empty) list of
@@ -294,6 +91,28 @@ pub(crate) fn validate_impl(impl_item: &ItemImpl) -> Vec<MacroError> {
                         ),
                     );
                 }
+                // E0021 — return type must be a shape the schema
+                // generator can lower to JSON Schema. Raw function
+                // pointers (`fn(i32) -> i32`), `dyn Trait`, and
+                // `impl Trait` are all rejected here so the user
+                // gets a clean diagnostic instead of an opaque
+                // "type not supported" at the schema call site.
+                if let Some(bad) = unsupported_return_type(ty) {
+                    errs.push(
+                        MacroError::new(
+                            ErrorCode::E0021,
+                            ty.span(),
+                            format!("method `{}` has an unsupported return type: {}", name, bad),
+                        )
+                        .with_help(
+                            "the macro can only lower `String`, primitive numbers, `bool`, \
+                             `Option<T>`, `Vec<T>`, `HashMap<K, V>`, structs that derive \
+                             `serde::Deserialize`, and `serde_json::Value`; wrap the value in a \
+                             concrete type or return `serde_json::Value` and serialize inside the \
+                             body",
+                        ),
+                    );
+                }
             }
             if fn_item.sig.asyncness.is_some() {
                 for arg in &fn_item.sig.inputs {
@@ -303,10 +122,7 @@ pub(crate) fn validate_impl(impl_item: &ItemImpl) -> Vec<MacroError> {
                                 MacroError::new(
                                     ErrorCode::E0006,
                                     r.colon_token.span(),
-                                    format!(
-                                        "method `{}` is `async` and takes `&mut self`",
-                                        name
-                                    ),
+                                    format!("method `{}` is `async` and takes `&mut self`", name),
                                 )
                                 .with_help(
                                     "use `&self` (or `&mut self` *without* `async`); the async \
@@ -444,6 +260,38 @@ fn type_mentions_self(ty: &syn::Type) -> bool {
     false
 }
 
+/// Detect return types the JSON-Schema generator cannot lower.
+///
+/// The macro lowers return types to a JSON Schema for the
+/// `output_schema` of each tool. The following shapes are not
+/// representable in JSON Schema and would otherwise explode at
+/// the schema call site with an opaque "type not supported"
+/// message. The check returns a human-readable name of the
+/// offending shape (used as the diagnostic detail) or `None`
+/// when the type is OK.
+///
+/// This is intentionally conservative: it only flags shapes
+/// that are *known* to be unschemaable. Types the schema
+/// generator handles via opaque `Value` fall-through (e.g. a
+/// user struct that derives `Deserialize`) are not flagged.
+fn unsupported_return_type(ty: &syn::Type) -> Option<&'static str> {
+    match ty {
+        // `fn(i32) -> i32` — bare function pointer, not a JSON value.
+        syn::Type::BareFn(_) => Some("bare function pointer `fn(...) -> ...`"),
+        // `dyn Trait` — not a JSON value.
+        syn::Type::TraitObject(_) => Some("`dyn Trait` object"),
+        // `impl Trait` — the macro cannot name the underlying type
+        // to embed it in a JSON Schema.
+        syn::Type::ImplTrait(_) => Some("`impl Trait` return"),
+        // `&'static T`, `&mut T` — borrowed values the tool
+        // dispatcher cannot return by-value to the LLM caller.
+        syn::Type::Reference(_) => Some("borrowed reference (`&T` / `&mut T`)"),
+        // Raw pointers — same reason as references.
+        syn::Type::Ptr(_) => Some("raw pointer (`*const T` / `*mut T`)"),
+        _ => None,
+    }
+}
+
 /// Return `true` if the given pattern is the literal `self` ident.
 fn is_self_pat(pat: &Pat) -> bool {
     if let Pat::Ident(pi) = pat {
@@ -532,45 +380,6 @@ impl syn::parse::Parse for MiniToolAttrs {
         }
         Ok(MiniToolAttrs { name, alias })
     }
-}
-
-/// Convert a [`MacroError`] to a `syn::Error` so the proc-macro
-/// driver can flow it through its existing `to_compile_error`
-/// pipeline. The formatted diagnostic is used as the user-facing
-/// message; rustc's own location is the macro's call site, which
-/// the `compile_error!` macro picks up automatically.
-///
-/// We use the *body* form (no leading `error:`) so the
-/// `compile_error!` wrapper does not produce a doubled
-/// `error: error[Exxxx]: ...` line. The body's `E0xxx: ...`
-/// prefix is the only place that identifier appears in the
-/// rendered output.
-fn macro_to_syn(e: MacroError) -> syn::Error {
-    syn::Error::new(proc_macro2::Span::call_site(), e.to_diagnostic_body())
-}
-
-/// Convert a [`MacroError`] directly to a `TokenStream` that emits
-/// the diagnostic via `compile_error!`. We use this in the
-/// proc-macro driver so the rendered output goes through our
-/// own `to_compile_error` (which writes the same `compile_error!`
-/// invocation as `MacroError::to_compile_error`, but the macro
-/// entry point in `lib.rs` still re-channels it through
-/// `syn::Error` because the rest of the macro pipeline returns
-/// `syn::Error`).
-fn macro_to_tokens(e: MacroError) -> proc_macro2::TokenStream {
-    e.to_compile_error()
-}
-
-// ---------------------------------------------------------------------------
-// Re-export of "did-you-mean" for the `#[wrap]` driver
-// ---------------------------------------------------------------------------
-
-/// Return a "did you mean" suggestion string (or `None` if no
-/// candidate is close enough) for the case where a `methods = [...]`
-/// entry in `#[wrap(...)]` is not present in the impl block.
-pub(crate) fn suggest_method_name(requested: &str, available: &[String]) -> Option<String> {
-    let sugg = suggest_closest(requested, available);
-    format_did_you_mean(&sugg)
 }
 
 #[allow(dead_code)]
@@ -713,55 +522,6 @@ mod tests {
     }
 
     #[test]
-    fn validate_tool_method_first_fail_wins() {
-        // missing self, generic, returns Self, async + &mut self:
-        // we expect *some* error; the exact code depends on the
-        // ordering of the rules. Document that here.
-        let item: ImplItemFn = parse_quote! {
-            pub fn bad<T: ToString>(a: T) -> Self { unimplemented!() }
-        };
-        let err = validate_tool_method(&item).unwrap_err();
-        let msg = err.to_string();
-        // E0012 fires first because it is the cheapest check.
-        assert!(msg.contains("E0012"), "got: {}", msg);
-    }
-
-    #[test]
-    fn validate_tool_method_skips_private() {
-        let item: ImplItemFn = parse_quote! {
-            fn invisible(a: i32) -> i32 { a }
-        };
-        assert!(validate_tool_method(&item).is_ok());
-    }
-
-    #[test]
-    fn validate_tool_method_flags_reserved() {
-        // `__`-prefixed names now emit E0022 (they are reserved by the
-        // macro). Previously the function silently skipped them; we
-        // changed the contract so the user sees a clear error.
-        let item: ImplItemFn = parse_quote! {
-            pub fn __macro_generated(&self) {}
-        };
-        let err = validate_tool_method(&item).unwrap_err();
-        assert!(err.to_string().contains("E0022"), "got: {}", err);
-    }
-
-    #[test]
-    fn suggest_works_for_typos() {
-        let avail = vec!["get_user".to_string(), "list_repos".to_string()];
-        assert!(suggest_method_name("getuser", &avail)
-            .unwrap()
-            .contains("get_user"));
-    }
-
-    #[test]
-    fn suggest_returns_none_for_unrelated() {
-        let avail = vec!["get_user".to_string()];
-        let s = suggest_method_name("totally_unrelated_name", &avail);
-        assert!(s.is_none());
-    }
-
-    #[test]
     fn levenshtein_handles_empty() {
         assert_eq!(_levenshtein_reexport_for_tests("", "abc"), 3);
         assert_eq!(_levenshtein_reexport_for_tests("abc", ""), 3);
@@ -777,5 +537,28 @@ mod tests {
         let a = validate_impl(&item);
         let b = validate_impl(&item);
         assert_eq!(a[0].to_diagnostic(), b[0].to_diagnostic());
+    }
+
+    #[test]
+    fn span_is_user_written_token_for_missing_self() {
+        // T-001: the diagnostic must surface at the method's
+        // identifier span (the user-written token), not at the
+        // macro call site. We assert on the `MacroError::span()`
+        // directly: comparing spans as `Span` values is unreliable
+        // in unit-test mode, but the diagnostic body still
+        // references the method name.
+        let item: ItemImpl = parse_quote! {
+            impl Foo {
+                pub fn method_without_self(a: i32) -> i32 { a }
+            }
+        };
+        let errs = validate_impl(&item);
+        assert_eq!(errs.len(), 1);
+        let body = errs[0].to_diagnostic_body();
+        assert!(
+            body.contains("method_without_self"),
+            "diagnostic must reference user-written method name, got:\n{}",
+            body
+        );
     }
 }

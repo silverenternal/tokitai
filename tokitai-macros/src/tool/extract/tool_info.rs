@@ -40,6 +40,7 @@ pub fn extract_tool_info(fn_item: &ImplItemFn) -> Option<ToolMethodInfo> {
 
     if !fn_item.sig.generics.params.is_empty() {
         return Some(ToolMethodInfo {
+            ident_span: fn_item.sig.ident.span(),
             name: method_name.clone(),
             tool_name: method_name.clone(),
             description: String::new(),
@@ -153,6 +154,7 @@ pub fn extract_tool_info(fn_item: &ImplItemFn) -> Option<ToolMethodInfo> {
     let is_result = is_result_type(&fn_item.sig.output);
 
     Some(ToolMethodInfo {
+        ident_span: fn_item.sig.ident.span(),
         name: method_name,
         tool_name,
         description,

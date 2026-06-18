@@ -1,18 +1,8 @@
-error[E0599]: no method named `method_without_self` found for reference `&NoSelfTools` in the current scope
-  --> tests/ui/07_missing_self_param.rs:8:1
-   |
- 8 | #[tool]
-   | ^^^^^^^ this is an associated function, not a method
-   |
-   = note: found the following associated functions; to be used as methods, functions must have a `self` parameter
-note: the candidate is defined in an impl for the type `NoSelfTools`
-  --> tests/ui/07_missing_self_param.rs:11:5
+error: error[E0012]: method `method_without_self` has no `self` parameter
+              = help: add a `self` parameter (`&self` for read-only, `&mut self` to mutate, `self` to consume); the macro generates a tool dispatcher that needs a receiver to call into
+              = help: see https://docs.rs/tokitai/latest/tokitai/errors.html#E0012
+
+  --> tests/ui/07_missing_self_param.rs:11:12
    |
 11 |     pub fn method_without_self(a: i32, b: i32) -> i32 {
-   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-   = note: this error originates in the attribute macro `tool` (in Nightly builds, run with -Z macro-backtrace for more info)
-help: use associated function syntax instead
-   |
- 8 - #[tool]
- 8 + NoSelfTools::method_without_self(a, b)
-   |
+   |            ^^^^^^^^^^^^^^^^^^^

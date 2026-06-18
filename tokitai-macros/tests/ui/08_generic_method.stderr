@@ -1,35 +1,8 @@
-error: [tokitai] Tool method `generic_method` uses generic parameters, which are not supported.
-       Solutions:
-          1. Use a concrete type: fn generic_method(data: MyType) -> String
-          2. Use serde_json::Value: fn generic_method(data: Value) -> String
-          3. Manually deserialize inside the method
- --> tests/ui/08_generic_method.rs:8:1
-  |
-8 | #[tool]
-  | ^^^^^^^
-  |
-  = note: this error originates in the attribute macro `tool` (in Nightly builds, run with -Z macro-backtrace for more info)
+error: error[E0004]: method `generic_method` uses generic parameters
+              = help: use a concrete type in the signature, or take a `serde_json::Value` and deserialize inside the body; the macro cannot generate a single typed schema for an open-ended `T: ...`
+              = help: see https://docs.rs/tokitai/latest/tokitai/errors.html#E0004
 
-error[E0599]: no associated function or constant named `__TOOL_DEF_GENERIC_METHOD` found for struct `GenericTools` in the current scope
- --> tests/ui/08_generic_method.rs:8:1
-  |
-6 | pub struct GenericTools;
-  | ----------------------- associated function or constant `__TOOL_DEF_GENERIC_METHOD` not found for this struct
-7 |
-8 | #[tool]
-  | ^^^^^^^ associated function or constant not found in `GenericTools`
-  |
-  = note: this error originates in the attribute macro `tool` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0061]: this method takes 1 argument but 0 arguments were supplied
-  --> tests/ui/08_generic_method.rs:8:1
-   |
- 8 | #[tool]
-   | ^^^^^^^ argument #1 is missing
-   |
-note: method defined here
   --> tests/ui/08_generic_method.rs:11:12
    |
 11 |     pub fn generic_method<T: ToString>(&self, value: T) -> String {
-   |            ^^^^^^^^^^^^^^                     --------
-   = note: this error originates in the attribute macro `tool` (in Nightly builds, run with -Z macro-backtrace for more info)
+   |            ^^^^^^^^^^^^^^
