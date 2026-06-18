@@ -76,5 +76,9 @@ path = "validate_transform_alias.rs"
 name = "wrap_demo"
 path = "wrap_demo.rs"
 
+[[example]]
+name = "dynamic_tools"
+path = "dynamic_tools.rs"
+
 [dev-dependencies]
 futures = "0.3"

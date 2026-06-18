@@ -1,0 +1,425 @@
+{
+  "$schema_version": "1.1",
+  "created": "2026-06-18",
+  "scope": "Tokitai v0.5.x pain-point remediation + differentiating strategy",
+  "philosophy_anchor": "Preserve the in-process compile-time dispatch advantage while removing the rigidity, async friction, and ecosystem gaps that block broader adoption. Prefer solving pain at the macro/core layer (cheapest, widest payoff) before bolting on the next feature.",
+  "differentiating_strategy": {
+    "thesis": "Tokitai is the only Rust tool-calling stack where schema and dispatch are produced by a proc-macro over a typed surface. That means it can solve four classes of pain that runtime-only competitors cannot: schema-dialect fragmentation, tool-versioning drift, schema token-cost surprises, and lack of in-process observability. Each new task in this file should be judged by whether it exploits the compile-time seam, not by whether it is 'a feature'.",
+    "pillars": [
+      {
+        "id": "DS-1",
+        "pillar": "Schema dialect correctness at compile time",
+        "task": "T-012",
+        "pain_competitors_do_not_solve": "`mcp-lint`, `tokitai-mcp-server` source bug, and every Python/Java team's runtime surprise: same JSON Schema, different provider, silent failure. mcp-lint only catches this post-hoc on saved specs; nothing catches it at the source."
+      },
+      {
+        "id": "DS-2",
+        "pillar": "Tool versioning as a type-system concern",
+        "task": "T-013",
+        "pain_competitors_do_not_solve": "Hard breaks when a tool is renamed or its arg shape changes. LangChain has ad-hoc `deprecated` markers; Anthropic's Claude Code has hand-rolled `aliases`. None of them have a compiler-checked lifecycle (deprecated_since / remove_in / replaced_by)."
+      },
+      {
+        "id": "DS-3",
+        "pillar": "Token-cost aware macro",
+        "task": "T-014",
+        "pain_competitors_do_not_solve": "The 'burned 1000 tokens on a 128-tool prompt' surprise. OpenAI's hard cap, Claude Code's `shouldDefer` — both are workarounds for a measurement that Tokitai can compute at compile time for free."
+      },
+      {
+        "id": "DS-4",
+        "pillar": "Zero-overhead in-process observability",
+        "task": "T-015",
+        "pain_competitors_do_not_solve": "`mcpdog` and Wireshark exist because the protocol is opaque. Tokitai's macro can splice in `tracing::instrument` spans that disappear entirely when the feature is off, so production hot paths pay zero."
+      }
+    ],
+    "pillars_we_reject": [
+      "Becoming a second MCP SDK. We do not chase spec-conformance market share; rmcp does that.",
+      "Runtime plugin / hot-reload as a first-class model. It conflicts with the compile-time schema pillar; we add a non-default `DynamicToolProvider` trait instead (T-010).",
+      "LLM-provider SDK features (streaming, prompt caching, context-window math). Tokitai's job ends at `call_tool`."
+    ]
+  },
+  "non_goals": [
+    "Become a second rmcp — T-005 implements stdio MCP directly, no dependency on rmcp or any other MCP SDK. Spec conformance is maintained via pinned fixture + manual re-sync, not a moving dep.",
+    "Rewrite the macro pipeline (syn/quote → something else). All changes below are additive or surgical.",
+    "Add features that have no test surface."
+  ],
+  "pain_points": [
+    {
+      "id": "PP-A1",
+      "category": "macro_dx",
+      "title": "trybuild stderr snapshots drift across rustc versions",
+      "evidence": "Repo history has 'test(ui): refresh 08_generic_method snapshot for rustc 1.96 wording' and 'fix(ci): drop broken 1.80.0 matrix entry'. Snapshots are pinned to compiler wording.",
+      "impact": "Every rustc bump can break CI on a snapshot that has nothing to do with the macro itself. New contributors hit this and assume the macro is buggy."
+    },
+    {
+      "id": "PP-A2",
+      "category": "macro_dx",
+      "title": "Macro error messages don't always point at user code",
+      "evidence": "User-facing compile errors from `#[tool]` expansions cite spans inside the generated `__call_*` body, not the `impl` block the user wrote.",
+      "impact": "When expansion fails, users have to run `cargo expand` and read what the macro produced before they can debug."
+    },
+    {
+      "id": "PP-A3",
+      "category": "macro_dx",
+      "title": "Compile-time cost on large crates",
+      "evidence": "`scripts/measure-consumer-impact.sh` and the explicit `[profile.release.package.tokitai-macros] opt-level = 3` exist for this reason. CI builds stay under 20 min but per-impl-block cost is non-trivial.",
+      "impact": "Crates with dozens of `#[tool]` impl blocks pay visible incremental compile time. No tooling exposes per-block cost without running the script."
+    },
+    {
+      "id": "PP-B1",
+      "category": "runtime_rigidity",
+      "title": "Tools are compile-time fixed; no runtime registration",
+      "evidence": "`ToolProvider::tool_definitions()` returns a `&'static [ToolDefinition]`. The only mutable surface is `ToolConfig` / `GLOBAL_CONFIG_REGISTRY` (`tokitai-core/src/config.rs`).",
+      "impact": "Multi-tenant systems that need to enable/disable tools per user, or hot-reload tool plugins, have no first-class answer. `ToolConfig` patches schema strings at runtime but cannot add or remove tools."
+    },
+    {
+      "id": "PP-B2",
+      "category": "runtime_rigidity",
+      "title": "Configuration priority rules are under-documented and surprising",
+      "evidence": "`tokitai-macros/src/lib.rs` lib.rs comment says `#[tool(desc)]` > doc comment > `tokitai!` config > `#[param_tool]`, but the user-facing docs in `docs/USAGE.md` and `docs/ADVANCED_USAGE.md` don't reproduce this table.",
+      "impact": "Users don't know whether `tokitai! { ... desc: ... }` will override `#[tool(desc = \"...\")]`. Source of truth is a macro docstring."
+    },
+    {
+      "id": "PP-C1",
+      "category": "async_friction",
+      "title": "Tokio is the default; async-std / smol need manual executor registration",
+      "evidence": "`tokitai-core/src/lib.rs` lib.rs §'Default behaviour' lists three resolution paths in this order: user-registered executor → `Handle::block_on` → clear error. Non-Tokio runtimes MUST call `set_async_executor(...)` or the call returns `InternalError`.",
+      "impact": "Users on async-std / smol / embassy discover this only at the first sync call from async code. The error message is good but the UX surface (one global `OnceLock`, no per-`call_tool` override) is rough."
+    },
+    {
+      "id": "PP-C2",
+      "category": "async_friction",
+      "title": "Resilience decorators' sleep fallback blocks the runtime thread",
+      "evidence": "`docs/wrap-cheatsheet.md` 'Quick reminders' admits: 'Without an executor, the backoff / wait sleeps fall back to blocking `std::thread::sleep`.'",
+      "impact": "`#[retry]` / `#[rate_limit]` / `#[circuit_breaker]` on async methods without a registered executor stall the thread between attempts. Users on Tokio get the runtime's async sleep; users without one don't."
+    },
+    {
+      "id": "PP-D1",
+      "category": "ecosystem_gap",
+      "title": "tokitai-mcp-server doesn't speak stdio MCP",
+      "evidence": "`tokitai-mcp-server/src/server.rs` exposes `/tools` and `/call` endpoints only. There is no `serve_stdio(...)` function in the public API.",
+      "impact": "Claude Desktop / Cursor / other MCP-aware clients cannot connect directly. Adoption requires a sidecar HTTP service and a client that speaks the project's ad-hoc protocol."
+    },
+    {
+      "id": "PP-D2",
+      "category": "ecosystem_gap",
+      "title": "No integration test against a real LLM provider",
+      "evidence": "`examples/dev_assistant.rs` is the end-to-end regression test, but it uses an offline harness. `examples/ollama_integration.rs` exists but is gated behind an env var and not in CI.",
+      "impact": "Schema round-trips, provider envelope differences (OpenAI `function.parameters` vs Anthropic `input_schema` vs MCP `inputSchema`), and tool-call sequencing are not exercised against a real model."
+    },
+    {
+      "id": "PP-E1",
+      "category": "feature_run_drift",
+      "title": "examples/deprecated/ contains undocumented placeholders",
+      "evidence": "`examples/deprecated/{wrap_native,delegate_method,resilient_tool}.rs` exist alongside `README.md` saying 'Placeholder examples for #[wrap] / #[delegate] / #[retry] / #[rate_limit] / #[circuit_breaker] ... have been moved to examples/deprecated/; the corresponding attributes are not yet exposed in 0.5.0.'",
+      "impact": "New users find these files and assume the attributes work. The README disclosure is the only thing that prevents confusion, and it's easy to miss."
+    },
+    {
+      "id": "PP-E2",
+      "category": "feature_run_drift",
+      "title": "Wrap-feature attribute coverage vs. runnable examples is uneven",
+      "evidence": "`docs/wrap-architecture.md` documents six wrap features (`#[wrap]`, `#[openapi]`, `#[delegate]`, `#[retry]`, `#[rate_limit]`, `#[circuit_breaker]`). Only `#[openapi]` has a real example (`examples/wrap_openapi.rs`); the rest live in `examples/deprecated/` or only in `tokitai-macros/tests/`.",
+      "impact": "Doc says 'yes', repo says 'maybe'. Users hit `cargo run --example <name>` and either get a placeholder or a stub."
+    },
+    {
+      "id": "PP-F1",
+      "category": "test_fragility",
+      "title": "Property-based test fixture is hand-curated",
+      "evidence": "`tokitai-macros/tests/property_based_test.rs` + `tests/fixtures/property_based_snapshot.txt`. The snapshot is a 1000+ line hand-written golden file used to assert the macro emits a stable expansion.",
+      "evidence_more": "`.claude/settings.local.json` already includes `BLESS=1 cargo test -p tokitai-macros --test property_based_test snapshot_5_method_fixture` — the snapshot has been re-blessed more than once.",
+      "impact": "Any non-trivial change to the macro output (whitespace, attribute order, extra import) trips the snapshot. Real semantic regressions get drowned in diff noise."
+    },
+    {
+      "id": "PP-F2",
+      "category": "test_fragility",
+      "title": "Some `tests/ui/*.stderr` files lack a matching `.rs` fixture",
+      "evidence": "`tokitai-macros/tests/ui/` listing shows `07_missing_self_param.stderr` but the corresponding `.rs` may or may not exist (needs audit). `.gitignore` excludes `tests/ui/*.stderr` patterns generally.",
+      "impact": "Coverage claims in docs may not match what CI actually runs."
+    }
+  ],
+  "tasks": [
+    {
+      "id": "T-001",
+      "title": "Stabilize macro error spans to point at user code, not generated code",
+      "addresses": ["PP-A2"],
+      "priority": "P0",
+      "effort_estimate": "M",
+      "acceptance_criteria": [
+        "Every `compile_error!` emitted by `#[tool]` carries a `Span::call_site()`-derived span that points at the user's `impl` line or the offending attribute.",
+        "Add `tokitai-macros/tests/error_span_test.rs` with at least 3 negative cases (missing &self, unknown param attr, invalid return type) asserting the span points at the user-written token.",
+        "Existing trybuild snapshots in `tests/ui/*.stderr` are updated to match the new spans via `TRYBUILD=overwrite`."
+      ],
+      "depends_on": []
+    },
+    {
+      "id": "T-002",
+      "title": "Document and freeze the configuration priority table",
+      "addresses": ["PP-B2"],
+      "priority": "P0",
+      "effort_estimate": "S",
+      "acceptance_criteria": [
+        "`docs/USAGE.md` and `docs/ADVANCED_USAGE.md` each contain the same priority table lifted from `tokitai-macros/src/lib.rs` (`#[tool(desc)]` > doc comment > `tokitai!` config > `#[param_tool]`).",
+        "`tokitai-core/src/config.rs` exposes the priority as a `const fn` so the macro and the docs cannot drift.",
+        "A `config_override_test.rs` integration test asserts that setting `tokitai! { desc: '...' }` after `#[tool(desc = '...')]` does NOT override."
+      ],
+      "depends_on": []
+    },
+    {
+      "id": "T-003",
+      "title": "Add a first-class `set_runtime_executor` API with per-call override",
+      "addresses": ["PP-C1"],
+      "priority": "P0",
+      "effort_estimate": "M",
+      "acceptance_criteria": [
+        "`tokitai_core::AsyncExecutor` trait gains a `block_on_for(&self, future)` variant that the macro's sync-from-async wrapper probes before the global slot.",
+        "`tokitai_core::set_async_executor(Box::new(...))` is documented as the global fallback; new docs explicitly call out async-std/smol/embassy as use cases.",
+        "`tokitai-core/tests/async_executor_override_test.rs` exercises an `async-std` executor end-to-end and is in CI."
+      ],
+      "depends_on": []
+    },
+    {
+      "id": "T-004",
+      "title": "Make resilience decorators' sleeps async-aware when an executor is registered",
+      "addresses": ["PP-C2"],
+      "priority": "1",
+      "effort_estimate": "M",
+      "acceptance_criteria": [
+        "`#[retry]`, `#[rate_limit]`, `#[circuit_breaker]` emit `tokitai_core::current_async_executor()`-aware sleep rather than `std::thread::sleep` when applied to `async fn`.",
+        "`tokitai-macros/tests/resilience_async_sleep_test.rs` asserts the sleep path uses the executor (stub executor increments a counter) and never `std::thread::sleep`.",
+        "Docs in `docs/wrap-architecture.md` §6 updated to remove the 'Without an executor ... fall back to blocking std::thread::sleep' caveat."
+      ],
+      "depends_on": ["T-003"]
+    },
+    {
+      "id": "T-005",
+      "title": "Add stdio MCP transport to tokitai-mcp-server (direct implementation, no rmcp)",
+      "addresses": ["PP-D1"],
+      "priority": "1",
+      "effort_estimate": "L",
+      "acceptance_criteria": [
+        "`tokitai_mcp_server::McpServerBuilder::with_stdio()` exists and yields a future that reads JSON-RPC frames from stdin and writes to stdout per the MCP 2025-06-18 spec.",
+        "`examples/mcp_stdio_server.rs` runs as `cargo run --example mcp_stdio_server` and is reachable by `mcp-client` from the official Python SDK.",
+        "`tokitai-mcp-server/tests/mcp_stdio_smoke.rs` spawns the server, opens stdin/stdout, exchanges `initialize` + `tools/list` + `tools/call`, asserts the response shapes match the MCP spec.",
+        "Cargo.toml adds NO new dependency on `rmcp` or any other MCP SDK. JSON-RPC framing is hand-rolled (one ~150-line module) and pinned to the MCP-2025-06-18 spec via a fixture in `tests/fixtures/mcp-spec/`. A pinned-version note in `docs/MCP_ARCHITECTURE.md` explains how to re-sync the hand-rolled framer when the spec revs."
+      ],
+      "depends_on": []
+    },
+    {
+      "id": "T-006",
+      "title": "Add an offline-compatible LLM integration test for schema round-tripping",
+      "addresses": ["PP-D2"],
+      "priority": "1",
+      "effort_estimate": "M",
+      "acceptance_criteria": [
+        "`tokitai/tests/provider_envelope_test.rs` round-trips a sample `ToolDefinition` through OpenAI's `function.parameters`, Anthropic's `input_schema`, and MCP's `inputSchema` envelopes and asserts no field is dropped.",
+        "For OpenAI and Anthropic, the test uses a recorded JSON request fixture (no live API call) checked into `tests/fixtures/`.",
+        "Optional `LLM_API_KEY`-gated live test for one provider (Ollama by default; local Docker) added behind `--features llm-live`."
+      ],
+      "depends_on": []
+    },
+    {
+      "id": "T-007",
+      "title": "Replace examples/deprecated/ with either real examples or removed stubs",
+      "addresses": ["PP-E1", "PP-E2"],
+      "priority": "P1",
+      "effort_estimate": "M",
+      "acceptance_criteria": [
+        "Every `.rs` file in `examples/deprecated/` is either deleted (with the README mention removed) or replaced with a runnable example that exercises the corresponding attribute.",
+        "If the attribute is not yet stable, its docs reference a `tracking-issue: <GH#>` so users can see the gap is intentional.",
+        "CI runs `cargo run --example <each>` for the migrated examples; failure breaks the build."
+      ],
+      "depends_on": []
+    },
+    {
+      "id": "T-008",
+      "title": "Replace the hand-curated property-test snapshot with a structural comparison",
+      "addresses": ["PP-F1"],
+      "priority": "P1",
+      "effort_estimate": "L",
+      "acceptance_criteria": [
+        "`tokitai-macros/tests/property_based_test.rs` no longer diffs the entire rendered expansion. Instead, it parses the rendered output with `syn` and asserts on an AST-level schema (number of `__call_*` fns, presence of certain `quote!` shapes, no duplicate definitions, all error messages are ASCII English).",
+        "`tests/fixtures/property_based_snapshot.txt` is deleted.",
+        "`__property_expand` and `__property_would_error` hidden macros in `tokitai-macros/src/lib.rs` are retained (or replaced with `syn::parse_file` internally) but no longer used for full-string diff."
+      ],
+      "depends_on": ["T-001"]
+    },
+    {
+      "id": "T-009",
+      "title": "Audit tests/ui/ for orphaned .stderr files and pin the rustc matrix",
+      "addresses": ["PP-F2", "PP-A1"],
+      "priority": "P1",
+      "effort_estimate": "S",
+      "acceptance_criteria": [
+        "Every `tests/ui/*.stderr` has a matching `.rs` driving it (or is deleted).",
+        "`.github/workflows/ci.yml` pins the `rustc` version used to generate trybuild snapshots via a `RUSTC_VERSION` env var, with a `make refresh-ui-snapshots` Makefile target.",
+        "Snapshots are tagged with the rustc version in the `.stderr` file's first comment line so drift is detectable on sight."
+      ],
+      "depends_on": []
+    },
+    {
+      "id": "T-010",
+      "title": "Add a dynamic ToolProvider for runtime tool registration",
+      "addresses": ["PP-B1"],
+      "priority": "P2",
+      "effort_estimate": "L",
+      "acceptance_criteria": [
+        "`tokitai_core::ToolProvider` gains a companion `DynamicToolProvider` trait with `add_tool`, `remove_tool`, `enable_for`, `disable_for` methods.",
+        "`tokitai-mcp-server` integrates the dynamic provider so the MCP HTTP / stdio servers can serve a mutating registry.",
+        "`tokitai/examples/dynamic_tools.rs` demonstrates per-tenant enable/disable.",
+        "Backwards-compatible: existing static `ToolProvider` impls continue to work."
+      ],
+      "depends_on": [],
+      "design_question": "Trait extension vs new trait? New trait is non-breaking and lets the macro-generated providers opt in to dynamic on a case-by-case basis."
+    },
+    {
+      "id": "T-011",
+      "title": "Expose per-impl-block compile-time cost in cargo build output",
+      "addresses": ["PP-A3"],
+      "priority": "P2",
+      "effort_estimate": "S",
+      "acceptance_criteria": [
+        "`tokitai-macros` emits a `cargo:warning=` line per `#[tool]` impl block with `name=<type> ms=<expand_time_us>` when `TOKITAI_PROFILE=1`.",
+        "`scripts/measure-consumer-impact.sh` reads these warnings instead of wall-clock `cargo check`.",
+        "CI captures the per-impl median as an artifact and fails if median regresses >20%."
+      ],
+      "depends_on": []
+    },
+    {
+      "id": "T-012",
+      "title": "Bake per-provider JSON-Schema dialect rules into the macro (kill the mcp-lint class of bugs)",
+      "addresses": ["DS-1"],
+      "priority": "P0",
+      "effort_estimate": "L",
+      "north_star": "Compile-time schema correctness. The macro guarantees the emitted JSON Schema is conformant to the chosen provider's known quirks before the binary ships, instead of relying on a downstream lint pass like `mcp-lint`.",
+      "rationale": "Search results confirm that cross-client schema fragmentation is one of the top tool-calling pain points — `mcp-lint` exists solely because Claude Desktop, Cursor, OpenAI Agents SDK, and VS Code Copilot disagree on what `required: false` / `additionalProperties: true` mean in MCP-flavored JSON Schema. Tokio-style compile-time checking is uniquely positioned to solve this: the macro knows the Rust types and can refuse to emit a schema that any supported provider will reject. No runtime-only competitor can do this.",
+      "acceptance_criteria": [
+        "New module `tokitai-macros/src/schema/dialect.rs` codifies the known schema quirks for at least: OpenAI strict-mode (no `additionalProperties: true` on root, no `required: false`, no `const` keyword, no tuple-style items), Anthropic (`inputSchema` must be a JSON object, no `oneOf` siblings), MCP-2025-06-18 (no `additionalProperties` ambiguity, every property needs an explicit `type`).",
+        "The `#[tool(dialect = \"openai-strict\")]` attribute on an `impl` block triggers a compile-time audit of every emitted `ToolDefinition.input_schema` against that dialect's rule set. Violations produce `compile_error!` at the user span (depends on T-001).",
+        "Default dialect is `mcp` (loosest). Choosing a stricter dialect without an emitted workaround is an error, not a warning.",
+        "`tokitai-macros/tests/dialect_audit_test.rs` contains at least 5 negative cases (one per rule) that compile-fail in the macro, plus 3 positive cases that compile and produce a known-good schema snapshot.",
+        "`docs/wrap-architecture.md` gains a 'Dialect correctness' section. `README.md` advertises this as the answer to 'why does my tool fail in OpenAI but work in Claude?'"
+      ],
+      "depends_on": ["T-001"]
+    },
+    {
+      "id": "T-013",
+      "title": "Promote version / deprecated_since / remove_in / replaced_by to first-class, compiler-checked tool versioning",
+      "addresses": ["DS-2"],
+      "priority": "P0",
+      "effort_estimate": "M",
+      "north_star": "Tool versioning as a type-system concern. Renames, deprecations, and removal schedules are part of the type, not a separate doc the LLM has to be told about at runtime.",
+      "rationale": "`tokitai-core::ToolDefinition` already carries `version`, `deprecated_since`, `remove_in`, and `replaced_by` fields — but the macro never wires them. Industry pain points (cited in research): LLM tool registries are notorious for hard breaks when a tool name changes. Spring AI and LangChain each ship their own ad-hoc `deprecation_warning` field. Anthropic's Claude Code `aliases?` is a hand-rolled back-compat shim. Tokitai can centralize all of this in the type system so deprecation scheduling is enforced the same way `cargo outdated` enforces version ranges.",
+      "acceptance_criteria": [
+        "`#[tool(version = \"2.1.0\")]` and `#[tool(deprecated_since = \"2.0.0\", remove_in = \"3.0.0\", replaced_by = \"new_thing\")]` syntax is accepted by the macro.",
+        "Generated `__call_*` wrappers refuse to call a tool whose `remove_in` is past. Callers receive `ToolError::Removed` with a structured payload pointing at `replaced_by`.",
+        "`to_openai_function()` / `to_anthropic_tool()` / `to_mcp_tool()` emit the deprecation metadata into the provider envelope where the spec supports it (MCP: `_meta.deprecated`; OpenAI: not standardized, so emit as a description suffix that the LLM sees).",
+        "`tokitai/tests/tool_versioning_test.rs` exercises: call to deprecated tool succeeds with a warning, call to removed tool fails, call to non-existent tool routed to `replaced_by` when one is configured at the dispatcher level.",
+        "`docs/API_STABILITY.md` is updated to describe the new deprecation lifecycle; the existing `version` field on `ToolDefinition` is documented end-to-end for the first time."
+      ],
+      "depends_on": []
+    },
+    {
+      "id": "T-014",
+      "title": "Emit per-impl-block token-cost warnings for tool schemas (solve the 128-tool-limit / 'burned 1000 tokens on schema' problem)",
+      "addresses": ["DS-3"],
+      "priority": "P1",
+      "effort_estimate": "S",
+      "north_star": "Schema cost is a build-time number, not a runtime surprise.",
+      "rationale": "OpenAI caps a single request at 128 tools; Claude Code's `shouldDefer` and `alwaysLoad` are an end-user hack to keep the schema out of the prompt when it would blow the token budget. The macro already serializes every tool to JSON Schema at compile time — measuring the byte length (and an estimated token count) is free. Other ecosystems have no idea what their tool schema costs until they hit it in production.",
+      "acceptance_criteria": [
+        "`tokitai-macros` counts the serialized byte length of every generated `ToolDefinition` and (when `TOKITAI_PROFILE=1`) emits `cargo:warning=impl <Type> -> <N> tools, schema_bytes=<B>, est_tokens=<T>`.",
+        "When `TOKITAI_PROFILE_BUDGET=<N>` is set, a `#[tool]` impl whose combined schema exceeds `N` bytes produces a compile `warning` recommending `#[wrap]` curating or splitting the impl.",
+        "`tokitai/examples/budget_check.rs` defines a 200-tool impl block, builds with `TOKITAI_PROFILE_BUDGET=8192`, and the warning is checked into CI output.",
+        "`docs/performance.md` §'Token cost of tool schemas' is added with a worked example showing how to budget."
+      ],
+      "depends_on": ["T-011"]
+    },
+    {
+      "id": "T-015",
+      "title": "Build an in-process, zero-overhead tool-call trace emitter that survives hot paths (kill the mcpdog class of tools)",
+      "addresses": ["DS-4"],
+      "priority": "P1",
+      "effort_estimate": "M",
+      "north_star": "Every tool call is observable by default, with zero cost when not observed.",
+      "rationale": "`mcpdog` is a whole separate tool whose only purpose is to sit between an MCP client and server and decode the JSON-RPC traffic. For in-process Tokitai deployments the equivalent should be a compile-time feature flag that wraps every `__call_*` in a `tracing::instrument` span — zero cost when disabled, full structured trace when enabled, no separate sidecar needed. Tokio-style compile-time injection is uniquely suited to this; Python/Java runtimes can't get free observability because their call paths aren't expanded at compile time.",
+      "acceptance_criteria": [
+        "`tokitai = { features = [\"trace\"] }` enables `tracing::instrument` on every generated `__call_*` span with `tool.name`, `tool.version`, `args.size`, `result.size` fields.",
+        "When the feature is off (default), the macro emits no `tracing` calls; binary size delta verified by CI.",
+        "`tokitai/examples/dev_assistant.rs` adds a `tracing-subscriber` init block demonstrating how a user can `RUST_LOG=tokitai=trace cargo run --example dev_assistant` to see every tool call with sub-microsecond timing.",
+        "`docs/MCP_ARCHITECTURE.md` is updated to point at this as the in-process alternative to `mcpdog`-style traffic sniffers."
+      ],
+      "depends_on": []
+    }
+  ],
+  "milestones": [
+    {
+      "id": "M-0.5.2",
+      "label": "Stabilize what we ship",
+      "tasks": ["T-001", "T-002", "T-003", "T-007", "T-009", "T-013"],
+      "exit_criteria": [
+        "Macro errors point at user code.",
+        "Config priority table is single-sourced.",
+        "Async-std/smol users have a documented, supported path.",
+        "examples/deprecated/ is gone or filled in.",
+        "trybuild snapshot drift is bounded to one CI job that re-blesses.",
+        "Tool versioning fields on `ToolDefinition` are wired through the macro and have an end-to-end test."
+      ]
+    },
+    {
+      "id": "M-0.6.0",
+      "label": "Ecosystem reach + first moat",
+      "tasks": ["T-004", "T-005", "T-006", "T-008", "T-012"],
+      "exit_criteria": [
+        "Claude Desktop / Cursor can connect to tokitai-mcp-server over stdio (no rmcp dep).",
+        "Resilience decorators are async-correct without manual executor registration.",
+        "Provider-envelope test passes against OpenAI + Anthropic + MCP recorded fixtures.",
+        "Property test no longer uses a hand-curated golden file.",
+        "Schema-dialect correctness is enforced at compile time — at least OpenAI strict + MCP covered."
+      ]
+    },
+    {
+      "id": "M-0.7.0",
+      "label": "Optional dynamism + remaining moats",
+      "tasks": ["T-010", "T-011", "T-014", "T-015"],
+      "exit_criteria": [
+        "A static `#[tool]` provider can opt into runtime tool add/remove.",
+        "Per-impl compile cost is reported at build time and tracked in CI.",
+        "Per-impl schema byte/token budget emits warnings.",
+        "`trace` feature wires `tracing::instrument` around every generated `__call_*` with zero cost when off."
+      ]
+    }
+  ],
+  "open_design_questions": [
+    {
+      "id": "Q-1",
+      "question": "RESOLVED. T-005 implements stdio MCP directly; no rmcp dependency. Spec is pinned via tests/fixtures/mcp-spec/ and re-synced manually when the spec revs.",
+      "touches": ["T-005"]
+    },
+    {
+      "id": "Q-2",
+      "question": "Static `ToolProvider` vs new `DynamicToolProvider` trait vs trait extension?",
+      "touches": ["T-010"],
+      "recommendation": "New trait, non-breaking, opt-in."
+    },
+    {
+      "id": "Q-3",
+      "question": "Where do we land on the compile-time / runtime trade-off for the next major version?",
+      "touches": ["T-010"],
+      "context": "The current design is honest about being compile-time. v1.0 may need a position statement on whether dynamic registration is 'tolerated' or 'first-class'.",
+      "recommendation": "Keep compile-time as the default; promote dynamic to first-class via the new trait, not by relaxing the existing one."
+    },
+    {
+      "id": "Q-4",
+      "question": "How aggressive should the schema-dialect linter be by default?",
+      "touches": ["T-012"],
+      "context": "Default dialect is `mcp` (loosest), which means a user who silently switches providers gets no warning at compile time. Should we ship with a stricter default and require `#[tool(dialect = \"mcp\")]` for looseness, or keep `mcp` as the default and let users opt into strictness? Trade-off: stricter default = more compile errors but fewer production incidents; looser default = smoother onboarding.",
+      "recommendation": "Default `mcp` for 0.6. Re-evaluate for v1.0 once telemetry from T-014/T-015 tells us how often users actually switch dialects."
+    },
+    {
+      "id": "Q-5",
+      "question": "Should `ToolDefinition.version` follow SemVer strictly, or accept any string?",
+      "touches": ["T-013"],
+      "context": "Some teams use CalVer, some use SemVer, some use commit SHAs. Strict SemVer lets us type-check `remove_in > deprecated_since`. Loose strings let users encode whatever they want.",
+      "recommendation": "Accept any string at parse time; provide an optional `version_policy = \"semver\"` attribute on `#[tool]` that constrains the values and enables ordered comparisons."
+    }
+  ]
+}

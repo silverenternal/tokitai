@@ -10,6 +10,10 @@ use serde::{Deserialize, Serialize};
 use std::{error::Error, fmt, sync::Arc};
 use tokitai::mcp;
 use tokitai_core::serde_types;
+// T-010: bring `visible_tools` / `call_for_tenant` into scope so the
+// dynamic-registry dispatch path resolves trait methods at the use site.
+#[allow(unused_imports)]
+use tokitai_core::DynamicToolProvider;
 use tower_http::{
     cors::{Any, CorsLayer},
     trace::TraceLayer,
@@ -146,6 +150,7 @@ impl ToolRegistry {
         Self { tools }
     }
 
+    #[allow(dead_code)] // used by read-only McpServer paths (kept for API symmetry)
     fn find(&self, name: &str) -> Option<&mcp::McpTool> {
         self.tools.iter().find(|t| t.name == name)
     }
@@ -273,7 +278,8 @@ where
 }
 
 /// Helper function to get tool definitions from a provider
-/// Works with both regular providers (via static method) and MultiToolProvider (via instance method)
+/// Works with both regular providers (via static method), `MultiToolProvider`
+/// (via instance method), and `DynamicToolRegistry` (T-010).
 fn get_tools_from_provider<T>(provider: &T) -> Vec<mcp::McpTool>
 where
     T: tokitai_core::ToolProvider + tokitai_core::ToolCaller + Send + Sync + 'static,
@@ -284,9 +290,9 @@ where
         return mcp::to_mcp_tools(static_tools);
     }
 
-    // If static method returns empty, try to get from instance (for MultiToolProvider)
-    // This is a special case for providers that collect tools at runtime
-    // We use the RuntimeToolProvider trait
+    // If static method returns empty, try to get from instance (for MultiToolProvider
+    // or DynamicToolRegistry). Type-based dispatch avoids forcing every T to
+    // implement a no-op `runtime_tool_definitions` method.
     get_tools_from_provider_runtime(provider)
 }
 
@@ -294,19 +300,24 @@ where
 ///
 /// # Design Note: Why Type-Based Dispatch?
 ///
-/// This function uses type-based dispatch to handle `MultiToolProvider` specially.
-/// This is a deliberate design choice: `MultiToolProvider` collects tools at runtime,
-/// while other providers use compile-time static methods (`ToolProvider::tool_definitions()`).
+/// This function uses type-based dispatch to handle `MultiToolProvider` and
+/// `DynamicToolRegistry` (T-010) specially. Both collect tools at runtime,
+/// while other providers use compile-time static methods
+/// (`ToolProvider::tool_definitions()`).
 ///
-/// The type-based approach avoids introducing a trait that would only have a single implementation.
-/// If you need a custom provider with runtime tool definitions, consider:
+/// The type-based approach avoids introducing a trait that would only have
+/// implementations on those two runtime types. If you need a custom provider
+/// with runtime tool definitions, consider:
 /// 1. Using `MultiToolProvider` to combine your tools
-/// 2. Filing an issue to discuss adding a `RuntimeToolProvider` trait
+/// 2. Wrapping a `DynamicToolRegistry` for fine-grained per-tenant control
+/// 3. Filing an issue to discuss adding a `RuntimeToolProvider` trait
 fn get_tools_from_provider_runtime<T>(provider: &T) -> Vec<mcp::McpTool>
 where
     T: tokitai_core::ToolProvider + tokitai_core::ToolCaller + Send + Sync + 'static,
 {
-    multi_provider_tool_defs(provider).unwrap_or_default()
+    multi_provider_tool_defs(provider)
+        .or_else(|| dynamic_registry_tool_defs(provider))
+        .unwrap_or_default()
 }
 
 /// Return the tool definitions held by a `MultiToolProvider`, or `None`
@@ -320,6 +331,30 @@ where
     use std::any::Any;
     let multi = (provider as &dyn Any).downcast_ref::<MultiToolProvider>()?;
     Some(multi.tool_definitions().to_vec())
+}
+
+/// T-010: return the tool definitions held by a `DynamicToolRegistry`,
+/// or `None` if `provider` is not one. Used by both the HTTP server and
+/// the stdio transport so a dynamic registry plugs into the same
+/// `McpServerBuilder::with_tool(...)` entry point as a static provider.
+pub(crate) fn dynamic_registry_tool_defs<T>(provider: &T) -> Option<Vec<mcp::McpTool>>
+where
+    T: tokitai_core::ToolProvider + tokitai_core::ToolCaller + Send + Sync + 'static,
+{
+    use std::any::Any;
+    let reg = (provider as &dyn Any).downcast_ref::<tokitai_core::DynamicToolRegistry>()?;
+    Some(
+        reg.visible_tools(None)
+            .iter()
+            .map(|def| mcp::McpTool {
+                name: def.name.clone(),
+                description: def.description.clone(),
+                input_schema: serde_json::from_str(&def.input_schema)
+                    .unwrap_or_else(|_| serde_json::json!({})),
+                output_schema: None,
+            })
+            .collect(),
+    )
 }
 
 /// MCP Server with a concrete tool provider
@@ -370,9 +405,17 @@ where
                 .init();
         }
 
+        // T-010: the registry uses an interior-mutability pattern so the
+        // dynamic provider's tool list can be refreshed on every request.
+        // For static providers, this is a no-op cache.
+        let registry = Arc::new(LiveToolRegistry::new(
+            self.tools.clone(),
+            self.tool_provider.clone(),
+        ));
+
         let state = Arc::new(AppStateWithProvider {
-            registry: ToolRegistry::new(self.tools.clone()),
-            tool_provider: self.tool_provider.clone(), // 现在只是克隆 Arc，不是克隆 T
+            registry,
+            tool_provider: self.tool_provider.clone(),
         });
 
         // Build router
@@ -418,9 +461,15 @@ where
         &self.config
     }
 
-    /// Get the list of tools
-    pub fn tools(&self) -> &[mcp::McpTool] {
-        &self.tools
+    /// Get the list of tools. T-010: when the provider is a
+    /// `DynamicToolRegistry`, this reflects the current (post-mutation)
+    /// state of the registry; for static providers it returns the
+    /// cached slice captured at build time.
+    pub fn tools(&self) -> Vec<mcp::McpTool> {
+        // Re-fetch from the provider each call so dynamic mutation is
+        // visible. For static providers this is `O(n)` and just returns
+        // the same data they baked in at compile time.
+        get_tools_from_provider(&*self.tool_provider)
     }
 
     /// Get the tool provider
@@ -429,9 +478,69 @@ where
     }
 }
 
+/// T-010: interior-mutable registry. Holds the cached snapshot of the
+/// tool list AND a reference to the live provider; `tools()` re-fetches
+/// from the provider on every call so dynamic mutation is honoured.
+/// For static providers, the re-fetch is a cheap `O(n)` walk that
+/// returns the same `&'static [ToolDefinition]` they baked at compile
+/// time, so the cost is negligible.
+struct LiveToolRegistry {
+    cached: std::sync::RwLock<Vec<mcp::McpTool>>,
+    provider: Arc<dyn std::any::Any + Send + Sync>,
+}
+
+impl LiveToolRegistry {
+    fn new<T>(initial: Vec<mcp::McpTool>, provider: Arc<T>) -> Self
+    where
+        T: tokitai_core::ToolProvider + tokitai_core::ToolCaller + Send + Sync + 'static,
+    {
+        Self {
+            cached: std::sync::RwLock::new(initial),
+            provider: provider as Arc<dyn std::any::Any + Send + Sync>,
+        }
+    }
+
+    /// Refresh the cached tool list from the live provider and return
+    /// a clone of the freshly-fetched list. Falls back to the cached
+    /// list when the refresh fails (e.g. poisoned lock).
+    fn tools(&self) -> Vec<mcp::McpTool> {
+        // Try to refresh from a `DynamicToolRegistry`. For any other
+        // provider type we keep the cached slice, which matches the
+        // compile-time static semantics.
+        if let Some(reg) = self
+            .provider
+            .downcast_ref::<tokitai_core::DynamicToolRegistry>()
+        {
+            let fresh: Vec<mcp::McpTool> =
+                <tokitai_core::DynamicToolRegistry as tokitai_core::DynamicToolProvider>::visible_tools(
+                    reg, None,
+                )
+                .iter()
+                .map(|def| mcp::McpTool {
+                    name: def.name.clone(),
+                    description: def.description.clone(),
+                    input_schema: serde_json::from_str(&def.input_schema)
+                        .unwrap_or_else(|_| serde_json::json!({})),
+                    output_schema: None,
+                })
+                .collect();
+            if let Ok(mut guard) = self.cached.write() {
+                *guard = fresh.clone();
+            }
+            return fresh;
+        }
+        // Non-dynamic providers: hand back the cached slice.
+        self.cached.read().map(|g| g.clone()).unwrap_or_default()
+    }
+
+    fn find(&self, name: &str) -> Option<mcp::McpTool> {
+        self.tools().into_iter().find(|t| t.name == name)
+    }
+}
+
 /// Application state with provider
 struct AppStateWithProvider<T> {
-    registry: ToolRegistry,
+    registry: Arc<LiveToolRegistry>,
     tool_provider: Arc<T>,
 }
 
@@ -599,7 +708,7 @@ async fn list_tools_handler_with_provider<T>(
 where
     T: tokitai_core::ToolProvider + tokitai_core::ToolCaller + Send + Sync + 'static,
 {
-    Json(state.registry.tools.clone())
+    Json(state.registry.tools())
 }
 
 /// Call tool handler with provider
@@ -615,13 +724,33 @@ where
         request.name, request.arguments
     );
 
-    // Find the tool
+    // Find the tool. The live registry refreshes its tool list when
+    // the provider is a `DynamicToolRegistry`, so a tool added since
+    // server start is reachable here.
     let tool = state.registry.find(&request.name).ok_or_else(|| {
         warn!("Tool not found: {}", request.name);
         StatusCode::NOT_FOUND
     })?;
 
     info!("Found tool: {} - {}", tool.name, tool.description);
+
+    // T-010: when the provider is a `DynamicToolRegistry`, dispatch
+    // through `call_for_tenant` so per-tenant enable/disable is honored.
+    // We downcast on the Arc-wrapped provider so the registry lives in
+    // exactly one place and the dispatch logic stays out of the
+    // generic T-bound.
+    if let Some(reg) = dynamic_registry_from_state(&state) {
+        match reg.call_for_tenant(&request.name, None, &request.arguments) {
+            Ok(result) => {
+                info!("Tool executed successfully: {}", request.name);
+                return Ok(Json(ToolCallResponse::success(result)));
+            }
+            Err(e) => {
+                warn!("Tool execution failed: {} - {}", request.name, e);
+                return Ok(Json(ToolCallResponse::error(format!("{}", e))));
+            }
+        }
+    }
 
     // Call the actual tool
     match state
@@ -637,6 +766,22 @@ where
             Ok(Json(ToolCallResponse::error(format!("{}", e))))
         }
     }
+}
+
+/// T-010: downcast the wrapped provider to `DynamicToolRegistry` so the
+/// handler can call `call_for_tenant` instead of the generic
+/// `ToolCaller::call_tool`. Returns `None` when the wrapped provider is
+/// not a dynamic registry.
+fn dynamic_registry_from_state<T>(
+    state: &AppStateWithProvider<T>,
+) -> Option<tokitai_core::DynamicToolRegistry>
+where
+    T: tokitai_core::ToolProvider + tokitai_core::ToolCaller + Send + Sync + 'static,
+{
+    use std::any::Any;
+    (state.tool_provider.as_ref() as &dyn Any)
+        .downcast_ref::<tokitai_core::DynamicToolRegistry>()
+        .cloned()
 }
 
 /// Health check handler

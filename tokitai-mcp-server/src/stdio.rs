@@ -34,6 +34,9 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokitai::mcp;
+// T-010: bring the trait into scope so `call_for_tenant` resolves.
+#[allow(unused_imports)]
+use tokitai_core::DynamicToolProvider;
 
 // ============================================================================
 // JSON-RPC 2.0 envelope
@@ -349,13 +352,16 @@ where
     fn handle_tools_list(&self) -> Result<Value, JsonRpcError> {
         // Prefer the static `T::tool_definitions()` slice (cheap, works
         // for any `ToolProvider`). Fall back to a type-erased
-        // `MultiToolProvider` lookup so the runtime registry is honored
-        // when the user wraps multiple providers together.
+        // `MultiToolProvider` or `DynamicToolRegistry` (T-010) lookup
+        // so the runtime registry is honored when the user wraps
+        // multiple providers together or uses the dynamic registry.
         let static_tools = T::tool_definitions();
         let tools: Vec<mcp::McpTool> = if !static_tools.is_empty() {
             mcp::to_mcp_tools(static_tools)
         } else {
-            crate::server::multi_provider_tool_defs(&*self.provider).unwrap_or_default()
+            crate::server::multi_provider_tool_defs(&*self.provider)
+                .or_else(|| crate::server::dynamic_registry_tool_defs(&*self.provider))
+                .unwrap_or_default()
         };
         Ok(json!({
             "tools": tools,
@@ -372,7 +378,23 @@ where
             .ok_or_else(|| JsonRpcError::invalid_params("params.name must be a string"))?;
         let arguments = obj.get("arguments").cloned().unwrap_or(Value::Null);
 
-        match self.provider.call_tool(name, &arguments) {
+        // T-010: when the wrapped provider is a `DynamicToolRegistry`,
+        // dispatch through `call_for_tenant` so per-tenant overrides
+        // are honored. The stdio transport doesn't have a tenant
+        // context yet, so we pass `None` (default-allow); callers
+        // wanting per-tenant gating should use the HTTP transport or
+        // fork `StdioServer`.
+        let result = {
+            use std::any::Any;
+            if let Some(reg) =
+                (&*self.provider as &dyn Any).downcast_ref::<tokitai_core::DynamicToolRegistry>()
+            {
+                reg.call_for_tenant(name, None, &arguments)
+            } else {
+                self.provider.call_tool(name, &arguments)
+            }
+        };
+        match result {
             Ok(result) => Ok(json!({
                 "content": [
                     {

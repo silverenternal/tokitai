@@ -235,6 +235,14 @@ pub use serde_json::{json, Map, Value};
 #[cfg(feature = "serde")]
 pub use tokitai_core::{ToolConfig, ToolConfigRegistry, GLOBAL_CONFIG_REGISTRY};
 
+// T-010: dynamic tool registry re-exports. The trait is opt-in;
+// macro-generated providers do not implement it.
+#[cfg(feature = "serde")]
+pub use tokitai_core::{
+    is_tenant_denied, DynamicHandler, DynamicToolProvider, DynamicToolRegistry,
+    TENANT_DENIED_KIND_HINT,
+};
+
 // Runtime module (always available)
 pub mod error;
 
