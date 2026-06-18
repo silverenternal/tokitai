@@ -115,16 +115,13 @@ the body with:
                 };
                 let __total_ms: u64 = __backoff_ms.saturating_add(__jitter_offset);
                 {
-                    let __retry_sleep = ::std::time::Duration::from_millis(__total_ms);
-                    if ::tokitai_core::current_async_executor().is_some() {
-                        let __retry_res: ::std::result::Result<(), ::tokitai_core::ToolError> =
-                            ::tokitai_core::block_on_async(async move {
-                                ::std::thread::sleep(__retry_sleep);
-                            });
-                        let _ = __retry_res;
-                    } else {
-                        ::std::thread::sleep(__retry_sleep);
-                    }
+                    // T-004: drive the wait through `async_sleep`,
+                    // a runtime-agnostic future that yields to the
+                    // active executor (Tokio / async-std / smol / ...)
+                    // instead of blocking the runtime worker.
+                    ::tokitai_core::async_sleep(
+                        ::std::time::Duration::from_millis(__total_ms),
+                    ).await;
                 }
             }
             Err(__e) => break Err(__e),
@@ -134,8 +131,9 @@ the body with:
 }
 ```
 
-For **sync** functions the async `await` and the `AsyncExecutor` block
-are dropped; the sleep is `std::thread::sleep` directly.
+For **sync** functions the async `await` is dropped; the sleep is
+`std::thread::sleep` directly (which is acceptable because the
+caller is already a sync caller).
 
 No statics are allocated; no `LazyLock`; no runtime state. The
 function's signature is preserved verbatim.
@@ -156,10 +154,14 @@ Source:
 - **With `#[circuit_breaker]`**: same — `#[circuit_breaker]` is
   innermost, `#[retry]` is outermost. See
   [`circuit-breaker.md`](circuit-breaker.md).
-- **Async executor**: register one with
-  `tokitai_core::set_async_executor(...)` at program startup. Without
-  one, async `#[retry]` falls back to `std::thread::sleep`, which
-  blocks the calling runtime worker thread.
+- **Async executor**: as of T-004 (0.5.2) the inter-attempt
+  sleep on `async fn` is driven by
+  `tokitai_core::async_sleep(...)`, which yields to whatever
+  executor is in scope (Tokio, async-std, smol, ...) and never
+  blocks the calling runtime worker thread. Registering an
+  `AsyncExecutor` is recommended for hot paths but no longer
+  required to avoid the runtime-blocking `std::thread::sleep`
+  fallback.
 - **Nested `#[retry]`**: in v1, the inner layer wins. The outer
   attribute is applied first, sees a `Result`-returning body, and
   wraps it — but the inner layer has already been expanded, so the

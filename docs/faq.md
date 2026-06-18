@@ -935,11 +935,16 @@ impl Counter {
 
 ### 4.4 Why does `#[rate_limit]` block my Tokio worker?
 
-**Why**: the decorator falls back to `std::thread::sleep` when no
-`AsyncExecutor` is registered. `std::thread::sleep` on a Tokio
-worker thread blocks the whole runtime.
+**Why**: in pre-0.5.2 builds, the decorator fell back to
+`std::thread::sleep` when no `AsyncExecutor` was registered.
+`std::thread::sleep` on a Tokio worker thread blocks the whole
+runtime. As of **T-004 (0.5.2)**, the resilience decorators on
+`async fn` emit `await tokitai_core::async_sleep(...)`, which
+yields to whatever executor is in scope (Tokio, async-std, smol,
+...) and never blocks the runtime worker.
 
-**Right way**: register a non-blocking executor. The
+**Right way (still recommended)**: register a non-blocking
+executor so the wait is driven by a real timer. The
 [getting-started tutorial §3](tutorials/getting-started.md#chapter-3--async-tools-and-the-runtime-agnostic-bridge)
 walks through this; the short version is:
 

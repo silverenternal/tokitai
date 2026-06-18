@@ -147,10 +147,14 @@ impl OpenAIClient { /* vendored endpoints */ }
   The same `input_schema: String` is wrapped in OpenAI / Anthropic /
   MCP envelopes.
 - **For async + `#[retry]` / `#[rate_limit]` / `#[circuit_breaker]`,
-  register an executor at startup:**
-  `tokitai_core::set_async_executor(Box::new(my_executor))`. Without
-  one, the backoff / wait sleeps fall back to blocking
-  `std::thread::sleep`.
+  the inter-attempt sleep is driven through `tokitai_core::async_sleep(...)`
+  (T-004), which yields to whichever executor is in scope (Tokio,
+  async-std, smol, ...). The sleep does **not** call
+  `std::thread::sleep` on the async path; the runtime worker is
+  never blocked. No `AsyncExecutor` needs to be registered for the
+  decorator to compile or run, but registering one is the way to
+  hand the wait off to a real timer (rather than spawning a fresh
+  thread per wait).
 
 See [`wrap-architecture.md`](wrap-architecture.md) for the full
 deep-dive, composition rules, and limitations.

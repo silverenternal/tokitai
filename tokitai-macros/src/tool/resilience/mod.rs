@@ -11,12 +11,13 @@
 //! All three are deliberately written without new dependencies — the
 //! generated code relies only on `std::sync::atomic`, `std::time`,
 //! and (for the async case) the runtime-agnostic
-//! `tokitai_core::current_async_executor()` hook. A short blocking
-//! `std::thread::sleep` is used for back-offs, which is acceptable
-//! for the typical millisecond-to-second intervals produced by
-//! retries and rate-limits, and which does not block a runtime
-//! worker thread when the configured `AsyncExecutor` is used to
-//! drive the sleep.
+//! `tokitai_core::async_sleep(...)` future, which yields control to
+//! the active executor for the full duration of the wait. The
+//! `async_sleep` helper itself does not pull in any runtime crate:
+//! it spawns a single `std::thread` per wait that wakes the future's
+//! `Waker` when the deadline elapses. This works for any executor
+//! the user has registered — Tokio, async-std, smol, or a custom
+//! one — and never blocks a runtime worker thread.
 //!
 //! ## Composition
 //!
@@ -36,6 +37,6 @@
 //! composition (e.g. two `#[retry]` layers) is a stretch goal — see
 //! the per-module docs for the v2 design sketch.
 
-pub mod retry;
-pub mod rate_limit;
 pub mod circuit_breaker;
+pub mod rate_limit;
+pub mod retry;

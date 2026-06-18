@@ -19,8 +19,18 @@ pub(crate) mod attrs;
 pub(crate) mod codegen;
 pub(crate) mod config;
 pub(crate) mod extract;
+pub(crate) mod resilience;
 pub(crate) mod schema;
 pub(crate) mod types;
+// The three wrap modules below are intentionally not yet compiled as
+// part of `lib.rs`. They are referenced by the docs (and by tracking
+// issues for each attribute) but their bodies still require follow-up
+// work to match the rest of the macro pipeline. Declaring them here
+// would currently break the build; the resilience module above is the
+// only one wired in for T-004.
+// pub(crate) mod delegate;
+// pub(crate) mod wrap;
+// pub(crate) mod wrap_openapi;
 
 use attrs::method::ToolAttributes;
 use codegen::{definitions, dispatcher, wrappers};

@@ -81,7 +81,12 @@ impl Parse for RetryArgs {
             }
         }
 
-        Ok(RetryArgs { max, backoff, jitter, on })
+        Ok(RetryArgs {
+            max,
+            backoff,
+            jitter,
+            on,
+        })
     }
 }
 
@@ -129,23 +134,17 @@ pub fn expand(args: TokenStream2, input: TokenStream2) -> TokenStream2 {
         quote! { let __jitter_offset: u64 = 0u64; }
     };
 
-    // For async we drive the sleep through the registered
-    // AsyncExecutor (if any) so it does not block a runtime thread.
+    // T-004: For async we await `tokitai_core::async_sleep(...)` so the
+    // sleep is driven by whichever executor the user has registered
+    // (Tokio, async-std, smol, ...). The future yields to the runtime
+    // for the full duration, never blocking the worker thread.
+    //
     // For sync we just use `std::thread::sleep` directly.
     let sleep_stmt: TokenStream2 = if is_async {
         quote! {
-            {
-                let __retry_sleep = ::std::time::Duration::from_millis(__total_ms);
-                if ::tokitai_core::current_async_executor().is_some() {
-                    let __retry_res: ::std::result::Result<(), ::tokitai_core::ToolError> =
-                        ::tokitai_core::block_on_async(async move {
-                            ::std::thread::sleep(__retry_sleep);
-                        });
-                    let _ = __retry_res;
-                } else {
-                    ::std::thread::sleep(__retry_sleep);
-                }
-            }
+            ::tokitai_core::async_sleep(
+                ::std::time::Duration::from_millis(__total_ms),
+            ).await;
         }
     } else {
         quote! {

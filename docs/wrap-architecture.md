@@ -366,10 +366,12 @@ async fn fetch(&self, url: String) -> Result<String, String> {
 | `on`       | `str`  | `"any"`        | Accepted in v1 for forward compatibility; v1 always retries on any `Err`                 |
 
 Works on both **sync** and **async** functions. For async functions
-the sleep is driven through the registered
-`tokitai_core::AsyncExecutor` (if any), so it does not block a
-runtime worker thread. If no executor is registered, it falls back
-to `std::thread::sleep` (blocking).
+the sleep is driven by `tokitai_core::async_sleep(...)` (T-004),
+which yields to whatever executor is in scope (Tokio, async-std,
+smol, ...). It does **not** block the runtime worker thread and
+does not fall back to `std::thread::sleep` on the async path. For
+sync functions the sleep is `std::thread::sleep` (acceptable
+because the caller is already a sync caller).
 
 ---
 
@@ -539,8 +541,8 @@ is the generated code itself.
 | `#[wrap]`                | none                                     | Same as `#[tool]`                                                         |
 | `#[openapi]`             | one `phf::Map` per impl, `&'static str`  | One `phf::Map` lookup + same as `#[tool]`                                 |
 | `#[delegate]`            | none                                     | One field-access forward                                                 |
-| `#[retry]`               | none                                     | A `Result` match + (optional) `std::thread::sleep` between attempts       |
-| `#[rate_limit]`          | one `AtomicU32` + one `AtomicU64`        | One `compare_exchange` (lock-free); occasionally a sleep                  |
+| `#[retry]`               | none                                     | A `Result` match + an awaited `tokitai_core::async_sleep(...)` between attempts (T-004) |
+| `#[rate_limit]`          | one `AtomicU32` + one `AtomicU64`        | One `compare_exchange` (lock-free); occasionally an awaited `tokitai_core::async_sleep(...)` (T-004) |
 | `#[circuit_breaker]`     | one `AtomicU8` + one `AtomicU32` + one `AtomicU64` | Three atomic loads in the pre-guard, three stores in the post-handler |
 | `to_openai_function` etc.| none                                     | One `serde_json::from_str` + one `json!` (sub-microsecond)                |
 
@@ -591,9 +593,15 @@ above when a resilience decorator is stacked on top.
 
 ### 7.4 Resilience decorators
 
-- All three use `std::thread::sleep` (blocking) when no async
-  executor is registered. **For async use, register one with
-  `tokitai_core::set_async_executor(...)` at program startup.**
+- On **`async fn`**, the inter-attempt sleep is driven through
+  `tokitai_core::async_sleep(...)`, a runtime-agnostic sleep
+  future that yields to whatever executor is in scope (Tokio,
+  async-std, smol, ...). The sleep does **not** call
+  `std::thread::sleep` on the async path; it spawns a single
+  thread per wait that wakes the future's `Waker` when the
+  deadline elapses. The runtime worker is never blocked.
+  Sync functions fall back to `std::thread::sleep` (acceptable
+  because the caller is already a sync caller).
 - `#[retry]` and `#[rate_limit]` and `#[circuit_breaker]` are
   per-function; nested `#[retry]` layers in v1 do not stack
   cleanly (the inner layer wins). v2 will detect existing retry
@@ -603,7 +611,9 @@ above when a resilience decorator is stacked on top.
   `CircuitOpen` trait.
 - All three carry no extra runtime dependencies (no `tokio`,
   no `governor`); the implementation is built on `std::sync::atomic`
-  and `std::time::SystemTime` only.
+  and `std::time::SystemTime` only. The async sleep uses
+  `std::thread::park_timeout` internally so the resilience decorators
+  remain executor-agnostic.
 
 ### 7.5 Open future work
 

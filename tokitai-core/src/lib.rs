@@ -2186,6 +2186,141 @@ pub const fn block_on_async_error_message() -> &'static str {
      before invoking"
 }
 
+// -------------------------------------------------------------------------
+// T-004: runtime-agnostic async sleep.
+//
+// Resilience decorators (`#[retry]`, `#[rate_limit]`,
+// `#[circuit_breaker]`) on `async fn` need to wait between attempts
+// without blocking the runtime worker thread. With Tokio that is
+// `tokio::time::sleep`; with async-std, `async_std::task::sleep`; with
+// smol, `smol::Timer::after`. None of those crates are in scope for
+// `tokitai-core` (it is zero-dep / no-`tokio`).
+//
+// The helper below provides a runtime-agnostic equivalent: spawn a
+// thread that parks for the requested duration and wakes the future's
+// `Waker` when the deadline elapses. The user-registered executor
+// drives the future through `block_on`; the spawned thread is the
+// "timer" replacement. This costs one short-lived thread per sleep,
+// which is the same trade-off `async-std` / `smol` make internally.
+//
+// The sleep does NOT pull in any runtime crate — it only uses
+// `std::thread` and `std::time`. The future is `Send + 'static` so it
+// can cross the `AsyncExecutor` type-erasure boundary, and it is
+// `Unpin` so it composes inside `select!`-style macros without an
+// unsafe `Pin::get_unsafe_mut`.
+// -------------------------------------------------------------------------
+
+/// Runtime-agnostic async sleep future returned by [`async_sleep`].
+///
+/// Polling the future for the first time spawns a single thread that
+/// parks for the requested duration and wakes the registered
+/// `Waker` when the deadline elapses. Subsequent polls return
+/// `Poll::Pending` until the waker is invoked, at which point the
+/// next poll returns `Poll::Ready(())`.
+///
+/// Used by the resilience decorator macros (`#[retry]`,
+/// `#[rate_limit]`, `#[circuit_breaker]`) when wrapped around an
+/// `async fn`. The sleep yields to the runtime for the full
+/// duration, never blocks the executor thread.
+#[cfg(feature = "serde")]
+pub struct AsyncSleep {
+    /// Deadline measured against `Instant::now()` at construction time.
+    deadline: std::time::Instant,
+    /// `true` once the timer thread has been spawned.
+    armed: bool,
+}
+
+#[cfg(feature = "serde")]
+impl AsyncSleep {
+    /// Construct a sleep that completes after `dur` from "now". The
+    /// caller drives the future to completion via whatever executor
+    /// it has in scope (Tokio / async-std / smol / custom).
+    #[must_use]
+    pub fn new(dur: std::time::Duration) -> Self {
+        Self {
+            deadline: std::time::Instant::now() + dur,
+            armed: false,
+        }
+    }
+
+    /// Time remaining until the deadline elapses. Returns `Duration::ZERO`
+    /// once the deadline has passed.
+    pub fn remaining(&self) -> std::time::Duration {
+        self.deadline
+            .saturating_duration_since(std::time::Instant::now())
+    }
+}
+
+#[cfg(feature = "serde")]
+impl core::future::Future for AsyncSleep {
+    type Output = ();
+    fn poll(
+        mut self: core::pin::Pin<&mut Self>,
+        cx: &mut core::task::Context<'_>,
+    ) -> core::task::Poll<()> {
+        // If the deadline has already passed, complete immediately.
+        if std::time::Instant::now() >= self.deadline {
+            return core::task::Poll::Ready(());
+        }
+        let remaining = self.remaining();
+        if !self.armed {
+            // Arm the timer exactly once. The spawned thread parks
+            // for `remaining` and then wakes the future's waker.
+            // We `clone` the waker so the timer thread can outlive
+            // the current `Context` and the future still observes
+            // the wake even if it was re-polled in between.
+            let waker = cx.waker().clone();
+            std::thread::spawn(move || {
+                std::thread::park_timeout(remaining);
+                waker.wake();
+            });
+            self.armed = true;
+        }
+        core::task::Poll::Pending
+    }
+}
+
+/// Sleep for `dur` without blocking the current thread.
+///
+/// Returns a future that completes after the given duration. The
+/// future is `Send + 'static` and `Unpin`, so it composes with
+/// any executor and with `select!`-style combinators.
+///
+/// This is the **async** counterpart to `std::thread::sleep`:
+/// polling the future yields control to the runtime, which is
+/// free to drive other tasks while the deadline elapses. The
+/// `#[retry]`, `#[rate_limit]`, and `#[circuit_breaker]` macros
+/// emit `await tokitai_core::async_sleep(...)` on `async fn`
+/// bodies so that backoff between attempts does not stall a
+/// runtime worker thread.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use tokitai_core::async_sleep;
+/// use std::time::Duration;
+///
+/// async fn retryable() -> Result<(), &'static str> {
+///     for attempt in 1..3 {
+///         match try_once().await {
+///             Ok(()) => return Ok(()),
+///             Err(_) if attempt < 3 => {
+///                 async_sleep(Duration::from_millis(100 * attempt)).await;
+///             }
+///             Err(e) => return Err(e),
+///         }
+///     }
+///     Ok(())
+/// }
+///
+/// async fn try_once() -> Result<(), &'static str> { Ok(()) }
+/// ```
+#[cfg(feature = "serde")]
+#[must_use]
+pub fn async_sleep(dur: std::time::Duration) -> AsyncSleep {
+    AsyncSleep::new(dur)
+}
+
 #[cfg(feature = "serde")]
 mod executor_internal {
     use super::*;

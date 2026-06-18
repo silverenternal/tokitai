@@ -249,9 +249,10 @@ pub use mcp::*;
 
 // Re-export macros
 pub use tokitai_macros::{
-    config, param_tool, tool, tool_default, tool_desc, tool_example, tool_max, tool_max_items,
-    tool_max_length, tool_min, tool_min_items, tool_min_length, tool_multiple_of, tool_pattern,
-    tool_required, tool_transform, tool_type, tool_validate,
+    circuit_breaker, config, param_tool, rate_limit, retry, tool, tool_default, tool_desc,
+    tool_example, tool_max, tool_max_items, tool_max_length, tool_min, tool_min_items,
+    tool_min_length, tool_multiple_of, tool_pattern, tool_required, tool_transform, tool_type,
+    tool_validate,
 };
 
 /// Version string of this `tokitai` crate, sourced from the package's

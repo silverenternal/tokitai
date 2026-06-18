@@ -75,7 +75,10 @@ impl syn::parse::Parse for CircuitBreakerArgs {
                 let _: syn::token::Comma = input.parse()?;
             }
         }
-        Ok(CircuitBreakerArgs { failure_threshold, reset_timeout })
+        Ok(CircuitBreakerArgs {
+            failure_threshold,
+            reset_timeout,
+        })
     }
 }
 

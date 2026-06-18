@@ -168,9 +168,13 @@ impl WeatherClient {
 }
 ```
 
-* All three use `std::thread::sleep` (blocking) when no async
-  executor is registered. Register one with
-  `tokitai_core::set_async_executor(...)` at startup
+* As of T-004 (0.5.2), the inter-attempt sleep on `async fn` is
+  driven by `tokitai_core::async_sleep(...)`, which yields to
+  whatever executor is in scope (Tokio, async-std, smol, ...) and
+  never blocks the calling runtime worker thread. Registering an
+  `AsyncExecutor` is recommended for hot paths but no longer
+  required to avoid the runtime-blocking `std::thread::sleep`
+  fallback
   ([ADR-0001](adr/0001-async-executor-type-erasure.md)).
 * Nested `#[retry]` in v1 do not stack cleanly — the inner
   layer wins.

@@ -188,6 +188,14 @@ mod tool;
 
 use proc_macro::TokenStream;
 
+// ---------------------------------------------------------------------------
+// T-004: thin proc-macro wrappers for the resilience decorator macros
+// (`#[retry]`, `#[rate_limit]`, `#[circuit_breaker]`). The actual
+// codegen lives in `crate::tool::resilience::*::expand`; this file
+// only exposes them as `#[proc_macro_attribute]` so they are reachable
+// via `tokitai_macros::retry` / `::rate_limit` / `::circuit_breaker`.
+// ---------------------------------------------------------------------------
+
 /// # `#[tool]` Attribute Macro
 ///
 /// Marks an `impl` block or individual methods as AI-callable tools.
@@ -522,6 +530,52 @@ pub fn param_tool(_attr: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro]
 pub fn config(item: TokenStream) -> TokenStream {
     tool::config(item)
+}
+
+// ---------------------------------------------------------------------------
+// T-004: resilience decorator proc-macro attributes.
+//
+// These three attributes wrap the body of a (sync or `async`) function
+// in retry, rate-limit, or circuit-breaker logic. The codegen lives in
+// `crate::tool::resilience::*::expand` and is wired through these thin
+// `#[proc_macro_attribute]` wrappers so they are reachable from
+// downstream code as `tokitai_macros::retry`, etc.
+//
+// On `async fn`, the generated sleeps are driven by the registered
+// `AsyncExecutor` (T-003) via `tokitai_core::async_sleep(...)`, so the
+// runtime worker thread is never blocked between attempts. On sync
+// functions the sleeps fall back to `std::thread::sleep` (acceptable
+// because the caller is already a sync caller).
+//
+// See `docs/wrap-architecture.md` §4.4 and §6 for the design overview
+// and `docs/reference/{retry,rate-limit,circuit-breaker}.md` for the
+// per-attribute reference.
+// ---------------------------------------------------------------------------
+
+/// `#[retry(max = N, backoff = "...", jitter = bool, on = "...")]`
+/// decorator. Wraps a `Result`-returning function body in a retry loop
+/// with backoff between attempts. See
+/// [`tokitai_macros`](crate) module docs and `docs/reference/retry.md`.
+#[proc_macro_attribute]
+pub fn retry(attr: TokenStream, item: TokenStream) -> TokenStream {
+    crate::tool::resilience::retry::expand(attr.into(), item.into()).into()
+}
+
+/// `#[rate_limit(rps = N, burst = N)]` decorator. Wraps a function
+/// body in a token-bucket rate limiter. See
+/// `docs/reference/rate-limit.md`.
+#[proc_macro_attribute]
+pub fn rate_limit(attr: TokenStream, item: TokenStream) -> TokenStream {
+    crate::tool::resilience::rate_limit::expand(attr.into(), item.into()).into()
+}
+
+/// `#[circuit_breaker(failure_threshold = N, reset_timeout = "30s")]`
+/// decorator. Wraps a function body in a 3-state (closed / open /
+/// half-open) circuit breaker. See
+/// `docs/reference/circuit-breaker.md`.
+#[proc_macro_attribute]
+pub fn circuit_breaker(attr: TokenStream, item: TokenStream) -> TokenStream {
+    crate::tool::resilience::circuit_breaker::expand(attr.into(), item.into()).into()
 }
 
 // ---------------------------------------------------------------------------

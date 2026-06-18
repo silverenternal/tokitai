@@ -128,18 +128,13 @@ body with:
             let __rl_wait_ns: u64 =
                 __rl_interval_ns - (__rl_elapsed % __rl_interval_ns);
             if false /* is_async */ {
-                let __rl_wait = ::std::time::Duration::from_nanos(__rl_wait_ns);
-                if ::tokitai_core::current_async_executor().is_some() {
-                    let __rl_r: ::std::result::Result<
-                        (),
-                        ::tokitai_core::ToolError,
-                    > = ::tokitai_core::block_on_async(async move {
-                        ::std::thread::sleep(__rl_wait);
-                    });
-                    let _ = __rl_r;
-                } else {
-                    ::std::thread::sleep(__rl_wait);
-                }
+                // T-004: drive the wait through `async_sleep`,
+                // a runtime-agnostic future that yields to the
+                // active executor (Tokio / async-std / smol / ...)
+                // instead of blocking the runtime worker.
+                ::tokitai_core::async_sleep(
+                    ::std::time::Duration::from_nanos(__rl_wait_ns),
+                ).await;
             } else {
                 ::std::thread::sleep(
                     ::std::time::Duration::from_nanos(__rl_wait_ns),
@@ -155,7 +150,8 @@ body with:
 
 For **async** functions the `if false /* is_async */` branch is
 replaced with `if true` and the body is wrapped in
-`async move { … }.await`.
+`async move { … }.await`. The sleep itself becomes an awaited
+future, so the runtime worker is never blocked.
 
 State is held in two **function-local statics**: `__RL_TOKENS` and
 `__RL_LAST_NS`. These are per-function, so multiple `#[rate_limit]`
@@ -181,10 +177,13 @@ Source:
 - **With `#[circuit_breaker]`**: same — `#[rate_limit]` is innermost,
   `#[circuit_breaker]` is outermost. See
   [`circuit-breaker.md`](circuit-breaker.md).
-- **Async executor**: register one with
-  `tokitai_core::set_async_executor(...)` for non-blocking throttling
-  on async methods. Without one, async `#[rate_limit]` falls back to
-  `std::thread::sleep`.
+- **Async executor**: as of T-004 (0.5.2) the throttling wait on
+  `async fn` is driven by `tokitai_core::async_sleep(...)`, which
+  yields to whatever executor is in scope (Tokio, async-std,
+  smol, ...) and never blocks the calling runtime worker thread.
+  Registering an `AsyncExecutor` is recommended for hot paths
+  but no longer required to avoid the runtime-blocking
+  `std::thread::sleep` fallback.
 - **Per-function statics**: nesting two `#[rate_limit]`s on the same
   function compiles, but the inner static shadows the outer one in
   terms of token count. v2 will detect existing `__RL_*` statics and

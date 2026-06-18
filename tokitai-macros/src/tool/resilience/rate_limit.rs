@@ -142,18 +142,14 @@ pub fn expand(args: TokenStream2, input: TokenStream2) -> TokenStream2 {
                 let __rl_wait_ns: u64 =
                     __rl_interval_ns - (__rl_elapsed % __rl_interval_ns);
                 if #is_async {
-                    let __rl_wait = ::std::time::Duration::from_nanos(__rl_wait_ns);
-                    if ::tokitai_core::current_async_executor().is_some() {
-                        let __rl_r: ::std::result::Result<
-                            (),
-                            ::tokitai_core::ToolError,
-                        > = ::tokitai_core::block_on_async(async move {
-                            ::std::thread::sleep(__rl_wait);
-                        });
-                        let _ = __rl_r;
-                    } else {
-                        ::std::thread::sleep(__rl_wait);
-                    }
+                    // T-004: drive the wait through the runtime's
+                    // executor via `tokitai_core::async_sleep`, which
+                    // returns a future that yields to the executor
+                    // for the full wait duration instead of
+                    // blocking the worker thread.
+                    ::tokitai_core::async_sleep(
+                        ::std::time::Duration::from_nanos(__rl_wait_ns),
+                    ).await;
                 } else {
                     ::std::thread::sleep(
                         ::std::time::Duration::from_nanos(__rl_wait_ns),
