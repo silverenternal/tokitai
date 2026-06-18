@@ -63,6 +63,20 @@ serde = []
 # `async-std` or `smol`; in that case you MUST register a custom
 # `tokitai_core::AsyncExecutor` via `set_async_executor(...)`.
 tokio = []
+# T-015: marker feature. When a downstream consumer enables
+# `tokitai = { features = ["trace"] }`, this feature lights
+# up in `tokitai-macros`'s build env (via the
+# `tokitai-macros/trace` cascade in `tokitai/Cargo.toml`).
+# `build.rs` detects `CARGO_FEATURE_TRACE=1` and forwards
+# `TOKITAI_TRACE=1` to the macro's compile environment, which
+# in turn makes `option_env!("TOKITAI_TRACE")` resolve to
+# `Some("1")` and causes the macro to emit
+# `#[tracing::instrument(...)]` on every generated `__call_*`
+# wrapper. The proc-macro crate itself needs no `tracing`
+# dependency because the attribute is resolved at the
+# consumer site; this feature exists purely so the
+# build-script can detect the consumer's intent.
+trace = []
 
 [[bench]]
 name = "macro_bench"

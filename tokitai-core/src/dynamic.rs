@@ -1,6 +1,6 @@
 //! T-010: Dynamic / runtime-mutable tool registry.
 //!
-//! The compile-time [`ToolProvider`] trait returns `&'static [ToolDefinition]`,
+//! The compile-time [`crate::ToolProvider`] trait returns `&'static [ToolDefinition]`,
 //! which by definition cannot grow or shrink at runtime. That rigidity is
 //! the right default for the macro hot path, but it blocks legitimate
 //! multi-tenant use cases: per-tenant allow-lists, hot-reload of tool
@@ -26,7 +26,7 @@ use crate::{ToolDefinition, ToolError, ToolErrorKind};
 
 /// T-010: trait for runtime-mutable tool registries.
 ///
-/// Distinct from the compile-time [`ToolProvider`] trait. Existing macro-
+/// Distinct from the compile-time [`crate::ToolProvider`] trait. Existing macro-
 /// generated providers do not implement this — the macro's whole value
 /// proposition is "schema is fixed at compile time." [`DynamicToolProvider`]
 /// is opt-in: callers who need mutability build a

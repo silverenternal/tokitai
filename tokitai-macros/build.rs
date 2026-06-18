@@ -77,4 +77,21 @@ fn main() {
             println!("cargo:rustc-env=TOKITAI_TRACE={}", value);
         }
     }
+
+    // T-015: when a downstream crate enables the `tokitai/trace`
+    // feature (which cascades into the `tokitai-macros/trace`
+    // feature), cargo sets `CARGO_FEATURE_TRACE=1` in this
+    // build script's environment. Forward it to the macro's
+    // compile environment so `option_env!("TOKITAI_TRACE")`
+    // inside the macro lights up and `#[tracing::instrument]`
+    // is emitted on every generated `__call_*` wrapper. This
+    // means downstream consumers (test binaries, examples,
+    // end-user crates) get spans emitted automatically whenever
+    // they turn on the `trace` feature — no env-var
+    // bookkeeping required.
+    if std::env::var("TOKITAI_TRACE").is_err()
+        && std::env::var("CARGO_FEATURE_TRACE").is_ok()
+    {
+        println!("cargo:rustc-env=TOKITAI_TRACE=1");
+    }
 }

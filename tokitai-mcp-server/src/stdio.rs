@@ -422,7 +422,7 @@ where
 // Stdio server builder
 // ============================================================================
 
-/// Builder for the stdio MCP transport, mirroring [`McpServerBuilder`].
+/// Builder for the stdio MCP transport, mirroring [`crate::McpServerBuilder`].
 ///
 /// Created via [`crate::McpServerBuilder::with_stdio`]; users typically do
 /// not construct this directly.

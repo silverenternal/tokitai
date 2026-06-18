@@ -81,7 +81,7 @@ http-server = ["mcp", "axum", "tokio", "tower", "tower-http", "tracing", "tracin
 # picked up by the macro via `option_env!`). The env-var path
 # requires the consumer to add their own `tracing` dependency;
 # the feature-flag path does not.
-trace = ["tracing"]
+trace = ["tokitai-macros/trace", "tracing"]
 
 # llm-live: enables live integration tests against a local Ollama instance
 # in `provider_envelope_test.rs`. Off by default; CI does not enable it.

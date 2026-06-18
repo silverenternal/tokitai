@@ -126,7 +126,7 @@ pub struct ToolDefinition {
     /// True when the description was supplied explicitly via
     /// `#[tool(desc = "...")]` at compile time. The runtime
     /// configuration system (`tokitai!`) will NOT override an
-    /// explicit description — see [`CONFIG_PRIORITY_ORDER`].
+    /// explicit description — see [`crate::config::CONFIG_PRIORITY_ORDER`].
     #[cfg(feature = "serde")]
     pub description_explicit: bool,
     #[cfg(not(feature = "serde"))]
