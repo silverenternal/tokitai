@@ -631,6 +631,79 @@ pub fn __property_would_error(item: TokenStream) -> TokenStream {
 }
 
 // ---------------------------------------------------------------------------
+// T-008: string-literal variants of the property-test hooks. The original
+// `__property_expand!` / `__property_would_error!` accept a token stream,
+// which makes it impossible to pass a proptest-generated `String` (a
+// token stream is a fixed-size compile-time artifact). These two
+// string-literal variants accept a `&'static str` containing source
+// code, parse it as a `syn::File`, and run the same pipeline. They are
+// used by `tests/property_based_test.rs` to exercise randomly-synthesized
+// impl blocks and to perform AST-level structural assertions on the
+// rendered expansion.
+// ---------------------------------------------------------------------------
+#[doc(hidden)]
+#[proc_macro]
+pub fn __property_expand_str(item: TokenStream) -> TokenStream {
+    use proc_macro2::Literal;
+    use proc_macro2::TokenStream as TokenStream2;
+    use quote::ToTokens;
+
+    let item2: TokenStream2 = item.into();
+    let lit_str: syn::Result<syn::LitStr> = syn::parse2(item2);
+    let src = match lit_str {
+        Ok(ls) => ls.value(),
+        Err(_) => return make_lit("NOT_A_STRING_LITERAL"),
+    };
+
+    // Parse the source as a `syn::File` (the same shape the
+    // proc-macro driver sees). The `tool` proc-macro expects
+    // a token stream that is itself a single `Item::Impl` or
+    // that contains an `Item::Impl`; `syn::parse_str` on the
+    // `ItemImpl` is the most direct path. If parsing fails we
+    // return a sentinel that the structural tests can detect.
+    let tokens: TokenStream2 = match syn::parse_str::<syn::ItemImpl>(&src) {
+        Ok(item_impl) => item_impl.to_token_stream(),
+        Err(_) => return make_lit("PARSE_ERROR"),
+    };
+    let result = tool::tool(TokenStream::new(), tokens.into());
+    let result_ts2: TokenStream2 = result.into();
+    let rendered = result_ts2.to_string();
+    let lit = Literal::string(&rendered);
+    quote::quote! { #lit }.into()
+}
+
+#[doc(hidden)]
+#[proc_macro]
+pub fn __property_would_error_str(item: TokenStream) -> TokenStream {
+    use proc_macro2::TokenStream as TokenStream2;
+    use quote::ToTokens;
+
+    let item2: TokenStream2 = item.into();
+    let lit_str: syn::Result<syn::LitStr> = syn::parse2(item2);
+    let src = match lit_str {
+        Ok(ls) => ls.value(),
+        Err(_) => return make_lit("NOT_A_STRING_LITERAL"),
+    };
+
+    let tokens: TokenStream2 = match syn::parse_str::<syn::ItemImpl>(&src) {
+        Ok(item_impl) => item_impl.to_token_stream(),
+        Err(_) => {
+            // Unparseable source counts as "would error" so the
+            // structural test does not silently pass on garbage.
+            let b: TokenStream2 = "true".parse().expect("bool literal parses");
+            return quote::quote! { #b }.into();
+        }
+    };
+    let result = tool::tool(TokenStream::new(), tokens.into());
+    let result_ts2: TokenStream2 = result.into();
+    let rendered = result_ts2.to_string();
+    let would_error = rendered.contains("compile_error !") || rendered.contains("compile_error!");
+    let b = if would_error { "true" } else { "false" };
+    let lit: TokenStream2 = b.parse().expect("bool literal parses");
+    quote::quote! { #lit }.into()
+}
+
+// ---------------------------------------------------------------------------
 // T-001 span probe — hidden proc-macro used by
 // `tokitai-macros/tests/error_span_test.rs`.
 //
