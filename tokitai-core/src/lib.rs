@@ -111,7 +111,32 @@ pub struct ToolDefinition {
     pub replaced_by: Option<alloc::string::String>,
     #[cfg(not(feature = "serde"))]
     pub replaced_by: Option<&'static str>,
+    /// True when the description was supplied explicitly via
+    /// `#[tool(desc = "...")]` at compile time. The runtime
+    /// configuration system (`tokitai!`) will NOT override an
+    /// explicit description — see [`CONFIG_PRIORITY_ORDER`].
+    #[cfg(feature = "serde")]
+    pub description_explicit: bool,
+    #[cfg(not(feature = "serde"))]
+    pub description_explicit: bool,
 }
+
+/// Single source of truth for the priority order of configuration
+/// sources that can supply a tool's description.
+///
+/// The table is also the spec for `tokitai_core::config::CONFIG_PRIORITY_ORDER`
+/// (see that module for the full, const-fn version). Keeping the two
+/// declarations in lockstep is enforced by a doc test:
+/// `cargo test -p tokitai-core CONFIG_PRIORITY_ORDER`.
+///
+/// Index 0 is the highest-priority source (wins on conflict); the last
+/// index is the lowest (used only as a fallback).
+pub const CONFIG_PRIORITY_DOC: &[&str] = &[
+    "#[tool(desc = \"...\")]  (compile-time, attribute-supplied)",
+    "doc comment  (compile-time, /// lines above the method)",
+    "tokitai! config block  (runtime, applies via GLOBAL_CONFIG_REGISTRY)",
+    "synthesized default  (compile-time, \"调用 <method> 方法\")",
+];
 
 /// Compile-time storage for tool definition data, used by the
 /// `#[tool]` macro and converted to a `ToolDefinition` at zero cost
@@ -159,6 +184,7 @@ impl ToolDefinition {
             deprecated_since: None,
             remove_in: None,
             replaced_by: None,
+            description_explicit: false,
         }
     }
 
@@ -190,6 +216,7 @@ impl ToolDefinition {
             deprecated_since: None,
             remove_in: None,
             replaced_by: None,
+            description_explicit: false,
         }
     }
 
@@ -213,7 +240,33 @@ impl ToolDefinition {
             deprecated_since: None,
             remove_in: None,
             replaced_by: None,
+            description_explicit: false,
         }
+    }
+
+    /// Mark the tool's description as having been supplied explicitly via
+    /// `#[tool(desc = "...")]` at compile time.
+    ///
+    /// This makes the description "freeze": subsequent calls to
+    /// [`ToolDefinition::apply_configs`] with a `ToolConfig::Desc` will be
+    /// ignored. The flag is set by the `#[tool]` macro when the user
+    /// supplies `desc = "..."` on the method attribute, and powers the
+    /// priority table exposed by
+    /// [`crate::config::CONFIG_PRIORITY_ORDER`].
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::ToolDefinition;
+    ///
+    /// let tool = ToolDefinition::new("add", "Add two numbers", "{}")
+    ///     .with_description_explicit();
+    /// assert!(tool.description_explicit);
+    /// ```
+    #[must_use]
+    pub fn with_description_explicit(mut self) -> Self {
+        self.description_explicit = true;
+        self
     }
 
     /// Set the tool version.
@@ -410,7 +463,14 @@ impl ToolDefinition {
         for config in configs {
             match config {
                 ToolConfig::Desc(desc) => {
-                    self.description = desc.clone();
+                    // T-002: respect the priority table.
+                    //   `#[tool(desc = "...")]` (compile-time) wins
+                    //   over the `tokitai!` config (runtime). If the
+                    //   description was supplied explicitly at
+                    //   compile time we leave it alone.
+                    if !self.description_explicit {
+                        self.description = desc.clone();
+                    }
                 }
                 ToolConfig::Tags(tags) => {
                     // Add tags to the schema

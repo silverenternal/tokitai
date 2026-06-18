@@ -521,11 +521,32 @@ tokitai::config! {
 
 ## Precedence
 
-The three approaches can be mixed. Precedence is as follows:
+The three approaches can be mixed. Precedence is **frozen** (T-002) and
+matches the `const fn` table in
+[`tokitai_core::config::CONFIG_PRIORITY_ORDER`](https://docs.rs/tokitai-core/latest/tokitai_core/config/constant.CONFIG_PRIORITY_ORDER.html).
 
-1. `#[tool(desc = "...")]` > doc comments
-2. `tokitai!` config > `#[tool]` attributes
-3. Per-parameter: `#[tool(xxx_param = "...")]` > inferred defaults
+| Priority | Source | Layer label | Notes |
+|---------:|--------|-------------|-------|
+| 1 (highest) | compile-time attribute | `#[tool(desc = "...")]` | **Wins** on conflict; runtime `tokitai!` cannot override. |
+| 2 | compile-time doc | `///` doc comment above the method | Used if no `#[tool(desc)]` is present. |
+| 3 | runtime registry | `tokitai!` config block | Does **not** override an explicit `#[tool(desc)]`; still wins over the synthesized default. |
+| 4 (lowest) | synthesized default | `"调用 <method> 方法"` (or similar) | Last-resort fallback. |
+
+Per-parameter rules:
+
+- `#[param_tool(desc = "...")]` (compile-time) > runtime `tokitai!`
+  per-parameter `desc:`. Per-parameter descriptions are independent of
+  the tool-level priority table.
+
+If you want runtime overrides to *not* silently trample a compile-time
+description, always prefer `#[tool(desc = "...")]` for the parts of your
+API contract you want to lock.
+
+> **Why this table is frozen.** Before T-002, the priority was a comment
+> inside `tokitai-macros/src/lib.rs`; the user-facing docs and the
+> implementation drifted. The table above is rendered from the `const
+> fn` `tokitai_core::config::config_priority_table_md()`. Tests pin
+> the behaviour; see `tokitai/tests/config_override_test.rs`.
 
 ## Best practices
 

@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Frozen configuration priority table (T-002, PP-B2).** Tool descriptions supplied via `#[tool(desc = "...")]` are now marked `description_explicit: true` on the generated `ToolDefinition` and the runtime `tokitai!` configuration block will NOT override them. Doc-comment and synthesized-default descriptions stay open to runtime override. The priority is exposed as a `const fn` table at `tokitai_core::config::CONFIG_PRIORITY_ORDER` (with the markdown renderer `config_priority_table_md()` and the boolean helper `can_override`), so the macro, the user-facing docs, and the test suite cannot drift. New `tokitai/tests/config_override_test.rs` pins the behaviour; `docs/USAGE.md` and `docs/ADVANCED_USAGE.md` now contain the same priority table lifted from that constant.
+
+### Changed
+
+- `ToolDefinition::apply_configs` now skips `ToolConfig::Desc` overrides when `description_explicit == true`. This is a behavioural change for the rare case where both an explicit `#[tool(desc)]` attribute AND a `tokitai!` runtime `desc:` were supplied; the compile-time attribute wins.
+
 ## [0.5.1] - 2026-06-02
 
 ### Fixed

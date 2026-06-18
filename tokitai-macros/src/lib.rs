@@ -508,9 +508,17 @@ pub fn param_tool(_attr: TokenStream, item: TokenStream) -> TokenStream {
 ///
 /// ## Priority
 ///
-/// 1. `#[tool(desc = "...")]` > doc comments
-/// 2. `tokitai!` config > `#[tool]` attributes
-/// 3. Parameter-level: `#[param_tool]` > default inference
+/// The priority table is **frozen** as of T-002 and lives in
+/// `tokitai_core::config::CONFIG_PRIORITY_ORDER` so the macro and the
+/// user-facing docs cannot drift.
+///
+/// 1. `#[tool(desc = "...")]` (compile-time, attribute-supplied) — wins on conflict
+/// 2. doc comment (compile-time, `///` lines above the method)
+/// 3. `tokitai!` config block (runtime; does NOT override an explicit `#[tool(desc)]`)
+/// 4. synthesized default (e.g. `"调用 <method> 方法"`) — last-resort fallback
+///
+/// Parameter-level: `#[param_tool(desc = "...")]` (compile-time) >
+/// runtime `tokitai!` per-parameter `desc:`.
 #[proc_macro]
 pub fn config(item: TokenStream) -> TokenStream {
     tool::config(item)

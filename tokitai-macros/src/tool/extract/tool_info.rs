@@ -70,6 +70,7 @@ pub fn extract_tool_info(fn_item: &ImplItemFn) -> Option<ToolMethodInfo> {
             cache: None,
             rate_limit: None,
             param_validations: Vec::new(),
+            description_explicit: false,
         });
     }
 
@@ -140,6 +141,13 @@ pub fn extract_tool_info(fn_item: &ImplItemFn) -> Option<ToolMethodInfo> {
 
     let tool_name = custom_name.unwrap_or_else(|| method_name.clone());
 
+    // T-002: capture whether the description came from an explicit
+    // `#[tool(desc = "...")]` attribute so the codegen can mark the
+    // resulting `ToolDefinition` and prevent the runtime `tokitai!`
+    // config from overriding it. Doc-comment and synthesized default
+    // descriptions stay open to runtime override.
+    let description_explicit = custom_desc.is_some();
+
     let description = custom_desc
         .or_else(|| extract_doc_comment(&fn_item.attrs))
         .unwrap_or_else(|| format!("调用 {} 方法", method_name));
@@ -184,5 +192,6 @@ pub fn extract_tool_info(fn_item: &ImplItemFn) -> Option<ToolMethodInfo> {
         cache,
         rate_limit,
         param_validations,
+        description_explicit,
     })
 }

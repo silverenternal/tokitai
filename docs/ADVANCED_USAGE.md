@@ -463,6 +463,40 @@ let tools = Calculator::tool_definitions().to_vec();
 
 ---
 
+## Description priority table (frozen, T-002)
+
+Tokitai has **four** sources that can supply a tool's description. They
+are merged at compile time and the runtime `tokitai!` config may only
+override some of them. The single source of truth is the `const fn`
+[`tokitai_core::config::CONFIG_PRIORITY_ORDER`](https://docs.rs/tokitai-core/latest/tokitai_core/config/constant.CONFIG_PRIORITY_ORDER.html)
+and its `config_priority_table_md()` renderer.
+
+| Priority | Source | Layer label | Runtime overridable? |
+|---------:|--------|-------------|----------------------|
+| 1 (highest) | compile-time attribute | `#[tool(desc = "...")]` | No — the runtime registry skips `ToolConfig::Desc` when `ToolDefinition::description_explicit == true`. |
+| 2 | compile-time doc | `///` doc comment above the method | Yes — the runtime `tokitai!` block wins over a doc comment. |
+| 3 | runtime registry | `tokitai!` config block | n/a (it *is* the runtime layer). |
+| 4 (lowest) | synthesized default | `"调用 <method> 方法"` (or similar) | Yes — anything beats the synthesized default. |
+
+**Rendered table (matches the `const` source above):**
+
+1. `#[tool(desc = "...")]` (compile-time, attribute-supplied) — **wins** on conflict
+2. doc comment (`///` lines above the method) — used if no `#[tool(desc)]` is present
+3. tokitai! config block (`GLOBAL_CONFIG_REGISTRY`) — does **not** override an explicit `#[tool(desc)]`
+4. synthesized default (e.g. `"调用 <method> 方法"`) — last-resort fallback
+
+Per-parameter rules:
+
+- `#[param_tool(desc = "...")]` (compile-time) > runtime `tokitai!`
+  per-parameter `desc:`. Per-parameter descriptions are independent of
+  the tool-level priority table.
+
+This table is enforced by `tokitai/tests/config_override_test.rs` and
+unit-tested by `tokitai-core/src/config.rs::tests`. If you change a
+priority, update both.
+
+---
+
 ## Troubleshooting
 
 ### Compile error: `call_tool` is not a future

@@ -8,6 +8,18 @@ unified release notes for the whole workspace; this file calls out the
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`ToolDefinition::with_description_explicit()`** — builder method that marks a tool description as having been supplied at compile time. Once set, `ToolDefinition::apply_configs` will NOT overwrite the description from a runtime `ToolConfig::Desc`.
+- **`config::ConfigLayer` enum + `config::CONFIG_PRIORITY_ORDER` const array** — frozen priority table for the four description sources (`#[tool(desc)]`, doc comment, `tokitai!` config, synthesized default). `config_priority_table_md()` renders the table as Markdown; `can_override(compile_time_winner, runtime_layer)` returns whether a runtime override is allowed.
+
+### Changed
+
+- **`ToolDefinition` carries a new `description_explicit: bool` field** (T-002). Defaults to `false`; set by the `#[tool]` macro when `#[tool(desc = "...")]` is supplied.
+- **`ToolDefinition::apply_configs` skips `ToolConfig::Desc` overrides** when `description_explicit == true`. Doc-comment and synthesized-default descriptions remain overridable.
+
 ## [0.5.0] - 2026-06-02
 
 ### Added

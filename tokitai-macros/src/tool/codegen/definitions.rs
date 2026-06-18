@@ -87,10 +87,20 @@ pub fn generate_tool_def_consts(tools: &[ToolMethodInfo]) -> Vec<TokenStream2> {
             quote! {}
         };
 
+        // T-002: when the user wrote `#[tool(desc = "...")]`, mark the
+        // `ToolDefinition` so the runtime `tokitai!` config respects the
+        // priority table (`CONFIG_PRIORITY_ORDER`). Doc comments and
+        // synthesized defaults stay open to runtime override.
+        let explicit_desc_tokens = if tool.description_explicit {
+            quote! { .with_description_explicit() }
+        } else {
+            quote! {}
+        };
+
         consts.push(quote! {
             fn #const_name() -> &'static ::tokitai::ToolDefinition {
                 static DEF: ::std::sync::LazyLock<::tokitai::ToolDefinition> = ::std::sync::LazyLock::new(|| {
-                    ::tokitai::ToolDefinition::new(#tool_name, #description, #schema_json) #version_tokens #deprecated_tokens
+                    ::tokitai::ToolDefinition::new(#tool_name, #description, #schema_json) #version_tokens #deprecated_tokens #explicit_desc_tokens
                 });
                 &*DEF
             }

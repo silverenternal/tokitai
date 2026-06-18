@@ -44,4 +44,9 @@ pub struct ToolMethodInfo {
     pub cache: Option<String>,
     pub rate_limit: Option<String>,
     pub param_validations: Vec<(String, ParamToolAttrs)>,
+    /// T-002: `true` when the description was supplied explicitly via
+    /// `#[tool(desc = "...")]`. When `true` the runtime `tokitai!`
+    /// config block must NOT override the description — see
+    /// `tokitai_core::config::CONFIG_PRIORITY_ORDER`.
+    pub description_explicit: bool,
 }

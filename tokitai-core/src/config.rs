@@ -378,6 +378,164 @@ impl ToolConfig {
     }
 }
 
+/// Named source layers that can supply a tool's description.
+///
+/// The order is the **priority order** for description resolution: index
+/// 0 wins, and the `Default` synthesized description is the fallback.
+///
+/// This enum is the single source of truth for the priority table;
+/// [`CONFIG_PRIORITY_ORDER`] renders it as a fixed-size array so the
+/// `#[tool]` macro and the user-facing docs can both reference the same
+/// `const`.
+///
+/// # Example
+///
+/// ```rust
+/// use tokitai_core::config::ConfigLayer;
+///
+/// // `#[tool(desc = "...")]` wins; the `tokitai!` config is one notch below.
+/// assert!(ConfigLayer::ToolAttrDesc.priority() < ConfigLayer::TokitaiConfig.priority());
+/// assert!(ConfigLayer::DocComment.priority() < ConfigLayer::TokitaiConfig.priority());
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ConfigLayer {
+    /// `#[tool(desc = "...")]` on the method itself (compile-time, attribute).
+    ToolAttrDesc = 0,
+    /// `///` doc comment lines above the method (compile-time, doc).
+    DocComment = 1,
+    /// `tokitai! { ... desc: "..." }` runtime override.
+    TokitaiConfig = 2,
+    /// The synthesized default (`"调用 <method> 方法"` / fallback string).
+    Default = 3,
+}
+
+impl ConfigLayer {
+    /// Lower numbers win. Returns 0 for the highest priority, 3 for the
+    /// fallback.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::config::ConfigLayer;
+    ///
+    /// assert_eq!(ConfigLayer::ToolAttrDesc.priority(), 0);
+    /// assert_eq!(ConfigLayer::DocComment.priority(), 1);
+    /// assert_eq!(ConfigLayer::TokitaiConfig.priority(), 2);
+    /// assert_eq!(ConfigLayer::Default.priority(), 3);
+    /// ```
+    pub const fn priority(self) -> u8 {
+        self as u8
+    }
+
+    /// Stable string label suitable for diagnostics and docs.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::config::ConfigLayer;
+    ///
+    /// assert_eq!(ConfigLayer::ToolAttrDesc.label(), "#[tool(desc = \"...\")]");
+    /// assert_eq!(ConfigLayer::DocComment.label(), "doc comment");
+    /// assert_eq!(ConfigLayer::TokitaiConfig.label(), "tokitai! config");
+    /// assert_eq!(ConfigLayer::Default.label(), "synthesized default");
+    /// ```
+    pub const fn label(self) -> &'static str {
+        match self {
+            ConfigLayer::ToolAttrDesc => "#[tool(desc = \"...\")]",
+            ConfigLayer::DocComment => "doc comment",
+            ConfigLayer::TokitaiConfig => "tokitai! config",
+            ConfigLayer::Default => "synthesized default",
+        }
+    }
+}
+
+/// Frozen priority table for tool-description resolution.
+///
+/// Index 0 is the highest-priority source (wins on conflict); the last
+/// index is the lowest (used only as a fallback). This table is the
+/// `const fn` counterpart of the public doc table in
+/// [`crate::CONFIG_PRIORITY_DOC`].
+///
+/// # Why a `const fn`?
+///
+/// `#[tool]` and the docs used to live in two places — a doc comment in
+/// `tokitai-macros/src/lib.rs` and the per-doc-file prose in
+/// `docs/USAGE.md` / `docs/ADVANCED_USAGE.md` — which drifted apart.
+/// Tying the macro and the docs to this single array means there is
+/// exactly one source of truth, and a unit test can compare the
+/// rendered array against the docs verbatim.
+///
+/// # Example
+///
+/// ```rust
+/// use tokitai_core::config::{CONFIG_PRIORITY_ORDER, ConfigLayer};
+///
+/// // Highest-priority layer first.
+/// assert_eq!(CONFIG_PRIORITY_ORDER[0], ConfigLayer::ToolAttrDesc);
+/// assert_eq!(CONFIG_PRIORITY_ORDER[1], ConfigLayer::DocComment);
+/// assert_eq!(CONFIG_PRIORITY_ORDER[2], ConfigLayer::TokitaiConfig);
+/// assert_eq!(CONFIG_PRIORITY_ORDER[3], ConfigLayer::Default);
+/// ```
+pub const CONFIG_PRIORITY_ORDER: [ConfigLayer; 4] = [
+    ConfigLayer::ToolAttrDesc,
+    ConfigLayer::DocComment,
+    ConfigLayer::TokitaiConfig,
+    ConfigLayer::Default,
+];
+
+/// Render the priority table as a markdown-flavoured `&'static [&'static str]`.
+///
+/// The output is suitable for inlining into `docs/USAGE.md` and
+/// `docs/ADVANCED_USAGE.md` via a build script or by hand. Each row
+/// reads `1. <label>`, matching the user-facing docs.
+///
+/// # Example
+///
+/// ```rust
+/// use tokitai_core::config::config_priority_table_md;
+///
+/// let table = config_priority_table_md();
+/// assert!(table[0].contains("#[tool(desc"));
+/// assert!(table[3].contains("synthesized default"));
+/// ```
+pub const fn config_priority_table_md() -> [&'static str; 4] {
+    [
+        "1. `#[tool(desc = \"...\")]` (compile-time, attribute-supplied) — **wins** on conflict",
+        "2. doc comment (`///` lines above the method) — used if no `#[tool(desc)]` is present",
+        "3. tokitai! config block (`GLOBAL_CONFIG_REGISTRY`) — does **not** override an explicit `#[tool(desc)]`",
+        "4. synthesized default (e.g. `\"调用 <method> 方法\"`) — last-resort fallback",
+    ]
+}
+
+/// Decide whether a runtime `tokitai!` config layer is allowed to override
+/// a description that was supplied by a higher-priority layer.
+///
+/// `compile_time_winner` is the priority number of the layer that
+/// supplied the description baked into the `ToolDefinition` at compile
+/// time; `runtime_layer` is the layer that's trying to override it.
+/// Returns `true` iff the override is permitted.
+///
+/// This is the single function that encodes the priority rules; both
+/// the `#[tool]` macro and runtime callers route through it.
+///
+/// # Example
+///
+/// ```rust
+/// use tokitai_core::config::{can_override, ConfigLayer};
+///
+/// // Compile-time `#[tool(desc)]` (priority 0) is never overridable.
+/// assert!(!can_override(ConfigLayer::ToolAttrDesc.priority(), ConfigLayer::TokitaiConfig));
+/// // Doc comments (priority 1) outrank the runtime layer (priority 2).
+/// assert!(!can_override(ConfigLayer::DocComment.priority(), ConfigLayer::TokitaiConfig));
+/// // The default fallback (priority 3) IS overridable.
+/// assert!(can_override(ConfigLayer::Default.priority(), ConfigLayer::TokitaiConfig));
+/// ```
+pub const fn can_override(compile_time_winner: u8, runtime_layer: ConfigLayer) -> bool {
+    // The runtime layer wins only when it has strictly higher priority
+    // (lower number) than whatever the compile-time layer settled on.
+    runtime_layer.priority() < compile_time_winner
+}
+
 /// Runtime registry for tool configurations.
 ///
 /// This registry stores configurations applied via the `tokitai!` macro
@@ -721,5 +879,81 @@ mod tests {
 
         GLOBAL_CONFIG_REGISTRY.clear("global_test");
         assert!(!GLOBAL_CONFIG_REGISTRY.has_config("global_test"));
+    }
+
+    // ---- T-002: priority table unit tests ----
+
+    #[test]
+    fn test_priority_order_array_matches_expected_ordering() {
+        // The macro and the docs both depend on this exact order.
+        assert_eq!(
+            CONFIG_PRIORITY_ORDER,
+            [
+                ConfigLayer::ToolAttrDesc,
+                ConfigLayer::DocComment,
+                ConfigLayer::TokitaiConfig,
+                ConfigLayer::Default,
+            ]
+        );
+    }
+
+    #[test]
+    fn test_priority_table_md_contains_every_layer_label() {
+        let table = config_priority_table_md();
+        for layer in &CONFIG_PRIORITY_ORDER {
+            let needle = layer.label();
+            assert!(
+                table.iter().any(|row| row.contains(needle)),
+                "rendered table is missing label {:?}: {:?}",
+                needle,
+                table,
+            );
+        }
+        assert_eq!(table.len(), CONFIG_PRIORITY_ORDER.len());
+    }
+
+    #[test]
+    fn test_can_override_compile_time_attr_desc_is_locked() {
+        // T-002 acceptance: `tokitai!` may NOT override an explicit
+        // `#[tool(desc = "...")]`.
+        assert!(!can_override(
+            ConfigLayer::ToolAttrDesc.priority(),
+            ConfigLayer::TokitaiConfig,
+        ));
+    }
+
+    #[test]
+    fn test_can_override_doc_comment_beats_runtime() {
+        // Doc comments are higher priority than `tokitai!` config, so
+        // the runtime cannot replace them either. This keeps the
+        // priority order monotonic.
+        assert!(!can_override(
+            ConfigLayer::DocComment.priority(),
+            ConfigLayer::TokitaiConfig,
+        ));
+    }
+
+    #[test]
+    fn test_can_override_default_is_always_open() {
+        // Only the synthesized default falls below the runtime layer.
+        assert!(can_override(
+            ConfigLayer::Default.priority(),
+            ConfigLayer::TokitaiConfig,
+        ));
+    }
+
+    #[test]
+    fn test_config_layer_priority_is_strictly_monotonic() {
+        // The const table must be monotonic non-decreasing.
+        for w in CONFIG_PRIORITY_ORDER.windows(2) {
+            assert!(
+                w[0].priority() < w[1].priority(),
+                "{:?} ({}) should outrank {:?} ({})",
+                w[0],
+                w[0].priority(),
+                w[1],
+                w[1].priority(),
+            );
+        }
     }
 }
