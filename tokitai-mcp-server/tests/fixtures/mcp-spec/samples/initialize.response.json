@@ -1,0 +1,14 @@
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "protocolVersion": "2025-06-18",
+    "capabilities": {
+      "tools": {"listChanged": false}
+    },
+    "serverInfo": {
+      "name": "tokitai-mcp-server",
+      "version": "0.5.1"
+    }
+  }
+}

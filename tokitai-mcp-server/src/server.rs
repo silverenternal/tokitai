@@ -250,6 +250,26 @@ where
             tools,
         }
     }
+
+    /// Switch to the stdio MCP transport. Returns a builder that can be
+    /// used to run a JSON-RPC-over-stdio MCP server using the same
+    /// `ToolProvider` configured above.
+    ///
+    /// The HTTP / CORS / tracing settings on `McpServerConfig` are
+    /// irrelevant for the stdio transport and are dropped.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use tokitai_mcp_server::McpServerBuilder;
+    ///
+    /// let provider = MyTools::default();
+    /// let stdio = McpServerBuilder::with_tool(provider).with_stdio().build();
+    /// stdio.serve_stdio().await?;
+    /// ```
+    pub fn with_stdio(self) -> crate::stdio::McpServerStdioBuilder<T> {
+        crate::stdio::McpServerStdioBuilder::from_arc(Arc::new(self.tool_provider))
+    }
 }
 
 /// Helper function to get tool definitions from a provider
@@ -286,12 +306,20 @@ fn get_tools_from_provider_runtime<T>(provider: &T) -> Vec<mcp::McpTool>
 where
     T: tokitai_core::ToolProvider + tokitai_core::ToolCaller + Send + Sync + 'static,
 {
-    use std::any::Any;
-    if let Some(multi) = (provider as &dyn Any).downcast_ref::<MultiToolProvider>() {
-        return multi.tool_definitions().to_vec();
-    }
+    multi_provider_tool_defs(provider).unwrap_or_default()
+}
 
-    Vec::new()
+/// Return the tool definitions held by a `MultiToolProvider`, or `None`
+/// if `provider` is not a `MultiToolProvider` instance. Used by both
+/// the HTTP server (via [`get_tools_from_provider_runtime`]) and the
+/// stdio transport.
+pub(crate) fn multi_provider_tool_defs<T>(provider: &T) -> Option<Vec<mcp::McpTool>>
+where
+    T: tokitai_core::ToolProvider + tokitai_core::ToolCaller + Send + Sync + 'static,
+{
+    use std::any::Any;
+    let multi = (provider as &dyn Any).downcast_ref::<MultiToolProvider>()?;
+    Some(multi.tool_definitions().to_vec())
 }
 
 /// MCP Server with a concrete tool provider

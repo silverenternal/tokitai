@@ -100,11 +100,13 @@
 //! at your option.
 
 pub mod server;
+pub mod stdio;
 
 // Re-export commonly used types
 pub use server::{
     McpServer, McpServerBuilder, McpServerConfig, MultiToolProvider, ServerError, ToolCallerDyn,
 };
+pub use stdio::StdioServer;
 
 /// Library version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

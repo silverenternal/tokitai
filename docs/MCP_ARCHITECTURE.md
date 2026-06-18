@@ -454,3 +454,71 @@ impl AsyncTools {
     }
 }
 ```
+
+---
+
+## Stdio transport (pinned to MCP `2025-06-18`)
+
+`tokitai-mcp-server` ships a **stdio** MCP transport that lets any
+`#[tool]` provider speak to clients like Claude Desktop, Cursor, and the
+official Python MCP SDK over newline-delimited JSON-RPC.
+
+```rust
+use tokitai_mcp_server::{McpServerBuilder, MultiToolProvider};
+
+let mut provider = MultiToolProvider::new();
+provider.add(MyTools);
+
+let stdio = McpServerBuilder::with_tool(provider).with_stdio();
+stdio.serve().await?;
+```
+
+Run with:
+
+```bash
+cargo run --example mcp_stdio_server -p tokitai-mcp-server
+```
+
+Hand-drive a session (each line is one JSON-RPC frame):
+
+```bash
+echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+  | cargo run --example mcp_stdio_server -p tokitai-mcp-server
+```
+
+### Supported methods
+
+| Method | Direction | Response |
+|--------|-----------|----------|
+| `initialize` | client → server | serverInfo + capabilities |
+| `ping` | client → server | `{}` |
+| `tools/list` | client → server | array of compiled `McpTool`s |
+| `tools/call` | client → server | `{content:[{type:"text",text:"..."}],isError:false}` |
+| `notifications/*` | client → server | (no response, silently ignored) |
+| anything else | client → server | JSON-RPC `MethodNotFound` (`-32601`) |
+
+### Re-syncing the hand-rolled framer when the MCP spec revs
+
+The stdio transport deliberately does **not** depend on `rmcp` or any
+other MCP SDK. The framer is pinned to MCP `2025-06-18` and lives in
+`tokitai-mcp-server/src/stdio.rs` (one ~440-line module). A small
+fixture mirrors the spec at `tokitai-mcp-server/tests/fixtures/mcp-spec/`:
+
+- `protocol-version.txt` — current MCP spec tag (e.g. `2025-06-18`)
+- `samples/initialize.request.json` — pinned `initialize` request shape
+- `samples/initialize.response.json` — pinned `initialize` response shape
+- `README.md` — re-sync procedure
+
+When the MCP spec revs, the procedure is:
+
+1. Bump `protocol-version.txt` and update `MCP_PROTOCOL_VERSION` in
+   `src/stdio.rs`.
+2. Add or modify `match` arms in `handle_request` for any new methods
+   the spec requires for tools (`tools/list`, `tools/call`,
+   `notifications/...`). Drop methods that are removed.
+3. Add or refresh the sample JSON files in `samples/`.
+4. Re-run the smoke test (`cargo test -p tokitai-mcp-server --test
+   mcp_stdio_smoke`) and bless any snapshot drift deliberately.
+
+No upstream SDK is touched. Spec conformance is re-established by a
+single PR.

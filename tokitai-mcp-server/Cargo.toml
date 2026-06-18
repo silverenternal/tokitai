@@ -29,5 +29,9 @@ thiserror = "1.0"
 tokitai-core = { path = "../tokitai-core", version = "0.5.1", features = ["serde"] }
 tower = { version = "0.4", features = ["util"] }
 
+[[example]]
+name = "mcp_stdio_server"
+path = "examples/mcp_stdio_server.rs"
+
 [features]
 default = []
