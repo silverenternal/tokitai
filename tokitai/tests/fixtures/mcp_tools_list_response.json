@@ -1,0 +1,38 @@
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "result": {
+    "tools": [
+      {
+        "name": "get_weather",
+        "description": "Get the current weather for a city.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "city": {
+              "type": "string",
+              "description": "City name"
+            },
+            "unit": {
+              "type": "string",
+              "description": "celsius or fahrenheit"
+            }
+          },
+          "required": ["city"]
+        }
+      },
+      {
+        "name": "add",
+        "description": "Add two integers together.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "a": {"type": "integer"},
+            "b": {"type": "integer"}
+          },
+          "required": ["a", "b"]
+        }
+      }
+    ]
+  }
+}

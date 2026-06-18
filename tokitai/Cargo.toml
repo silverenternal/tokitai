@@ -60,6 +60,11 @@ mcp = ["runtime"]
 # http-server: HTTP server support (for MCP HTTP)
 http-server = ["mcp", "axum", "tokio", "tower", "tower-http", "tracing", "tracing-subscriber"]
 
+# llm-live: enables live integration tests against a local Ollama instance
+# in `provider_envelope_test.rs`. Off by default; CI does not enable it.
+# Use: `cargo test -p tokitai --test provider_envelope_test --features llm-live`
+llm-live = []
+
 # Advanced usage:
 # 1. Macro-only (truly zero dependencies): tokitai = { version = "0.5.1", default-features = false }
 #    - Use only the #[tool] macro and provide your own runtime

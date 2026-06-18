@@ -1,0 +1,42 @@
+{
+  "model": "claude-3-5-sonnet-latest",
+  "max_tokens": 1024,
+  "tools": [
+    {
+      "name": "get_weather",
+      "description": "Get the current weather for a city.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "city": {
+            "type": "string",
+            "description": "City name"
+          },
+          "unit": {
+            "type": "string",
+            "description": "celsius or fahrenheit"
+          }
+        },
+        "required": ["city"]
+      }
+    },
+    {
+      "name": "add",
+      "description": "Add two integers together.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "a": {"type": "integer"},
+          "b": {"type": "integer"}
+        },
+        "required": ["a", "b"]
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "Add 2 and 3"
+    }
+  ]
+}
