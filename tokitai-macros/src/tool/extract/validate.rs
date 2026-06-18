@@ -23,6 +23,7 @@ use syn::{ImplItem, ImplItemFn, ItemImpl, Pat, Visibility};
 // `span()` method).
 
 use crate::error::{levenshtein, ErrorCode, MacroError};
+use crate::tool::schema::dialect::Dialect;
 
 /// Maximum number of user-facing parameters a `#[tool]` method may
 /// declare. Past this point the generated JSON Schema becomes
@@ -35,8 +36,13 @@ pub(crate) const MAX_PARAMS: usize = 32;
 /// error from this list (rustc shows one error per macro
 /// invocation anyway); the rest are kept around so the snapshot
 /// tests can assert on the full set.
+///
+/// T-012: the impl-level `#[tool(dialect = "...")]` attribute
+/// is validated by [`validate_impl_dialect_only`] *before*
+/// this function runs, so we do not duplicate the check here.
 pub(crate) fn validate_impl(impl_item: &ItemImpl) -> Vec<MacroError> {
     let mut errs = Vec::new();
+
     for item in &impl_item.items {
         if let ImplItem::Fn(fn_item) = item {
             if !is_public(fn_item) {
@@ -382,6 +388,88 @@ impl syn::parse::Parse for MiniToolAttrs {
     }
 }
 
+/// T-012: Validate the impl-level `#[tool(dialect = "...")]`
+/// attribute (if any). Unknown dialect names produce a clean
+/// `E0030` diagnostic anchored at the offending attribute, so
+/// the user is told which dialect name they tried to use.
+///
+/// The audit of every emitted `ToolDefinition.input_schema`
+/// happens later (in `codegen::definitions`) once the schema
+/// has been rendered; this function only validates the
+/// attribute's *name*.
+///
+/// `pub(crate)` so `tool/mod.rs` can call it before the
+/// empty-impl short-circuit (the dialect check must run
+/// even when the impl has no active methods).
+pub(crate) fn validate_impl_dialect_only(impl_item: &ItemImpl) -> Option<MacroError> {
+    for attr in &impl_item.attrs {
+        if !attr.path().is_ident("tool") {
+            continue;
+        }
+        // Try the lightweight `MiniToolAttrs` parser first; if
+        // it fails (because the attribute has a shape the
+        // minimal parser doesn't handle) we let the main
+        // `ToolAttributes` parser surface it elsewhere.
+        if let Ok(parsed) = attr.parse_args::<MiniImplAttrs>() {
+            if let Some(name) = parsed.dialect {
+                if Dialect::from_name(&name).is_none() {
+                    return Some(
+                        MacroError::new(
+                            ErrorCode::E0030,
+                            attr.span(),
+                            format!(
+                                "unknown schema dialect `{}` in `#[tool(dialect = \"...\")]`",
+                                name
+                            ),
+                        )
+                        .with_help(
+                            "supported dialects: `mcp`, `openai-strict`, `anthropic` \
+                             (default is `mcp` if `dialect` is omitted)"
+                                .to_string(),
+                        ),
+                    );
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Minimal subset of impl-level `ToolAttributes` parser. We
+/// only care about `dialect = "..."` here; other keys are
+/// dropped on the floor so the parse doesn't fail.
+struct MiniImplAttrs {
+    dialect: Option<String>,
+}
+
+impl syn::parse::Parse for MiniImplAttrs {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let mut dialect = None;
+        while !input.is_empty() {
+            let key: syn::Ident = input.parse()?;
+            input.parse::<syn::Token![=]>()?;
+            match key.to_string().as_str() {
+                "dialect" => {
+                    let v: syn::LitStr = input.parse()?;
+                    dialect = Some(v.value());
+                }
+                _ => {
+                    if input.peek(syn::token::Bracket) {
+                        let _content;
+                        let _ = syn::bracketed!(_content in input);
+                    } else {
+                        let _: syn::LitStr = input.parse()?;
+                    }
+                }
+            }
+            if input.peek(syn::Token![,]) {
+                input.parse::<syn::Token![,]>()?;
+            }
+        }
+        Ok(MiniImplAttrs { dialect })
+    }
+}
+
 #[allow(dead_code)]
 fn _levenshtein_reexport_for_tests(a: &str, b: &str) -> usize {
     levenshtein(a, b)
@@ -508,6 +596,34 @@ mod tests {
         let errs = validate_impl(&item);
         assert_eq!(errs.len(), 1);
         assert_eq!(errs[0].code(), ErrorCode::E0028);
+    }
+
+    #[test]
+    fn detects_unknown_dialect_name() {
+        // T-012: `#[tool(dialect = "garbage")]` is rejected
+        // at the impl-block attribute span.
+        let item: ItemImpl = parse_quote! {
+            #[tool(dialect = "garbage")]
+            impl Foo {
+                pub fn ok(&self) -> i32 { 1 }
+            }
+        };
+        let err = validate_impl_dialect_only(&item);
+        assert!(err.is_some(), "expected unknown-dialect diagnostic");
+        let err = err.unwrap();
+        assert_eq!(err.code(), ErrorCode::E0030);
+        assert!(err.to_diagnostic().contains("garbage"));
+    }
+
+    #[test]
+    fn accepts_known_dialect_name() {
+        let item: ItemImpl = parse_quote! {
+            #[tool(dialect = "openai-strict")]
+            impl Foo {
+                pub fn ok(&self) -> i32 { 1 }
+            }
+        };
+        assert!(validate_impl_dialect_only(&item).is_none());
     }
 
     #[test]

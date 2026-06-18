@@ -96,3 +96,49 @@ fn test_invalid_return_type() {
     let t = trybuild::TestCases::new();
     t.compile_fail("tests/ui/14_invalid_return_type.rs");
 }
+
+#[test]
+fn test_unknown_dialect() {
+    // T-012: `#[tool(dialect = "garbage")]` is rejected
+    // with `E0030` because the dialect name is not in the
+    // closed set of known dialects (`mcp`, `openai-strict`,
+    // `anthropic`).
+    let t = trybuild::TestCases::new();
+    t.compile_fail("tests/ui/15_unknown_dialect.rs");
+}
+
+#[test]
+fn test_openai_strict_tuple() {
+    // T-012: `dialect = "openai-strict"` rejects Rust tuple
+    // parameters (which serialize as JSON Schema 2020-12
+    // positional tuples, not supported by OpenAI).
+    let t = trybuild::TestCases::new();
+    t.compile_fail("tests/ui/16_openai_tuple_param.rs");
+}
+
+#[test]
+fn test_openai_strict_any_param() {
+    // T-012: `dialect = "openai-strict"` rejects
+    // `Option<serde_json::Value>` because the rendered schema
+    // has no explicit `type` on the inner property.
+    let t = trybuild::TestCases::new();
+    t.compile_fail("tests/ui/17_openai_any_param.rs");
+}
+
+#[test]
+fn test_anthropic_extra_props() {
+    // T-012: `dialect = "anthropic"` rejects a method whose
+    // nested object schema has no explicit
+    // `additionalProperties: false` declaration.
+    let t = trybuild::TestCases::new();
+    t.compile_fail("tests/ui/18_anthropic_extra_props.rs");
+}
+
+#[test]
+fn test_mcp_missing_type() {
+    // T-012: `dialect = "mcp"` rejects a `serde_json::Value`
+    // parameter because the MCP-2025-06-18 dialect requires
+    // every property to declare an explicit JSON Schema type.
+    let t = trybuild::TestCases::new();
+    t.compile_fail("tests/ui/19_mcp_missing_type.rs");
+}

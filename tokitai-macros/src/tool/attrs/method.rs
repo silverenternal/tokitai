@@ -21,6 +21,12 @@ use crate::tool::types::param::ParamToolAttrs;
 /// are accepted by the parser for forward compatibility and stored
 /// as dead-code so downstream registry code can adopt them without
 /// another breaking change.
+///
+/// T-012 added the `dialect` field. When set, the macro audits every
+/// generated `ToolDefinition.input_schema` against the chosen
+/// provider's known quirks. Unknown dialect names are reported as
+/// `E0030`. The default is `mcp` (loosest), so users who don't opt
+/// in see no behavior change.
 #[derive(Default)]
 pub struct ToolAttributes {
     /// Reserved for the tool-registry feature.
@@ -29,16 +35,24 @@ pub struct ToolAttributes {
     /// Reserved for the tool-registry feature.
     #[allow(dead_code)]
     pub description: Option<String>,
+    /// T-012: schema dialect for compile-time correctness
+    /// audits (`mcp` / `openai-strict` / `anthropic`).
+    pub dialect: Option<String>,
 }
 
 impl Parse for ToolAttributes {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let mut name = None;
         let mut description = None;
+        let mut dialect = None;
 
         // 支持空输入（impl 块级别的 #[tool] 不需要参数）
         if input.is_empty() {
-            return Ok(ToolAttributes { name, description });
+            return Ok(ToolAttributes {
+                name,
+                description,
+                dialect,
+            });
         }
 
         while !input.is_empty() {
@@ -49,6 +63,12 @@ impl Parse for ToolAttributes {
             match key.to_string().as_str() {
                 "name" => name = Some(value.value()),
                 "desc" | "description" => description = Some(value.value()),
+                // T-012: `#[tool(dialect = "openai-strict")]` (or
+                // `"mcp"` / `"anthropic"`). Unknown names are
+                // surfaced by `validate_impl` as `E0030` so the
+                // user sees the diagnostic at the impl-block
+                // span, not at the first method.
+                "dialect" => dialect = Some(value.value()),
                 _ => {}
             }
 
@@ -57,7 +77,11 @@ impl Parse for ToolAttributes {
             }
         }
 
-        Ok(ToolAttributes { name, description })
+        Ok(ToolAttributes {
+            name,
+            description,
+            dialect,
+        })
     }
 }
 

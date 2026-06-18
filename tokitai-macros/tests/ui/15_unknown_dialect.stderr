@@ -1,0 +1,8 @@
+error: error[E0030]: unknown schema dialect `garbage` in `#[tool(dialect = "...")]`
+              = help: supported dialects: `mcp`, `openai-strict`, `anthropic` (default is `mcp` if `dialect` is omitted)
+              = help: see https://docs.rs/tokitai/latest/tokitai/errors.html#E0030
+
+  --> tests/ui/15_unknown_dialect.rs:12:1
+   |
+12 | impl UnknownDialect {
+   | ^^^^

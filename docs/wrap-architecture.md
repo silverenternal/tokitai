@@ -22,6 +22,7 @@ document describes them as a single, unified system.
 5. [Composition rules](#5-composition-rules)
 6. [Performance characteristics](#6-performance-characteristics)
 7. [Limitations and future work](#7-limitations-and-future-work)
+8. [Dialect correctness](#8-dialect-correctness)
 
 ---
 
@@ -627,6 +628,119 @@ above when a resilience decorator is stacked on top.
   `ToolDefinition` via the three envelope methods; future work
   is to make those clients first-class and re-export them from
   the top-level crate.
+
+---
+
+## 8. Dialect correctness
+
+**Audience**: anyone shipping a tool whose schema will be
+consumed by a known LLM provider (Claude Desktop, Cursor,
+the OpenAI Agents SDK, VS Code Copilot, etc.). **TL;DR**:
+write `#[tool(dialect = "...")]` on your `impl` block and the
+macro will refuse to ship a schema that the chosen provider
+will reject — at compile time, not in production.
+
+### 8.1 The pain
+
+Every LLM tool-calling provider ships a slightly different
+JSON-Schema dialect. `mcp-lint` exists because Claude
+Desktop, Cursor, OpenAI Agents SDK, and VS Code Copilot
+disagree on what `required: false`, `additionalProperties:
+true`, and `oneOf` siblings mean in MCP-flavored JSON
+Schema. Tools that ship a single JSON Schema discover this
+at runtime in production — silently, when an LLM tool
+call fails in one provider but works in another.
+
+Tokitai's macro knows the Rust types at expansion time and
+can refuse to emit a schema that any supported provider will
+reject. No runtime-only competitor can do this.
+
+### 8.2 The `dialect = "..."` attribute
+
+Apply the attribute at the impl level:
+
+```rust,ignore
+use tokitai::tool;
+
+#[tool(dialect = "openai-strict")]
+impl MyTools {
+    /// Add two integers.
+    pub fn add(&self, a: i64, b: i64) -> i64 {
+        a + b
+    }
+}
+```
+
+The macro then audits every emitted
+`ToolDefinition.input_schema` against the chosen dialect's
+rule set. Violations become `compile_error!` invocations
+anchored at the user-written method span (T-001) so the
+editor jumps straight to the offending code.
+
+| Dialect           | Aliases accepted           | Loose / strict | Reference                                    |
+|-------------------|----------------------------|----------------|----------------------------------------------|
+| `mcp`             | `mcp`, `MCP`, `Mcp`        | Loosest (default) | MCP 2025-06-18                              |
+| `openai-strict`   | `openai-strict`, `openai`, `OpenAI` | Strictest | OpenAI `function.parameters` strict-mode |
+| `anthropic`       | `anthropic`, `Anthropic`, `claude`   | Strict | Anthropic `inputSchema`               |
+
+Choosing `mcp` (the default) means the macro does the
+loosest check and lets the runtime serialization to
+`to_openai_function()` / `to_anthropic_tool()` / `to_mcp_tool()`
+do the provider-specific translation. Choosing
+`openai-strict` or `anthropic` means the macro audits the
+schema against the provider's known quirks **at compile
+time** so the bug is caught before the binary ships.
+
+### 8.3 The rule set
+
+The rule set lives in
+[`tokitai-macros/src/tool/schema/dialect.rs`](../tokitai-macros/src/tool/schema/dialect.rs).
+Each rule is a closure with a stable code:
+
+| Code     | Dialect        | Fires when…                                                                                 |
+|----------|----------------|---------------------------------------------------------------------------------------------|
+| `MCP-1`  | `mcp`          | A property has no explicit JSON Schema `type` (e.g. raw `serde_json::Value`).              |
+| `OA-1`   | `openai-strict`| The root object declares `additionalProperties: true`.                                     |
+| `OA-2`   | `openai-strict`| A property has no explicit `type` (including `Option<serde_json::Value>`).                 |
+| `OA-3`   | `openai-strict`| A positional tuple shape (`prefixItems`) appears anywhere in the schema.                    |
+| `AN-1`   | `anthropic`    | A nested object has no explicit `additionalProperties: false` declaration.                 |
+
+The audit is *post-rendering*: the macro renders the schema
+with `serde_json::to_string(...)`, then re-parses the AST
+into the `JsonSchema` enum (see
+[`gen::generate_schema_ast_and_json_with_deprecated_and_tags`](../tokitai-macros/src/tool/schema/gen.rs))
+and walks it recursively. This keeps the rule set simple
+(no AST traversal for the variants we have at hand) and
+lets the same rule set be used by hand-rolled
+`ToolDefinition::new(...)` calls in tests.
+
+### 8.4 Why "kill mcp-lint"?
+
+`mcp-lint` is a separate linter that runs on saved JSON
+Schema files and reports dialect violations after the fact.
+Tokitai's compile-time audit is the same idea, except it
+runs before the binary ships and catches the bug at the
+*source* — the Rust signature that would have produced the
+non-conformant schema. There's no schema file to lint, no
+separate step in CI, and no chance of the developer
+forgetting to run it.
+
+The doc above is the single source of truth for the rule
+set. If you find a provider quirk that is not yet covered,
+open an issue with a failing fixture under
+`tokitai-macros/tests/ui/` and we will add a rule.
+
+### 8.5 Defaults and trade-offs
+
+The default dialect is `mcp` (loosest). This is the
+**recommendation for 0.6** — see the open design question
+`Q-4` in `todo.json` for the trade-off. A user who
+silently switches providers gets no warning at compile
+time under `mcp`, but the runtime envelope methods
+(`to_openai_function()` etc.) translate the schema on
+their way out. The stricter dialects are opt-in and
+recommended for teams that ship to a known provider and
+want the compile-time guarantee.
 
 ---
 

@@ -6,11 +6,19 @@ use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote, quote_spanned};
 use syn::Type;
 
+use crate::error::MacroError;
+use crate::tool::schema::dialect::{audit, Dialect};
 use crate::tool::schema::gen::SchemaGenConfig;
 use crate::tool::types::tool_method::ToolMethodInfo;
 
 /// 生成编译期工具定义函数
-pub fn generate_tool_def_consts(tools: &[ToolMethodInfo]) -> Vec<TokenStream2> {
+///
+/// `dialect` (T-012) is the active schema-dialect rule set. When
+/// set to anything other than `Mcp`, every rendered
+/// `ToolDefinition.input_schema` is audited against the
+/// dialect's rule set; violations are emitted as `compile_error!`
+/// invocations anchored at the user-written method span.
+pub fn generate_tool_def_consts(tools: &[ToolMethodInfo], dialect: Dialect) -> Vec<TokenStream2> {
     // Each tool emits one primary def + one def per alias. Pre-allocate
     // an exact-size buffer so the outer `Vec` never reallocates while
     // we are emitting tokens.
@@ -49,23 +57,36 @@ pub fn generate_tool_def_consts(tools: &[ToolMethodInfo]) -> Vec<TokenStream2> {
         let tool_name = &tool.tool_name;
         let description = &tool.description;
 
-        let schema_json = crate::tool::schema::gen::generate_schema_json_with_deprecated_and_tags(
-            &SchemaGenConfig::new(&tool.params)
-                .deprecated(tool.deprecated)
-                .replaced_by(tool.replaced_by.as_deref())
-                .context(tool.context.as_deref())
-                .tags(&tool.tags)
-                .return_description(tool.return_description.as_deref())
-                .example_input(tool.example_input.as_ref())
-                .param_order(tool.param_order.as_deref())
-                .example_output(tool.example_output.as_deref())
-                .deprecated_note(tool.deprecated_note.as_deref())
-                .deprecated_since(tool.deprecated_since.as_deref())
-                .remove_in(tool.remove_in.as_deref())
-                .group(tool.group.as_deref())
-                .cache(tool.cache.as_deref())
-                .rate_limit(tool.rate_limit.as_deref()),
-        );
+        let config = SchemaGenConfig::new(&tool.params)
+            .deprecated(tool.deprecated)
+            .replaced_by(tool.replaced_by.as_deref())
+            .context(tool.context.as_deref())
+            .tags(&tool.tags)
+            .return_description(tool.return_description.as_deref())
+            .example_input(tool.example_input.as_ref())
+            .param_order(tool.param_order.as_deref())
+            .example_output(tool.example_output.as_deref())
+            .deprecated_note(tool.deprecated_note.as_deref())
+            .deprecated_since(tool.deprecated_since.as_deref())
+            .remove_in(tool.remove_in.as_deref())
+            .group(tool.group.as_deref())
+            .cache(tool.cache.as_deref())
+            .rate_limit(tool.rate_limit.as_deref());
+
+        let (schema_ast, schema_json) =
+            crate::tool::schema::gen::generate_schema_ast_and_json_with_deprecated_and_tags(
+                &config,
+            );
+
+        // T-012: audit the rendered schema against the chosen
+        // dialect. Violations become `compile_error!` calls
+        // anchored at the user-written method name, so editors
+        // jump straight to the offending code.
+        let span = tool.ident_span;
+        for v in audit(dialect, &schema_ast) {
+            let err: MacroError = v.into_macro_error(span);
+            consts.push(err.to_compile_error());
+        }
 
         let version_tokens = tool
             .version

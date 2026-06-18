@@ -2,5 +2,6 @@
 
 pub(crate) mod bench;
 pub(crate) mod cache;
+pub(crate) mod dialect;
 pub(crate) mod gen;
 pub(crate) mod types;

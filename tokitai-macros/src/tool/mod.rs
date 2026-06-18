@@ -13,6 +13,7 @@
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
+use syn::spanned::Spanned;
 use syn::{parse_macro_input, parse_quote, ImplItem, ItemImpl, ItemStruct};
 
 pub(crate) mod attrs;
@@ -35,7 +36,8 @@ pub(crate) mod types;
 use attrs::method::ToolAttributes;
 use codegen::{definitions, dispatcher, wrappers};
 use extract::collect_tool_methods;
-use extract::validate::validate_impl;
+use extract::validate::{validate_impl, validate_impl_dialect_only};
+use schema::dialect::Dialect;
 
 /// 检查是否应该显示警告
 ///
@@ -227,13 +229,70 @@ impl ToolTypeAttrs {
 }
 
 /// impl 块级别的工具属性
-fn generate_for_impl(mut impl_item: ItemImpl, _attrs: ToolAttributes) -> TokenStream2 {
+fn generate_for_impl(mut impl_item: ItemImpl, attrs: ToolAttributes) -> TokenStream2 {
     let tool_methods = collect_tool_methods(&impl_item);
+
+    // T-012: pick the active schema dialect from the impl-level
+    // attribute. Unknown names are reported by `validate_impl`
+    // as `E0030` before we get here, so by the time this runs
+    // the value is either a known dialect name or the user
+    // picked the default (mcp). We still defensively fall back
+    // to `Mcp` if the user wrote a name `validate_impl` did
+    // not catch (it shouldn't, but the codegen should not
+    // panic if it does).
+    let dialect = attrs
+        .dialect
+        .as_deref()
+        .and_then(Dialect::from_name)
+        .unwrap_or(Dialect::Mcp);
     // T-013: collect the full `replaced_by` table even when all
     // active methods are skipped. The dispatcher's redirect arm
     // still needs the entries so a removed/renamed tool's old
     // name can be routed to its successor.
     let replaced_by_redirects = extract::collect_replaced_by_redirects(&impl_item);
+
+    // T-012: run the impl-level *dialect* check before the
+    // empty-impl short-circuit so an unknown
+    // `#[tool(dialect = "...")]` name surfaces even when the
+    // impl has no methods (e.g. all skipped or all `__`-prefixed).
+    // The full per-method validation runs below; here we
+    // specifically want the impl-level attribute to be inspected
+    // up front.
+    //
+    // We check both the already-parsed `attrs.dialect` (from
+    // the macro entry point) and the raw `impl_item.attrs`
+    // (in case the macro was invoked without the optional
+    // attribute and we still want to detect shape mismatches
+    // later — though for now the parsed path is the
+    // authoritative one).
+    if let Some(name) = attrs.dialect.as_deref() {
+        if schema::dialect::Dialect::from_name(name).is_none() {
+            let err = crate::error::MacroError::new(
+                crate::error::ErrorCode::E0030,
+                impl_item.span(),
+                format!(
+                    "unknown schema dialect `{}` in `#[tool(dialect = \"...\")]`",
+                    name
+                ),
+            )
+            .with_help(
+                "supported dialects: `mcp`, `openai-strict`, `anthropic` \
+                 (default is `mcp` if `dialect` is omitted)",
+            );
+            let err_tokens = err.to_compile_error();
+            return quote! {
+                #impl_item
+                #err_tokens
+            };
+        }
+    }
+    if let Some(dialect_err) = validate_impl_dialect_only(&impl_item) {
+        let err_tokens = dialect_err.to_compile_error();
+        return quote! {
+            #impl_item
+            #err_tokens
+        };
+    }
 
     if tool_methods.is_empty() && replaced_by_redirects.is_empty() {
         return quote! { #impl_item };
@@ -314,7 +373,7 @@ fn generate_for_impl(mut impl_item: ItemImpl, _attrs: ToolAttributes) -> TokenSt
     }
 
     let impl_type = &impl_item.self_ty;
-    let tool_def_consts = definitions::generate_tool_def_consts(&tool_methods);
+    let tool_def_consts = definitions::generate_tool_def_consts(&tool_methods, dialect);
     let all_tool_defs = definitions::generate_all_tool_defs_array(&tool_methods, impl_type);
     let call_tool_methods =
         dispatcher::generate_call_tool_method(&tool_methods, &replaced_by_redirects);

@@ -127,6 +127,11 @@ pub enum ErrorCode {
     /// The `name = "..."` and an entry in `alias = ["..."]` resolve
     /// to the same string, creating an ambiguous dispatch table.
     E0028,
+    /// T-012: the impl-block `#[tool(dialect = "...")]` attribute
+    /// points at an unknown dialect, OR the chosen dialect's
+    /// rule set found a shape it cannot accept (e.g. OpenAI
+    /// strict-mode rejecting `additionalProperties: true`).
+    E0030,
     /// An internal consistency check failed; this is a bug in the
     /// macro, not a user error.
     E0099,
@@ -164,6 +169,7 @@ impl ErrorCode {
             ErrorCode::E0026 => "E0026",
             ErrorCode::E0027 => "E0027",
             ErrorCode::E0028 => "E0028",
+            ErrorCode::E0030 => "E0030",
             ErrorCode::E0099 => "E0099",
         }
     }

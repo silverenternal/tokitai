@@ -483,6 +483,208 @@ pub fn generate_schema_json(params: &[ParamInfo]) -> String {
     generate_schema_json_with_deprecated_and_tags(&SchemaGenConfig::new(params))
 }
 
+/// T-012: same as [`generate_schema_json_with_deprecated_and_tags`]
+/// but returns the `JsonSchema` AST alongside the rendered JSON
+/// string. The AST is what the dialect audit inspects; the JSON
+/// string is what `ToolDefinition::new(...)` consumes. Returning
+/// both lets the codegen layer do the audit without an extra
+/// parse round-trip.
+///
+/// The AST is *post*-mutation: validation attributes
+/// (`enum_values`, `pattern`, `min` / `max`, `minLength` /
+/// `maxLength`, `minItems` / `maxItems`, `multipleOf`) are
+/// already applied. Extensions (`x-param-order`, `examples`,
+/// `x-deprecated-since`, etc.) are intentionally *not*
+/// represented in the AST — they live only in the JSON form,
+/// and the dialect audit does not need them.
+#[allow(dead_code)]
+pub fn generate_schema_ast_and_json_with_deprecated_and_tags(
+    config: &SchemaGenConfig,
+) -> (JsonSchema, String) {
+    let mut properties: BTreeMap<String, JsonSchema> = BTreeMap::new();
+    let mut required: Vec<String> = Vec::with_capacity(config.params.len());
+
+    for p in config.params {
+        let schema_name = p.schema_name.clone();
+        let mut schema = generate_schema_for_type_with_default_and_example(
+            &p.ty,
+            p.description.clone(),
+            p.example.as_ref(),
+            p.default.as_ref(),
+        );
+
+        // Apply validation attributes (same logic as
+        // `generate_schema_json_with_deprecated_and_tags`).
+        match &mut schema {
+            JsonSchema::Basic {
+                enum_values,
+                pattern,
+                minimum,
+                maximum,
+                min_length,
+                max_length,
+                multiple_of,
+                ..
+            } => {
+                if let Some(one_of) = &p.one_of {
+                    let vals = one_of
+                        .iter()
+                        .map(|s| serde_json::Value::String(s.clone()))
+                        .collect();
+                    *enum_values = Some(vals);
+                }
+                if p.enum_values.is_some() {
+                    *enum_values = p.enum_values.clone();
+                }
+                if p.pattern.is_some() {
+                    *pattern = p.pattern.clone();
+                }
+                if p.min.is_some() {
+                    *minimum = p.min;
+                }
+                if p.max.is_some() {
+                    *maximum = p.max;
+                }
+                if p.min_length.is_some() {
+                    *min_length = p.min_length;
+                }
+                if p.max_length.is_some() {
+                    *max_length = p.max_length;
+                }
+                if p.multiple_of.is_some() {
+                    *multiple_of = p.multiple_of;
+                }
+            }
+            JsonSchema::Array {
+                enum_values,
+                min_items,
+                max_items,
+                ..
+            } => {
+                if let Some(one_of) = &p.one_of {
+                    let vals = one_of
+                        .iter()
+                        .map(|s| serde_json::Value::String(s.clone()))
+                        .collect();
+                    *enum_values = Some(vals);
+                }
+                if p.enum_values.is_some() {
+                    *enum_values = p.enum_values.clone();
+                }
+                if p.min_items.is_some() {
+                    *min_items = p.min_items;
+                }
+                if p.max_items.is_some() {
+                    *max_items = p.max_items;
+                }
+            }
+            _ => {}
+        }
+
+        if schema.description().is_none() && p.description.is_some() {
+            schema.set_description(p.description.clone());
+        }
+
+        // T-013: a parameter with a default is optional.
+        let is_required = p.is_required || (!p.is_option && p.default.is_none());
+
+        properties.insert(schema_name.clone(), schema);
+
+        if is_required {
+            required.push(schema_name);
+        }
+    }
+
+    let returns_schema = config.return_description.map(|desc| JsonSchema::Basic {
+        ty: "string".to_string(),
+        description: Some(desc.to_string()),
+        format: None,
+        example: config.example_output.map(|s| s.to_string()),
+        default: None,
+        deprecated: None,
+        enum_values: None,
+        pattern: None,
+        minimum: None,
+        maximum: None,
+        min_length: None,
+        max_length: None,
+        multiple_of: None,
+    });
+
+    let schema = JsonSchema::Object {
+        ty: "object".to_string(),
+        properties,
+        required,
+        description: None,
+        additional_properties: None,
+        default: None,
+        deprecated: if config.deprecated { Some(true) } else { None },
+        tags: config.tags.to_vec(),
+        returns: returns_schema.map(Box::new),
+        replaced_by: config.replaced_by.map(|s| s.to_string()),
+        context: config.context.map(|s| s.to_string()),
+        deprecated_note: config.deprecated_note.map(|s| s.to_string()),
+    };
+
+    // Render the JSON string using the existing pipeline so the
+    // AST and the JSON form stay in lockstep (extensions like
+    // `x-param-order`, `examples`, `x-deprecated-since`,
+    // `x-remove-in`, `x-group`, `x-cache`, `x-rate-limit` are
+    // applied exactly the same way).
+    let json = if config.example_input.is_some()
+        || config.param_order.is_some()
+        || config.deprecated_since.is_some()
+        || config.remove_in.is_some()
+        || config.group.is_some()
+        || config.cache.is_some()
+        || config.rate_limit.is_some()
+    {
+        let examples = config.example_input.map(|val| vec![val.clone()]);
+        if let Ok(serde_json::Value::Object(mut map)) = serde_json::to_value(&schema) {
+            if let Some(examples_val) = examples {
+                map.insert(
+                    "examples".to_string(),
+                    serde_json::Value::Array(examples_val),
+                );
+            }
+            if let Some(order) = config.param_order {
+                map.insert(
+                    "x-param-order".to_string(),
+                    serde_json::to_value(order).unwrap(),
+                );
+            }
+            if let Some(since) = config.deprecated_since {
+                map.insert(
+                    "x-deprecated-since".to_string(),
+                    serde_json::to_value(since).unwrap(),
+                );
+            }
+            if let Some(remove) = config.remove_in {
+                map.insert(
+                    "x-remove-in".to_string(),
+                    serde_json::to_value(remove).unwrap(),
+                );
+            }
+            if let Some(g) = config.group {
+                map.insert("x-group".to_string(), serde_json::to_value(g).unwrap());
+            }
+            if let Some(c) = config.cache {
+                map.insert("x-cache".to_string(), serde_json::to_value(c).unwrap());
+            }
+            if let Some(r) = config.rate_limit {
+                map.insert("x-rate-limit".to_string(), serde_json::to_value(r).unwrap());
+            }
+            serde_json::to_string(&map).unwrap_or_else(|_| schema.to_json_string())
+        } else {
+            schema.to_json_string()
+        }
+    } else {
+        schema.to_json_string()
+    };
+
+    (schema, json)
+}
+
 /// 为类型生成 JSON Schema（递归解析）
 #[allow(dead_code)]
 pub fn generate_schema_for_type(ty: &syn::Type, description: Option<String>) -> JsonSchema {

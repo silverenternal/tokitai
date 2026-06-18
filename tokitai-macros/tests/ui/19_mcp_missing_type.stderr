@@ -1,0 +1,8 @@
+error: error[E0030]: schema dialect violation [MCP-1] at `.properties.payload`: property `payload` has no explicit `type`; MCP-2025-06-18 requires every property to declare its JSON Schema type
+              = help: either switch the impl to `dialect = "mcp"` (looser), or change the Rust signature so the offending shape is not emitted
+              = help: see https://docs.rs/tokitai/latest/tokitai/errors.html#E0030
+
+  --> tests/ui/19_mcp_missing_type.rs:19:12
+   |
+19 |     pub fn pass_any(&self, payload: Value) -> String {
+   |            ^^^^^^^^

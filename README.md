@@ -147,6 +147,7 @@ cargo run --example dev_assistant
 | **One attribute** | Just `#[tool]` — no chain of annotations to remember |
 | **Type-safe by construction** | Rust types are mapped to JSON Schema automatically |
 | **Provider-agnostic** | Works with any AI / LLM provider |
+| **Compile-time dialect correctness** | `#[tool(dialect = "openai-strict")]` (or `"anthropic"` / `"mcp"`) audits the emitted JSON Schema against the chosen provider's known quirks and refuses to compile on a violation. No more "works in Claude, fails in OpenAI" surprises at runtime. See [§8 Dialect correctness](docs/wrap-architecture.md#8-dialect-correctness). |
 
 ## Wrap features (v0.5+)
 
