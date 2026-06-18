@@ -2805,6 +2805,7 @@ dependencies = [
  "tokio",
  "tokitai",
  "tokitai-core",
+ "tracing",
  "trybuild",
 ]
 

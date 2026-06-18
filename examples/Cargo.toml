@@ -8,7 +8,7 @@ publish = false
 [build-dependencies]
 
 [dependencies]
-tokitai = { path = "../tokitai", features = ["http-server"] }
+tokitai = { path = "../tokitai", features = ["http-server", "trace"] }
 tokitai-mcp-server = { path = "../tokitai-mcp-server" }
 tokitai-core = { path = "../tokitai-core", features = ["serde"] }
 serde = { version = "1.0", features = ["derive"] }
@@ -24,6 +24,15 @@ axum = "0.7"
 tower-http = { version = "0.5", features = ["cors", "trace"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing = "0.1"
+
+# T-015: the `trace` feature on `tokitai` pulls in
+# `tracing` and (transitively) `tracing-subscriber`. We
+# enable the feature on the example crate so the
+# `tracing-subscriber` init block in `dev_assistant.rs`
+# resolves on a normal `cargo run --example dev_assistant`.
+# Users who want the *default* (no-trace) build can run
+# the example with `cargo run --example dev_assistant
+# --no-default-features` to opt out.
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.52", features = ["Win32_System_Console"] }

@@ -263,6 +263,16 @@ pub use tokitai_macros::{
     tool_validate,
 };
 
+// T-015: re-export the `tracing` crate when the `trace`
+// feature is on so consumers do not need to add a separate
+// `tracing = "0.1"` dependency in their Cargo.toml. The
+// `#[tracing::instrument]` attribute the macro emits only
+// resolves at the consumer site, so the consumer must have
+// the crate in its dep graph; the re-export short-circuits
+// the dep-graph plumbing for the common case.
+#[cfg(feature = "trace")]
+pub use ::tracing;
+
 /// Version string of this `tokitai` crate, sourced from the package's
 /// `Cargo.toml` at compile time. Useful for diagnostics and for emitting
 /// version-aware MCP responses.

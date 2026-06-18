@@ -23,6 +23,17 @@ syn = { version = "2.0", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 phf = { version = "0.11", features = ["macros"] }
+# T-015: the macro emits `#[tracing::instrument(...)]` as a
+# string template inside `quote!`. The attribute is parsed by
+# `tracing`'s own proc-macro at the *consumer* site, not by
+# `tokitai-macros`. Therefore `tokitai-macros` does NOT need a
+# `tracing` dependency: the only thing it does is emit
+# attribute tokens that reference `::tracing::Span::current()`
+# (also resolved at the consumer site). Consumers that enable
+# the trace feature must add their own `tracing` dependency
+# (the user-facing `tokitai` crate re-exports it behind the
+# `trace` feature so most consumers do not need to touch
+# Cargo.toml).
 
 [dev-dependencies]
 tokitai = { path = "../tokitai", features = ["serde"] }
@@ -37,6 +48,12 @@ proptest = "1.5"
 syn = { version = "2.0", features = ["full"] }
 proc-macro2 = "1.0"
 quote = "1.0"
+# T-015: tests need `tracing` available because the macro
+# emits `tracing::Span::current().record(...)` calls when
+# `TOKITAI_TRACE=1` is forwarded. We re-export the same
+# version the user-facing `tokitai` crate uses to keep the
+# dep graph consistent.
+tracing = "0.1"
 
 [features]
 serde = []

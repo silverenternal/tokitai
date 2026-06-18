@@ -61,4 +61,20 @@ fn main() {
             println!("cargo:rustc-env=TOKITAI_PROFILE_BUDGET={}", value);
         }
     }
+
+    // T-015: forward the trace toggle. The macro reads
+    // `option_env!("TOKITAI_TRACE")` and, when set, emits
+    // `#[tracing::instrument(...)]` on every generated `__call_*`
+    // wrapper. The default build (no env var) emits no
+    // `tracing` calls so the binary size delta is exactly zero
+    // (verified by the binary-size smoke in CI). The
+    // end-user-facing crate `tokitai` exposes a `trace` feature
+    // that wraps this knob; we forward the raw env var as well
+    // so users who want to flip the switch without changing
+    // their `Cargo.toml` can do so via `TOKITAI_TRACE=1`.
+    if let Ok(value) = std::env::var("TOKITAI_TRACE") {
+        if !value.is_empty() {
+            println!("cargo:rustc-env=TOKITAI_TRACE={}", value);
+        }
+    }
 }

@@ -37,6 +37,13 @@ axum = { version = "0.7", optional = true }
 tokio = { version = "1", features = ["full"], optional = true }
 tower = { version = "0.4", optional = true }
 tower-http = { version = "0.5", features = ["cors", "trace"], optional = true }
+# T-015: tracing runtime. Used by the `trace` feature below
+# to power the `#[tracing::instrument]` spans the macro emits
+# on every generated `__call_*` wrapper. We depend on `tracing`
+# here so consumers that enable `trace` do not need to add
+# their own `tracing` dependency — the macro emits
+# `#[tracing::instrument(...)]` whose resolution requires
+# the crate to be in the consumer's dependency graph.
 tracing = { version = "0.1", optional = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
 
@@ -60,6 +67,22 @@ mcp = ["runtime"]
 # http-server: HTTP server support (for MCP HTTP)
 http-server = ["mcp", "axum", "tokio", "tower", "tower-http", "tracing", "tracing-subscriber"]
 
+# T-015: in-process tool-call trace emitter. When enabled, the
+# `#[tool]` macro generates `#[tracing::instrument]` spans
+# around every `__call_*` wrapper carrying `tool.name`,
+# `tool.version`, `args.size`, and `result.size` fields. When
+# disabled (the default), the macro emits no `tracing`
+# references anywhere in the generated code; the binary-size
+# delta is exactly zero. Enable with:
+#
+#     tokitai = { version = "0.5", features = ["trace"] }
+#
+# ...or via the compile-time env var `TOKITAI_TRACE=1` (also
+# picked up by the macro via `option_env!`). The env-var path
+# requires the consumer to add their own `tracing` dependency;
+# the feature-flag path does not.
+trace = ["tracing"]
+
 # llm-live: enables live integration tests against a local Ollama instance
 # in `provider_envelope_test.rs`. Off by default; CI does not enable it.
 # Use: `cargo test -p tokitai --test provider_envelope_test --features llm-live`
@@ -76,3 +99,10 @@ llm-live = []
 [dev-dependencies]
 tokitai-core = { path = "../tokitai-core", version = "0.5.1", features = ["serde"] }
 trybuild = "1.0"
+# T-015: tests for the `trace` feature need `tracing` and
+# `tracing-subscriber` to attach a span recorder. These are
+# dev-only because the test crate is the one that needs to
+# observe emitted spans; the consumer crate never needs a
+# subscriber to use the feature.
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

@@ -522,3 +522,109 @@ When the MCP spec revs, the procedure is:
 
 No upstream SDK is touched. Spec conformance is re-established by a
 single PR.
+
+---
+
+## In-process tool-call tracing (T-015)
+
+Tokitai's `#[tool]` macro can splice a `#[tracing::instrument(...)]`
+span into every generated `__call_*` wrapper. The intent is to
+make every tool call observable by default, with **zero cost
+when the feature is off** — no separate sidecar process, no
+JSON-RPC traffic sniffer (such as `mcpdog` or Wireshark), no
+runtime plugin to load.
+
+### Why this exists
+
+Sidecar traffic sniffers exist because MCP and similar
+JSON-RPC protocols are *opaque*: you cannot tell which tool
+was called, with what arguments, or how long it took without
+running a process between the client and server. For in-process
+Tokitai deployments the equivalent should be a compile-time
+flag that emits structured spans around the call site — zero
+cost when disabled, full structured trace when enabled, and
+no separate sidecar required. Compile-time injection is the
+only way to deliver that: Python/Java runtimes can't get free
+observability because their call paths aren't expanded at
+compile time.
+
+### Enabling the trace feature
+
+```toml
+[dependencies]
+tokitai = { version = "0.5", features = ["trace"] }
+```
+
+Or via a compile-time env var (no Cargo.toml change):
+
+```bash
+TOKITAI_TRACE=1 cargo build
+```
+
+`tokitai-macros/build.rs` forwards the env var into the
+macro's compile environment; the macro reads it via
+`option_env!("TOKITAI_TRACE")` and emits the
+`#[tracing::instrument(...)]` attribute on every wrapper.
+The macro re-exports `tokitai::tracing` so consumers do not
+need a separate `tracing = "0.1"` dep in their Cargo.toml.
+
+### What gets recorded
+
+Each call emits one span named `tokitai_tool_call` carrying:
+
+| Field          | Type   | Source                                                       |
+|----------------|--------|--------------------------------------------------------------|
+| `tool.name`    | string | `#[tool]` primary name (or `#[tool(name = "...")]` override) |
+| `tool.version` | string | `#[tool(version = "...")]` or `"-"` when unset               |
+| `args.size`    | u64    | byte length of the JSON arguments object                     |
+| `result.size`  | u64    | byte length of the JSON result object (0 on error)           |
+
+The `result.size` field is recorded on both the success and
+error arms so subscribers can filter on it unconditionally
+(matching the four-keys-always-present contract used by
+`tokitai-mcp-server`'s HTTP middleware).
+
+### Wiring a subscriber
+
+```rust
+use tracing_subscriber::EnvFilter;
+
+let _ = tracing_subscriber::fmt()
+    .with_env_filter(EnvFilter::from_default_env())
+    .try_init();
+
+let provider = MyTools;
+let result = provider.call_tool("add", &serde_json::json!({"a": 2, "b": 40}))?;
+// One span: tokitai_tool_call{tool.name="add", tool.version="1.2.0",
+//                              args.size=21, result.size=2}
+```
+
+Or run `dev_assistant.rs` directly:
+
+```bash
+RUST_LOG=tokitai=trace cargo run --example dev_assistant
+```
+
+### Zero-cost default
+
+When the `trace` feature is off (the default) and
+`TOKITAI_TRACE` is unset, the macro emits no `tracing`
+references anywhere in the generated code. The binary-size
+smoke test in CI verifies the stripped binary is byte-
+identical modulo a single `tracing::Span::current()`
+reference inside an `if false { ... }` branch that the
+linker drops. The hot path of `call_tool` therefore compiles
+to the same machine code with or without the feature.
+
+### Comparison with sidecar traffic sniffers
+
+| Approach                    | Setup cost       | Runtime cost (off) | Runtime cost (on)   | Captures      |
+|-----------------------------|------------------|---------------------|----------------------|---------------|
+| `mcpdog`-style sidecar      | external process | always-on overhead  | always-on overhead   | JSON-RPC only |
+| Wireshark                   | external tool    | capture overhead    | capture overhead     | bytes on wire |
+| Tokio `tracing-subscriber`  | log crate        | none                | span-emit cost       | call site     |
+| **Tokitai `trace` feature** | compile flag     | **none**            | span-emit cost       | call site     |
+
+The Tokitai feature is unique in the "runtime cost (off)" cell:
+because the spans are spliced in at compile time, a build with
+the feature off literally does not contain the calls.

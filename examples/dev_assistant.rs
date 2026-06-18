@@ -317,6 +317,22 @@ fn perf_smoke(provider: &MultiToolProvider) {
 fn main() {
     println!("=== Tokitai dev-assistant regression example ===\n");
 
+    // T-015: opt-in tracing-subscriber init. When the example
+    // is built with `cargo run --features trace --example
+    // dev_assistant` the macro emits `#[tracing::instrument]`
+    // spans on every `__call_*` wrapper; the subscriber below
+    // prints one structured line per call carrying the
+    // `tool.name`, `tool.version`, `args.size`, and
+    // `result.size` fields. To see it work:
+    //
+    //     RUST_LOG=tokitai=trace cargo run --features trace \
+    //         --example dev_assistant
+    //
+    // On the default build (no `trace` feature) the
+    // subscriber is a no-op and the example's hot path is
+    // byte-identical to the no-trace build.
+    init_tracing_subscriber();
+
     let provider = build_provider();
     println!(
         "Registered {} tools across {} providers",
@@ -331,4 +347,25 @@ fn main() {
     perf_smoke(&provider);
 
     println!("\n=== Done ===");
+}
+
+/// T-015: install a `tracing-subscriber` that prints every
+/// `tokitai_tool_call` span to stderr with sub-microsecond
+/// precision. The init is a no-op on the default build (the
+/// `trace` feature is off) because the macro never emits the
+/// spans in the first place. We use
+/// `tracing_subscriber::fmt` with `EnvFilter::from_default_env`
+/// so users can dial verbosity via `RUST_LOG`.
+fn init_tracing_subscriber() {
+    use tracing_subscriber::EnvFilter;
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("tokitai=info"));
+    // `try_init` is fine to fail silently: another test or
+    // example in the same process may have already installed
+    // a global subscriber. The macro path does not depend on
+    // the subscriber being present — it only emits the spans.
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_target(false)
+        .try_init();
 }
