@@ -150,6 +150,37 @@ macro-emitted code volume.
 > token count. Drop it next to your `Cargo.toml`, run it on `main`
 > and on a branch that adds a `#[tool]` impl, and diff the output.
 
+#### Per-impl profile mode (T-011)
+
+The wall-clock `cargo check` numbers above are useful for catching
+*total* regressions but they conflate macro cost with link, codegen,
+and TOML parsing — all of which can drift for reasons that have
+nothing to do with `#[tool]`. To isolate the macro's own
+contribution, set `TOKITAI_PROFILE=1` in the build environment.
+The macro will then emit one line per `#[tool]` impl block:
+
+```text
+cargo:warning=impl <TYPE> -> <TOOLS> tools, ms=<MICROS>
+```
+
+`scripts/measure-consumer-impact.sh` reads these lines and
+prints them in a dedicated "Per-impl profile report" section,
+along with the median µs per impl block. CI captures the per-impl
+median as the `per-impl-profile` artifact; once enough green
+runs establish a baseline distribution, a >20% median regression
+will fail the build.
+
+Example:
+
+```bash
+TOKITAI_PROFILE=1 bash scripts/measure-consumer-impact.sh /path/to/your-crate
+```
+
+Per-impl numbers fluctuate by ~10% run-to-run even on a quiet
+machine (Linux scheduler noise, background cron jobs, ...); the
+script's default `TOKITAI_RUNS=3` is the right knob to tighten
+when you need a more confident reading.
+
 ### Compile-time rules
 
 1. **Favour multiple small `#[tool]` impl blocks over one giant one.**

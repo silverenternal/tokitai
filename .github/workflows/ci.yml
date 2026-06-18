@@ -123,3 +123,60 @@ jobs:
         run: bash scripts/audit-ui-snapshots.sh
         env:
           RUSTC_VERSION: ${{ env.RUSTC_VERSION }}
+
+  per-impl-profile:
+    # T-011: build a representative consumer crate with
+    # `TOKITAI_PROFILE=1`, scrape the per-impl `cargo:warning=impl`
+    # lines the macro emits, and capture the per-impl median as an
+    # artifact. We do not gate the build on a >20% regression
+    # yet (no baseline has been established); instead we just
+    # upload the artifact so the regression-detection logic can
+    # be enabled once we have a few green runs to learn the
+    # baseline distribution from.
+    name: Per-impl profile (stable / ubuntu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4.2.2
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+
+      - name: Cache cargo registry and build artifacts
+        uses: Swatinem/rust-cache@v2.7.5
+        with:
+          cache-on-failure: true
+
+      - name: Build examples with profiling
+        env:
+          TOKITAI_PROFILE: "1"
+        run: |
+          set -euo pipefail
+          cargo build --workspace --all-features --examples
+          # Collect the per-impl profile lines into a stable text
+          # artifact. The `cargo:warning=impl ` prefix is what the
+          # macro emits; we strip the cargo formatter prefix to
+          # produce one `<Type> <us>` tuple per line.
+          cargo build --workspace --all-features --examples 2>&1 \
+            | grep -E 'cargo:warning=impl ' \
+            | sed -E 's|.*cargo:warning=impl ([^ ]+) -> ([0-9]+) tools, ms=([0-9]+).*|\1 \2 \3|' \
+            | sort > profile-baseline.txt
+          echo "## per-impl profile baseline" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat profile-baseline.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          if [ ! -s profile-baseline.txt ]; then
+            echo "::error::profile-baseline.txt is empty; the macro is not emitting cargo:warning=impl lines"
+            exit 1
+          fi
+
+      - name: Upload profile artifact
+        uses: actions/upload-artifact@v4.4.0
+        with:
+          name: per-impl-profile
+          path: profile-baseline.txt
+          if-no-files-found: error

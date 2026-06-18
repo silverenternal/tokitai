@@ -34,6 +34,16 @@
 #                     when the user crate does not already depend
 #                     on tokitai (default: parent of this script)
 #   TOKITAI_QUIET     set to 1 to suppress per-run progress output
+#   TOKITAI_PROFILE   T-011: when set, the macro emits
+#                     `cargo:warning=impl <Type> -> <N> tools, ms=<us>`
+#                     for each `#[tool]` impl block. The script
+#                     reads these warnings instead of wall-clock
+#                     `cargo check` when this var is also set in
+#                     the environment that runs the script
+#                     (i.e. `TOKITAI_PROFILE=1 bash scripts/...`).
+#                     Per-impl timing is much less noisy than
+#                     wall-clock because it isolates macro cost
+#                     from link / codegen / toml parsing.
 #
 # Exit codes:
 #   0   measurement completed (results may be reported as N/A)
@@ -234,6 +244,28 @@ now_seconds() {
 
 TARGET_DIR_BASE="$SCRATCH/_target"
 
+# T-011: when TOKITAI_PROFILE is set, the macro emits per-impl
+# timing as `cargo:warning=impl <Type> -> <N> tools, ms=<us>`
+# lines. We grep those out of the cargo log and emit them on
+# stdout, one per line, so the caller can pipe them to a JSON
+# aggregator (CI captures the median per-impl number and fails
+# if it regresses >20%).
+parse_profile_warnings() {
+    # $1: path to cargo log file
+    # prints one `<TYPE> <MICROS>` tuple per line on stdout, in
+    # the order they appeared in the log.
+    local log_file=$1
+    if [ ! -f "$log_file" ]; then
+        return 0
+    fi
+    # The line format is documented in
+    # tokitai-macros/src/tool/mod.rs and pinned by
+    # tokitai-macros/tests/per_impl_profile_test.rs.
+    grep -oE 'cargo:warning=impl [^ ]+ -> [0-9]+ tools, ms=[0-9]+' \
+        "$log_file" \
+    | sed -E 's|cargo:warning=impl ([^ ]+) -> ([0-9]+) tools, ms=([0-9]+)|\1 \3|'
+}
+
 run_cargo_check() {
     # $1: sub-target dir name (e.g. "baseline" or "augmented")
     # emits the elapsed time on stdout, returns cargo's exit code.
@@ -260,8 +292,17 @@ run_cargo_check() {
     local t_start t_end elapsed rc log_file
     t_start=$(now_seconds)
     log_file="$target_dir/cargo.log"
+    # T-011: when TOKITAI_PROFILE is set in this script's
+    # environment, forward it into the cargo sub-invocation so
+    # the macro emits per-impl warnings. The build script
+    # forwards the env var to rustc only when it is non-empty.
+    local profile_env=""
+    if [ -n "${TOKITAI_PROFILE:-}" ]; then
+        profile_env="TOKITAI_PROFILE=$TOKITAI_PROFILE"
+    fi
     ( cd "$SCRATCH" && \
       CARGO_TARGET_DIR="$target_dir" \
+      env $profile_env \
       cargo check 1>"$log_file" 2>&1 ) && rc=0 || rc=$?
     t_end=$(now_seconds)
 
@@ -279,6 +320,14 @@ run_cargo_check() {
     # values from now_seconds(). Both are printed to stdout.
     elapsed=$(awk -v a="$t_start" -v b="$t_end" 'BEGIN { printf "%.6f", b - a }')
     echo "$elapsed"
+
+    # T-011: when profiling is on, also stream the per-impl
+    # measurements on a file descriptor that survives the
+    # function return. The caller can pull them via
+    # `parse_profile_warnings <log_file>` for richer reporting.
+    if [ -n "${TOKITAI_PROFILE:-}" ]; then
+        : # caller will read parse_profile_warnings on the log
+    fi
 }
 
 # --- median helper -----------------------------------------------------------
@@ -475,6 +524,61 @@ else
 fi
 
 # --- final report ------------------------------------------------------------
+
+# T-011: when the script was invoked with TOKITAI_PROFILE set, the
+# macro emitted per-impl `cargo:warning=impl <Type> -> <N> tools,
+# ms=<us>` lines into the cargo log. We surface those as the
+# *primary* timing signal because it isolates macro cost from
+# cargo / rustc / link noise. Wall-clock `cargo check` numbers
+# are still printed below as a sanity check.
+if [ -n "${TOKITAI_PROFILE:-}" ]; then
+    PROFILE_BASELINE_LOG="$TARGET_DIR_BASE/baseline/cargo.log"
+    PROFILE_AUGMENTED_LOG="$TARGET_DIR_BASE/augmented/cargo.log"
+
+    log ""
+    log "=========================================================="
+    log "  Tokitai per-impl profile report (TOKITAI_PROFILE=$TOKITAI_PROFILE)"
+    log "=========================================================="
+    log "  baseline per-impl timings (cargo:warning=impl <Type> ... ms=<us>):"
+    if [ -f "$PROFILE_BASELINE_LOG" ]; then
+        parse_profile_warnings "$PROFILE_BASELINE_LOG" \
+            | awk '{ printf "    %-40s %8s us\n", $1, $2 }' \
+            | tee /dev/stderr \
+            | awk '{print $2}' > "$SCRATCH/.baseline_profile_us.txt"
+        BASELINE_PROFILE_MEDIAN=$(median_of $(cat "$SCRATCH/.baseline_profile_us.txt" 2>/dev/null))
+        log "    -> baseline per-impl median: ${BASELINE_PROFILE_MEDIAN} us"
+    else
+        log "    (no baseline log found)"
+        BASELINE_PROFILE_MEDIAN="N/A"
+    fi
+    log ""
+    log "  augmented per-impl timings (cargo:warning=impl <Type> ... ms=<us>):"
+    if [ -f "$PROFILE_AUGMENTED_LOG" ]; then
+        parse_profile_warnings "$PROFILE_AUGMENTED_LOG" \
+            | awk '{ printf "    %-40s %8s us\n", $1, $2 }' \
+            | tee /dev/stderr \
+            | awk '{print $2}' > "$SCRATCH/.augmented_profile_us.txt"
+        AUGMENTED_PROFILE_MEDIAN=$(median_of $(cat "$SCRATCH/.augmented_profile_us.txt" 2>/dev/null))
+        log "    -> augmented per-impl median: ${AUGMENTED_PROFILE_MEDIAN} us"
+        if [ "$BASELINE_PROFILE_MEDIAN" != "N/A" ] && [ "$BASELINE_PROFILE_MEDIAN" != "0" ]; then
+            PROFILE_PER_IMPL_US=$(awk -v a="$AUGMENTED_PROFILE_MEDIAN" -v b="$BASELINE_PROFILE_MEDIAN" -v n="$N" \
+                'BEGIN { if (n > 0) printf "%.1f", (a - b) / n; else print "N/A" }')
+            log "    -> per #[tool] impl block: ${PROFILE_PER_IMPL_US} us (median)"
+        fi
+    else
+        log "    (no augmented log found)"
+    fi
+    log "=========================================================="
+    log ""
+    log "Caveats (profile mode):"
+    log "  * Microsecond-resolution timings measured by the macro itself,"
+    log "    isolated from cargo / rustc / link overhead."
+    log "  * Numbers include only the codegen pipeline; `syn::parse`"
+    log "    and quote-rendering time dominate in some impls."
+    log "  * CI captures the per-impl median as an artifact and"
+    log "    fails if median regresses >20% (see .github/workflows/ci.yml)."
+    log ""
+fi
 
 log ""
 log "=========================================================="

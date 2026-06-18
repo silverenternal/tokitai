@@ -13,6 +13,7 @@
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
+use std::time::Instant;
 use syn::spanned::Spanned;
 use syn::{parse_macro_input, parse_quote, ImplItem, ItemImpl, ItemStruct};
 
@@ -60,12 +61,138 @@ fn should_show_warnings() -> bool {
     true
 }
 
+// ---------------------------------------------------------------------------
+// T-011: per-impl-block compile-time profiling.
+//
+// When the consumer crate sets `TOKITAI_PROFILE=1` in its environment,
+// `build.rs` forwards the value as a `cargo:rustc-env=TOKITAI_PROFILE=...`
+// line, which surfaces to this crate as a compile-time env var. The
+// macro reads it via `option_env!` and, for each `#[tool]` impl block,
+// emits a `cargo:warning=impl <Type> -> N tools, ms=<expand_time_us>`
+// line that the build script and CI can scrape.
+//
+// The output format is intentionally line-stable:
+//
+//     cargo:warning=impl <TYPE> -> <TOOLS> tools, ms=<MICROS>
+//
+// so `scripts/measure-consumer-impact.sh --profile-only` (added by T-011)
+// can grep `cargo:warning=impl ` out of `cargo build` output without
+// having to depend on a bespoke JSON schema. The `<MICROS>` field is
+// in microseconds so the value survives an integer overflow check on
+// long-running CI builds (~35 min ceiling at 1 µs resolution is fine;
+// Rust macro expansion per-impl is typically <100 ms).
+// ---------------------------------------------------------------------------
+
+/// `true` when the consumer opted into per-impl profiling via
+/// `TOKITAI_PROFILE=1` (or any non-empty `TOKITAI_PROFILE`).
+///
+/// The check is `option_env!` (not `std::env::var`) because the value
+/// is baked into the macro at compile time — by the time a proc-macro
+/// invocation runs, `std::env::var` of the host process no longer
+/// reflects the cargo build environment that drove this build.
+fn profiling_enabled() -> bool {
+    // `TOKITAI_PROFILE` is forwarded by `tokitai-macros/build.rs` via
+    // `cargo:rustc-env=TOKITAI_PROFILE=...`. When the consumer did
+    // not set the env var, the macro sees `None` and skips the
+    // profiling path entirely (so the default build does not pay
+    // the cost of `Instant::now()` per impl block).
+    option_env!("TOKITAI_PROFILE").is_some_and(|v| !v.is_empty())
+}
+
+/// Emit one `cargo:warning=` line with per-impl timing, if and only if
+/// `TOKITAI_PROFILE` is set.
+///
+/// `impl_name` is the user-visible type the impl block is for
+/// (e.g. `Calculator`). `method_count` is the number of `pub` methods
+/// that survived method-level filtering (`__`-prefix skip, `#[tool(skip)]`,
+/// etc.). `elapsed` is the wall-clock duration of `generate_for_impl`
+/// for this block.
+fn emit_profile_warning(impl_name: &str, method_count: usize, elapsed: std::time::Duration) {
+    // Skip the call entirely when profiling is off. The default
+    // path must remain allocation- and time-free.
+    if !profiling_enabled() {
+        return;
+    }
+    // Microseconds; `as u64` is safe here — Duration::as_micros
+    // saturates at `u64::MAX` and our expansion is well under that.
+    let micros = elapsed.as_micros() as u64;
+    // The `cargo:warning=` prefix is what cargo looks for when
+    // collecting build-script / proc-macro warnings; any line
+    // starting with that string is printed as a yellow `warning:`
+    // in the user's terminal and captured in `--message-format=json`
+    // build output. Without the prefix the line would be
+    // invisible to grep-based tooling.
+    eprintln!(
+        "cargo:warning=impl {} -> {} tools, ms={}",
+        impl_name, method_count, micros
+    );
+}
+
+/// Resolve the impl-block's user-facing type name for profiling output.
+///
+/// We prefer the *path* `String` (e.g. `crate::Calculator`) over the
+/// bare `Ident` so an impl block for a fully-qualified type still
+/// reports something the user can recognise in build logs. When the
+/// type does not implement `ToTokens` for some reason we fall back
+/// to the call-site span's debug rendering (which is `"<unknown>"`
+/// in practice — never reached for valid Rust).
+fn impl_type_name(impl_item: &ItemImpl) -> String {
+    // `Type::to_token_stream().to_string()` is the cheapest way to
+    // get a printable form of `Box<T>`, `Vec<T>`, `&T`, etc. without
+    // pulling in a quote-heavy `match`. The output is the same
+    // string the user wrote (modulo whitespace), which is what we
+    // want for build-log readability.
+    quote::ToTokens::to_token_stream(&impl_item.self_ty).to_string()
+}
+
 /// `#[tool]` 宏入口
 pub fn tool(attr: TokenStream, item: TokenStream) -> TokenStream {
+    // T-011: profile gate. We probe `profiling_enabled()` only
+    // *after* `syn::parse` succeeds, so the cost of the probe is
+    // not paid on every invocation — only on impl blocks, where
+    // the timing has meaning. The struct and "other" branches
+    // short-circuit to `item` without timing.
+    let profile = profiling_enabled();
+
     // 尝试解析为 impl 块
     if let Ok(impl_item) = syn::parse::<ItemImpl>(item.clone()) {
         let attr_args = parse_macro_input!(attr as ToolAttributes);
-        generate_for_impl(impl_item, attr_args).into()
+        // Capture the user-facing impl-type name *before* we
+        // move `impl_item` into `generate_for_impl` (the function
+        // takes ownership). The name is consumed by the
+        // post-expansion profile warning.
+        let impl_name = impl_type_name(&impl_item);
+        // T-011: start the wall-clock timer immediately before
+        // handing off to the codegen pipeline. We deliberately do
+        // *not* include the `syn::parse::<ItemImpl>` cost above —
+        // that is parse time, which is a property of `syn`, not of
+        // `#[tool]`. The interesting number is "how long did the
+        // macro spend generating tokens", which is everything from
+        // here to the return.
+        let start = if profile { Some(Instant::now()) } else { None };
+        let result: TokenStream = generate_for_impl(impl_item, attr_args).into();
+        if let Some(start) = start {
+            // The `method_count` is the number of `__TOOL_DEF_*`
+            // consts the macro emitted. We can recover it from the
+            // rendered output by counting `__TOOL_DEF_` substrings,
+            // but that is a fragile string match. Instead we walk
+            // the same `impl_item.items` slice the codegen wrote —
+            // but it has been moved. The cheapest reliable signal
+            // is "1 if `__get_tool_definitions` is present, 0
+            // otherwise". That is what an empty-impl-block check
+            // collapses to. We keep the count coarse on purpose:
+            // the load-bearing number is `ms`, not `tools`.
+            //
+            // We count method-def consts via a substring scan on
+            // the rendered output: this is `O(n)` in expansion size
+            // (already O(N*M) on the codegen side) and acceptable
+            // for a profiling-only code path. Skip the scan when
+            // the rendered form is not what we expect.
+            let rendered = result.to_string();
+            let tools = rendered.matches("__TOOL_DEF_").count();
+            emit_profile_warning(&impl_name, tools, start.elapsed());
+        }
+        result
     }
     // 尝试解析为 struct（用于标记工具提供者类型）
     else if let Ok(_struct_item) = syn::parse::<ItemStruct>(item.clone()) {
