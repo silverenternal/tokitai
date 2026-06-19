@@ -580,4 +580,105 @@ mod tests {
         let out = split_blocklist("");
         assert_eq!(out.len(), 0);
     }
+
+    // -----------------------------------------------------------------------
+    // T-022 pattern-set parity test.
+    //
+    // The INSTRUCTION_PHRASES and ROLE_HEADERS constants in this file
+    // must match the canonical fixture checked in to the repository at
+    // `tokitai-macros/tests/fixtures/t-022-patterns.json`. The
+    // server-side copy
+    // (`tokitai-mcp-server/tests/fixtures/t-022-patterns.json`) is
+    // verified independently by the integration test
+    // `t022_pattern_fixtures_match` in that crate.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn assert_pattern_parity() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../tests/fixtures/t-022-patterns.json"))
+                .expect("t-022-patterns.json must parse as JSON");
+
+        let fixture_phrases: Vec<String> = serde_json::from_value(
+            fixture
+                .get("instruction_phrases")
+                .expect("fixture has instruction_phrases")
+                .clone(),
+        )
+        .expect("instruction_phrases is a string array");
+        let fixture_headers: Vec<String> = serde_json::from_value(
+            fixture
+                .get("role_headers")
+                .expect("fixture has role_headers")
+                .clone(),
+        )
+        .expect("role_headers is a string array");
+
+        // Compare lengths first so the assertion message is clear
+        // about which side added or removed a pattern.
+        assert_eq!(
+            INSTRUCTION_PHRASES.len(),
+            fixture_phrases.len(),
+            "INSTRUCTION_PHRASES length differs from fixture: \
+             in-source has {}, fixture has {}. \
+             Did you add a phrase to one without updating the other?",
+            INSTRUCTION_PHRASES.len(),
+            fixture_phrases.len(),
+        );
+        for (i, src) in INSTRUCTION_PHRASES.iter().enumerate() {
+            assert_eq!(
+                *src, fixture_phrases[i],
+                "INSTRUCTION_PHRASES[{}] differs from fixture. \
+                 Did you update one side without updating the other?",
+                i,
+            );
+        }
+
+        assert_eq!(
+            ROLE_HEADERS.len(),
+            fixture_headers.len(),
+            "ROLE_HEADERS length differs from fixture: \
+             in-source has {}, fixture has {}. \
+             Did you add a header to one without updating the other?",
+            ROLE_HEADERS.len(),
+            fixture_headers.len(),
+        );
+        for (i, src) in ROLE_HEADERS.iter().enumerate() {
+            assert_eq!(
+                *src, fixture_headers[i],
+                "ROLE_HEADERS[{}] differs from fixture. \
+                 Did you update one side without updating the other?",
+                i,
+            );
+        }
+
+        // Verify OVERSIZED_THRESHOLD matches.
+        let fixture_threshold: usize = serde_json::from_value(
+            fixture
+                .get("oversized_threshold_chars")
+                .expect("fixture has oversized_threshold_chars")
+                .clone(),
+        )
+        .expect("oversized_threshold_chars is a number");
+        assert_eq!(
+            OVERSIZED_THRESHOLD, fixture_threshold,
+            "OVERSIZED_THRESHOLD ({}) differs from fixture ({}). \
+             Did you change one without updating the other?",
+            OVERSIZED_THRESHOLD, fixture_threshold,
+        );
+
+        // Verify fake_prompt_min_newlines matches.
+        let fixture_newlines: u64 = serde_json::from_value(
+            fixture
+                .get("fake_prompt_min_newlines")
+                .expect("fixture has fake_prompt_min_newlines")
+                .clone(),
+        )
+        .expect("fake_prompt_min_newlines is a number");
+        assert_eq!(
+            fixture_newlines, 3,
+            "fake_prompt_min_newlines in fixture must be 3 (the only \
+             count the matcher supports)",
+        );
+    }
 }

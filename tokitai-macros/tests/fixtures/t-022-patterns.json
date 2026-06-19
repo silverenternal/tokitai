@@ -1,0 +1,7 @@
+{
+  "instruction_phrases": ["ignore previous", "ignore all", "always respond", "you must", "do not mention"],
+  "role_headers": ["system:", "assistant:", "user:"],
+  "oversized_threshold_chars": 2000,
+  "non_ascii_threshold": null,
+  "fake_prompt_min_newlines": 3
+}

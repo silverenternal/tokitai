@@ -187,3 +187,87 @@ fn canonical_ascii_description_remains_clean_on_server_side() {
         Some("Add two 32-bit signed integers and return the sum. Returns Err on overflow."),
     );
 }
+
+// -----------------------------------------------------------------------
+// T-022 pattern-set parity: the two fixture files (one in the macro
+// crate, one in this crate) must be identical. If a pattern is added
+// to one fixture but not the other, this test fails with a clear
+// message naming the mismatched key.
+// -----------------------------------------------------------------------
+
+#[test]
+fn t022_pattern_fixtures_match() {
+    // Read THIS crate's fixture.
+    let local_fixture: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/t-022-patterns.json"))
+            .expect("local t-022-patterns.json must parse as JSON");
+
+    // Read the macro crate's fixture.
+    let macro_fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../tokitai-macros/tests/fixtures/t-022-patterns.json"
+    ))
+    .expect("macro t-022-patterns.json must parse as JSON");
+
+    // Compare instruction_phrases.
+    let local_phrases: Vec<String> = serde_json::from_value(
+        local_fixture
+            .get("instruction_phrases")
+            .expect("local fixture has instruction_phrases")
+            .clone(),
+    )
+    .expect("instruction_phrases is a string array");
+    let macro_phrases: Vec<String> = serde_json::from_value(
+        macro_fixture
+            .get("instruction_phrases")
+            .expect("macro fixture has instruction_phrases")
+            .clone(),
+    )
+    .expect("instruction_phrases is a string array");
+    assert_eq!(
+        local_phrases, macro_phrases,
+        "instruction_phrases differ between the two fixtures. \
+         Did you update one fixture without updating the other?",
+    );
+
+    // Compare role_headers.
+    let local_headers: Vec<String> = serde_json::from_value(
+        local_fixture
+            .get("role_headers")
+            .expect("local fixture has role_headers")
+            .clone(),
+    )
+    .expect("role_headers is a string array");
+    let macro_headers: Vec<String> = serde_json::from_value(
+        macro_fixture
+            .get("role_headers")
+            .expect("macro fixture has role_headers")
+            .clone(),
+    )
+    .expect("role_headers is a string array");
+    assert_eq!(
+        local_headers, macro_headers,
+        "role_headers differ between the two fixtures. \
+         Did you update one fixture without updating the other?",
+    );
+
+    // Compare oversized_threshold_chars.
+    let local_threshold: u64 = serde_json::from_value(
+        local_fixture
+            .get("oversized_threshold_chars")
+            .expect("local fixture has oversized_threshold_chars")
+            .clone(),
+    )
+    .expect("oversized_threshold_chars is a number");
+    let macro_threshold: u64 = serde_json::from_value(
+        macro_fixture
+            .get("oversized_threshold_chars")
+            .expect("macro fixture has oversized_threshold_chars")
+            .clone(),
+    )
+    .expect("oversized_threshold_chars is a number");
+    assert_eq!(
+        local_threshold, macro_threshold,
+        "oversized_threshold_chars differ between fixtures. \
+         Did you update one without updating the other?",
+    );
+}
