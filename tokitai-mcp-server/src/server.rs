@@ -457,6 +457,39 @@ where
     Some(multi.tool_definitions().to_vec())
 }
 
+/// Shared helper for T-023 capability allowlist checks. Walks a
+/// single tool's declared `requires` slice against the operator-
+/// configured `allowlist` and returns
+/// `Err(ServerError::CapabilityNotInAllowlist)` when any capability
+/// is not covered. Used by both the single-provider path (macro-
+/// baked `CAPABILITIES`) and the multi-provider path (per-sub-
+/// provider manifests captured by `MultiToolProvider::add`).
+fn check_capabilities(
+    tool_name: &str,
+    requires: &[&str],
+    allowlist: &[String],
+) -> Result<(), ServerError> {
+    let mut missing: Vec<String> = Vec::new();
+    for cap in requires {
+        if !tokitai_core::capability_in_allowlist(cap, allowlist) {
+            missing.push((*cap).to_string());
+        }
+    }
+    if !missing.is_empty() {
+        warn!(
+            "T-023 capability check refused to start: tool `{}` requires \
+             capabilities {:?} that are not in the allowlist {:?}",
+            tool_name, missing, allowlist
+        );
+        return Err(ServerError::CapabilityNotInAllowlist {
+            tool: tool_name.to_string(),
+            missing,
+            allowlist: allowlist.iter().map(|s| s.to_string()).collect(),
+        });
+    }
+    Ok(())
+}
+
 /// T-023: returns the aggregated per-sub-provider manifest of a
 /// `MultiToolProvider`, or an empty `Vec` if `provider` is not
 /// one. Used by `McpServerWithProvider::run_with_address` so the
@@ -466,7 +499,6 @@ where
 /// slice (the sub-provider manifests are stored in
 /// `MultiToolProvider::manifests`), so the `T`-shim path
 /// short-circuits past the multi case.
-#[allow(dead_code)]
 pub(crate) fn multi_provider_tool_caps<T>(
     provider: &T,
 ) -> Vec<(&'static str, &'static [&'static str])>
@@ -576,25 +608,16 @@ where
         // manifests are walked through `multi_provider_manifest`
         // below). Both paths are checked.
         if let Some(allowlist) = self.config.capability_allowlist.as_ref() {
+            // Single-provider path: walk the macro-baked
+            // CAPABILITIES slice.
             for (tool_name, requires) in T::capability_manifest() {
-                let mut missing: Vec<String> = Vec::new();
-                for cap in *requires {
-                    if !tokitai_core::capability_in_allowlist(cap, allowlist) {
-                        missing.push((*cap).to_string());
-                    }
-                }
-                if !missing.is_empty() {
-                    warn!(
-                        "T-023 capability check refused to start: tool `{}` requires \
-                         capabilities {:?} that are not in the allowlist {:?}",
-                        tool_name, missing, allowlist
-                    );
-                    return Err(ServerError::CapabilityNotInAllowlist {
-                        tool: (*tool_name).to_string(),
-                        missing,
-                        allowlist: allowlist.iter().map(|s| s.to_string()).collect(),
-                    });
-                }
+                check_capabilities(tool_name, requires, allowlist)?;
+            }
+            // Multi-provider path: walk per-sub-provider manifests
+            // stored by MultiToolProvider::add.
+            let multi_manifest = multi_provider_tool_caps(&*self.tool_provider);
+            for (tool_name, requires) in &multi_manifest {
+                check_capabilities(tool_name, requires, allowlist)?;
             }
         }
 

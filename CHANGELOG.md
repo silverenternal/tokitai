@@ -63,6 +63,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **MCP_ARCHITECTURE.md W023 doc corrected.** The claim that the default-build is "intentionally noisy" was misleading — all three `build.rs` scripts set `TOKITAI_QUIET=1` by default, so `W023` is silent in first-party builds. User crates without `TOKITAI_QUIET` see the warning as documented.
 
+### Fixed
+
+- **`CapabilityNotInAllowlist::Display` names the configured allowlist (T-026.1).** The error variant now carries an `allowlist` field and the Display message includes its contents, so an operator triaging the failure does not need to cross-reference config.
+
+- **`requires = [...]` parse-error diagnostics anchor at the offending entry (T-026.2).** The diagnostic now points at the non-string entry in the user's source (e.g., `42` in `requires = ["good", 42]`) instead of the method's ident span. The trybuild snapshot `capabilities_requires_non_string.stderr` is refreshed accordingly.
+
+- **W023 warning cross-references other `allow = [...]` opt-outs (T-026.3).** The `[W023]` message now mentions `allow_short_desc` (T-018) and `allow_insecure_desc` (T-022) alongside the existing `allow = ["missing_capabilities"]` suggestion, so the user sees the consistent suppression pattern at a glance.
+
+- **`generate_capabilities_consts` allocates no `Vec` for empty tool sets (T-026.4).** When the tool slice is empty, `Vec::new()` (zero capacity, no allocation) replaces `Vec::with_capacity(1)`. The `CAPABILITIES` const still resolves as `&[]`.
+
+- **`parse_blocklist_env` visibility narrowed to `pub(crate)` (T-026.6).** The function is only used inside the macros crate; the previous `pub` was an accidental API leak.
+
+### Changed
+
 ## [0.5.1] - 2026-06-02
 
 ### Fixed
