@@ -135,6 +135,13 @@ pub struct SchemaGenConfig<'a> {
     pub group: Option<&'a str>,
     pub cache: Option<&'a str>,
     pub rate_limit: Option<&'a str>,
+    /// T-016: baked few-shot examples. The macro bakes the user's
+    /// literal `call!(self.method(args) => result)` into a
+    /// `{ "input": ..., "output": ... }` envelope and appends it
+    /// to the schema's `examples` field. Each entry is a JSON
+    /// object; the field itself is a JSON array (matching the
+    /// OpenAI / Anthropic / MCP spec).
+    pub baked_examples: Option<&'a [crate::tool::example::BakedExample]>,
 }
 
 impl<'a> SchemaGenConfig<'a> {
@@ -156,6 +163,7 @@ impl<'a> SchemaGenConfig<'a> {
             group: None,
             cache: None,
             rate_limit: None,
+            baked_examples: None,
         }
     }
 
@@ -243,6 +251,19 @@ impl<'a> SchemaGenConfig<'a> {
         self
     }
 
+    /// T-016: attach the list of baked few-shot examples. Each
+    /// example is rendered as `{ "input": ..., "output": ... }`
+    /// and the resulting array is appended under the schema's
+    /// `examples` key.
+    #[inline]
+    pub(crate) fn baked_examples(
+        mut self,
+        val: Option<&'a [crate::tool::example::BakedExample]>,
+    ) -> Self {
+        self.baked_examples = val;
+        self
+    }
+
     /// 构建配置对象（链式调用终点）
     ///
     /// 注意：此方法是可选的，因为所有 Builder 方法都返回 `Self`，
@@ -293,7 +314,11 @@ pub fn generate_schema_json_with_deprecated_and_tags(config: &SchemaGenConfig) -
         || config.remove_in.is_some()
         || config.group.is_some()
         || config.cache.is_some()
-        || config.rate_limit.is_some();
+        || config.rate_limit.is_some()
+        || config
+            .baked_examples
+            .map(|v| !v.is_empty())
+            .unwrap_or(false);
 
     for p in config.params {
         let schema_name = p.schema_name.clone();

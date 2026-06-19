@@ -131,6 +131,24 @@ pub struct ToolDefinition {
     pub description_explicit: bool,
     #[cfg(not(feature = "serde"))]
     pub description_explicit: bool,
+    /// T-016: baked few-shot examples. Each entry is a JSON object
+    /// of the shape `{ "input": ..., "output": ... }` (one entry
+    /// per `#[tool(example = call!(...))]` /
+    /// `#[tool(examples = [call!(...), ...])]` element on the
+    /// method). When non-empty, the rendered
+    /// `input_schema`/`to_openai_function()` /
+    /// `to_anthropic_tool()` / `to_mcp_tool()` output carries an
+    /// `examples` array carrying these entries so the LLM sees a
+    /// typed, signature-synced example it cannot drift away from.
+    ///
+    /// The field is populated at `LazyLock` initialization by the
+    /// `#[tool]` macro; downstream consumers do not need to set it
+    /// directly.
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg(feature = "serde")]
+    pub baked_examples: Option<serde_json::Value>,
+    #[cfg(not(feature = "serde"))]
+    pub baked_examples: Option<&'static str>,
 }
 
 /// Single source of truth for the priority order of configuration
@@ -197,6 +215,7 @@ impl ToolDefinition {
             remove_in: None,
             replaced_by: None,
             description_explicit: false,
+            baked_examples: None,
         }
     }
 
@@ -229,6 +248,7 @@ impl ToolDefinition {
             remove_in: None,
             replaced_by: None,
             description_explicit: false,
+            baked_examples: None,
         }
     }
 
@@ -253,6 +273,7 @@ impl ToolDefinition {
             remove_in: None,
             replaced_by: None,
             description_explicit: false,
+            baked_examples: None,
         }
     }
 
@@ -278,6 +299,43 @@ impl ToolDefinition {
     #[must_use]
     pub fn with_description_explicit(mut self) -> Self {
         self.description_explicit = true;
+        self
+    }
+
+    /// T-016: attach a `serde_json::Value` carrying the
+    /// `examples` array (one `{ "input": ..., "output": ... }`
+    /// entry per baked example). The macro emits a call to this
+    /// method only when the user wrote
+    /// `#[tool(example = call!(...))]` (or the plural form) on a
+    /// method, so existing tools are unchanged. When the value
+    /// is `None` or an empty array, the schema's `examples` field
+    /// is omitted entirely.
+    #[cfg(feature = "serde")]
+    #[must_use]
+    pub fn with_baked_examples(mut self, examples: serde_json::Value) -> Self {
+        if let serde_json::Value::Array(ref arr) = examples {
+            if arr.is_empty() {
+                self.baked_examples = None;
+                return self;
+            }
+        }
+        self.baked_examples = Some(examples);
+        self
+    }
+
+    /// T-016: `no_std` variant of [`with_baked_examples`]. Takes
+    /// a `'static str` JSON literal; callers in `no_std`
+    /// environments do not have access to `serde_json`, so they
+    /// must pre-render the examples array. Today the macro
+    /// always renders through the `serde`-feature path, so this
+    /// stub is unreachable in practice; it exists so the type
+    /// stays `cfg`-complete.
+    #[cfg(not(feature = "serde"))]
+    #[must_use]
+    pub fn with_baked_examples(mut self, _examples: &'static str) -> Self {
+        // No-op in `no_std`: the macro always uses the
+        // serde-feature variant. This stub keeps the public API
+        // symmetric across feature flags.
         self
     }
 
@@ -676,7 +734,7 @@ impl ToolDefinition {
     /// ```
     #[cfg(feature = "serde")]
     pub fn to_openai_function(&self) -> serde_json::Value {
-        let parameters = self.parse_input_schema_or_empty();
+        let parameters = self.merge_baked_examples_into(self.parse_input_schema_or_empty());
         let description = self.deprecated_description_suffix();
         serde_json::json!({
             "type": "function",
@@ -728,7 +786,7 @@ impl ToolDefinition {
     /// ```
     #[cfg(feature = "serde")]
     pub fn to_anthropic_tool(&self) -> serde_json::Value {
-        let input_schema = self.parse_input_schema_or_empty();
+        let input_schema = self.merge_baked_examples_into(self.parse_input_schema_or_empty());
         let description = self.deprecated_description_suffix();
         serde_json::json!({
             "name": self.name,
@@ -778,7 +836,7 @@ impl ToolDefinition {
     /// ```
     #[cfg(feature = "serde")]
     pub fn to_mcp_tool(&self) -> serde_json::Value {
-        let input_schema = self.parse_input_schema_or_empty();
+        let input_schema = self.merge_baked_examples_into(self.parse_input_schema_or_empty());
         let description = self.deprecated_description_suffix();
         let mut envelope = serde_json::json!({
             "name": self.name,
@@ -821,6 +879,20 @@ impl ToolDefinition {
     /// `self.description` suffixed with a `[DEPRECATED ...]` marker
     /// the LLM can read. Kept private so callers always go through
     /// `to_openai_function` / `to_anthropic_tool` / `to_mcp_tool`.
+    #[cfg(feature = "serde")]
+    fn merge_baked_examples_into(&self, mut schema: serde_json::Value) -> serde_json::Value {
+        if let Some(serde_json::Value::Array(arr)) = self.baked_examples.as_ref() {
+            if !arr.is_empty() {
+                if let serde_json::Value::Object(map) = &mut schema {
+                    map.insert(
+                        "examples".to_string(),
+                        serde_json::Value::Array(arr.clone()),
+                    );
+                }
+            }
+        }
+        schema
+    }
     #[cfg(feature = "serde")]
     fn deprecated_description_suffix(&self) -> alloc::string::String {
         if self.deprecated_since.is_none() && self.remove_in.is_none() && self.replaced_by.is_none()

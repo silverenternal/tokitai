@@ -20,6 +20,7 @@ use syn::{parse_macro_input, parse_quote, ImplItem, ItemImpl, ItemStruct};
 pub(crate) mod attrs;
 pub(crate) mod codegen;
 pub(crate) mod config;
+pub(crate) mod example;
 pub(crate) mod extract;
 pub(crate) mod resilience;
 pub(crate) mod schema;

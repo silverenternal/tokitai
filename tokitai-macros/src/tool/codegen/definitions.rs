@@ -7,6 +7,7 @@ use quote::{format_ident, quote, quote_spanned};
 use syn::Type;
 
 use crate::error::MacroError;
+use crate::tool::example::bake_examples_to_schema_json;
 use crate::tool::schema::dialect::{audit, Dialect};
 use crate::tool::schema::gen::SchemaGenConfig;
 use crate::tool::types::tool_method::ToolMethodInfo;
@@ -71,7 +72,12 @@ pub fn generate_tool_def_consts(tools: &[ToolMethodInfo], dialect: Dialect) -> V
             .remove_in(tool.remove_in.as_deref())
             .group(tool.group.as_deref())
             .cache(tool.cache.as_deref())
-            .rate_limit(tool.rate_limit.as_deref());
+            .rate_limit(tool.rate_limit.as_deref())
+            .baked_examples(if tool.baked_examples.is_empty() {
+                None
+            } else {
+                Some(&tool.baked_examples)
+            });
 
         let (schema_ast, schema_json) =
             crate::tool::schema::gen::generate_schema_ast_and_json_with_deprecated_and_tags(
@@ -118,10 +124,58 @@ pub fn generate_tool_def_consts(tools: &[ToolMethodInfo], dialect: Dialect) -> V
             quote! {}
         };
 
+        // T-016: when baked examples are present, evaluate them
+        // at LazyLock initialization and append their JSON shape
+        // to the schema's `examples` field. The base schema is
+        // still emitted as a `'static str` literal (no runtime
+        // cost when no examples are supplied). The merge is done
+        // inside the LazyLock initializer (see below) so the
+        // final `input_schema` string already carries the
+        // examples array.
+        let baked_examples_value_expr = bake_examples_to_schema_json(&tool.baked_examples);
+        let baked_examples_tokens = if tool.baked_examples.is_empty() {
+            quote! {}
+        } else {
+            quote! {
+                .with_baked_examples(#baked_examples_value_expr)
+            }
+        };
+
         consts.push(quote! {
             fn #const_name() -> &'static ::tokitai::ToolDefinition {
                 static DEF: ::std::sync::LazyLock<::tokitai::ToolDefinition> = ::std::sync::LazyLock::new(|| {
-                    ::tokitai::ToolDefinition::new(#tool_name, #description, #schema_json) #version_tokens #deprecated_tokens #explicit_desc_tokens
+                    // T-016: when baked examples are present, merge
+                    // them into the schema's `examples` field at
+                    // initialization time so the rendered
+                    // `input_schema` already carries the envelope.
+                    // When no examples are present this is a plain
+                    // `ToolDefinition::new(...)` call with no
+                    // runtime cost beyond the LazyLock arm.
+                    let __schema_json: ::std::string::String = {
+                        let __base: &str = #schema_json;
+                        let __examples: ::tokitai::Value = #baked_examples_value_expr;
+                        if let ::tokitai::Value::Array(ref arr) = __examples {
+                            if !arr.is_empty() {
+                                if let ::std::result::Result::Ok(::tokitai::Value::Object(mut __map)) =
+                                    ::serde_json::from_str::<::tokitai::Value>(__base)
+                                {
+                                    __map.insert(
+                                        "examples".to_string(),
+                                        ::tokitai::Value::Array(arr.clone()),
+                                    );
+                                    ::serde_json::to_string(&__map)
+                                        .unwrap_or_else(|_| __base.to_string())
+                                } else {
+                                    __base.to_string()
+                                }
+                            } else {
+                                __base.to_string()
+                            }
+                        } else {
+                            __base.to_string()
+                        }
+                    };
+                    ::tokitai::ToolDefinition::new(#tool_name, #description, __schema_json) #version_tokens #deprecated_tokens #explicit_desc_tokens #baked_examples_tokens
                 });
                 &*DEF
             }

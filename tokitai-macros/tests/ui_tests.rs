@@ -142,3 +142,20 @@ fn test_mcp_missing_type() {
     let t = trybuild::TestCases::new();
     t.compile_fail("tests/ui/19_mcp_missing_type.rs");
 }
+
+// ---------------------------------------------------------------------------
+// T-016: baked-few-shot-example negative cases. Both tests assert
+// that the example's types do NOT match the real method signature,
+// and rustc reports a type error pointed at the `call!` literal.
+// ---------------------------------------------------------------------------
+#[test]
+fn test_example_baking_wrong_arg() {
+    let t = trybuild::TestCases::new();
+    t.compile_fail("tests/ui/example_baking_wrong_arg.rs");
+}
+
+#[test]
+fn test_example_baking_wrong_result() {
+    let t = trybuild::TestCases::new();
+    t.compile_fail("tests/ui/example_baking_wrong_result.rs");
+}

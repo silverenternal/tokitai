@@ -484,6 +484,11 @@ pub fn param_tool(_attr: TokenStream, item: TokenStream) -> TokenStream {
     item
 }
 
+// (T-016: `call!` macro lives in `tokitai`, not here, because
+// `proc-macro` crates cannot export `macro_rules!`. The `#[tool]`
+// attribute parser sees the pre-expansion tokens so it does not
+// depend on `call!` being defined for its parsing logic.)
+
 /// # `tokitai!` Configuration Macro
 ///
 /// Used to centrally configure tool properties without modifying original code.

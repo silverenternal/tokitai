@@ -5,6 +5,7 @@ use serde_json::Value;
 use syn::ReturnType;
 
 use super::param::{ParamInfo, ParamToolAttrs};
+use crate::tool::example::BakedExample;
 
 /// 工具方法信息
 #[allow(dead_code)]
@@ -49,4 +50,10 @@ pub struct ToolMethodInfo {
     /// config block must NOT override the description — see
     /// `tokitai_core::config::CONFIG_PRIORITY_ORDER`.
     pub description_explicit: bool,
+    /// T-016: baked few-shot examples collected from
+    /// `#[tool(example = call!(...))]` or
+    /// `#[tool(examples = [call!(...), ...])]`. The codegen layer
+    /// inlines them at two sites: a compile-time type-check in
+    /// each generated wrapper, and the schema's `examples` field.
+    pub baked_examples: Vec<BakedExample>,
 }

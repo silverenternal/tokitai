@@ -89,9 +89,7 @@ fn main() {
     // end-user crates) get spans emitted automatically whenever
     // they turn on the `trace` feature — no env-var
     // bookkeeping required.
-    if std::env::var("TOKITAI_TRACE").is_err()
-        && std::env::var("CARGO_FEATURE_TRACE").is_ok()
-    {
+    if std::env::var("TOKITAI_TRACE").is_err() && std::env::var("CARGO_FEATURE_TRACE").is_ok() {
         println!("cargo:rustc-env=TOKITAI_TRACE=1");
     }
 }

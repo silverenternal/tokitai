@@ -1,0 +1,14 @@
+error[E0308]: mismatched types
+  --> tests/ui/example_baking_wrong_arg.rs:13:45
+   |
+11 | #[tool]
+   | ------- arguments to this method are incorrect
+12 | impl Negative {
+13 |     #[tool(example = call!(self.bad_example("not an int") => 42))]
+   |                                             ^^^^^^^^^^^^ expected `i32`, found `&str`
+   |
+note: method defined here
+  --> tests/ui/example_baking_wrong_arg.rs:14:12
+   |
+14 |     pub fn bad_example(&self, n: i32) -> i32 {
+   |            ^^^^^^^^^^^        ------

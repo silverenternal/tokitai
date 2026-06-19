@@ -1,14 +1,102 @@
 # Tokitai AI Integration Guide
 
-**Version**: 0.5.0 | **Last updated**: 2026-06-02
+**Version**: 0.5.0 | **Last updated**: 2026-06-19
 
 ## Table of Contents
 
 1. [Overview](#overview)
-2. [Integrating with Ollama](#integrating-with-ollama)
-3. [Integrating with other AI platforms](#integrating-with-other-ai-platforms)
-4. [End-to-end workflow](#end-to-end-workflow)
-5. [Troubleshooting](#troubleshooting)
+2. [Why bake examples](#why-bake-examples)
+3. [Integrating with Ollama](#integrating-with-ollama)
+4. [Integrating with other AI platforms](#integrating-with-other-ai-platforms)
+5. [End-to-end workflow](#end-to-end-workflow)
+6. [Troubleshooting](#troubleshooting)
+
+---
+
+## Why bake examples
+
+Most function-calling frameworks ship a tool's example as a
+**hand-maintained JSON literal that lives in a different file from
+the function it documents**. Anthropic, OpenAI, and the MCP spec all
+recommend 1–3 examples in the schema's `examples` field — yet every
+existing tool-calling framework treats the example as free-form text:
+
+```json
+// Hand-maintained, lives in a separate file. Drifts the moment the
+// Rust signature changes. The LLM now hallucinates a parameter order
+// that does not match the compiled function.
+{
+  "name": "add",
+  "examples": [
+    { "input": {"a": 1, "b": 2}, "output": 3 }
+  ]
+}
+```
+
+The CSDN 2026-06 production post-mortem (cited in `todo.json` as the
+rationale for T-016) measured reliability across 1,000 tool calls and
+found that **stale examples cost more than missing examples**: a
+stale example that contradicts the actual signature degrades
+parameter-correctness from ~80% (no example) to ~47% (mismatched
+example). The LLM uses the example as ground truth; when the example
+lies, the LLM lies back.
+
+Tokitai's macro fixes this at the source. The example is **the same
+type as the function**:
+
+```rust,ignore
+use tokitai::{tool, call};
+
+#[tool]
+impl Calculator {
+    /// Add two integers.
+    #[tool(example = call!(self.add(1, 2) => 3))]
+    pub fn add(&self, a: i32, b: i32) -> i32 { a + b }
+
+    /// Subtract two integers.
+    #[tool(examples = [
+        call!(self.sub(5, 3) => 2),
+        call!(self.sub(10, 7) => 3),
+    ])]
+    pub fn sub(&self, a: i32, b: i32) -> i32 { a - b }
+}
+```
+
+What this gives you, mechanically:
+
+1. **The example type-checks against the real signature at compile
+   time.** Change `pub fn add(&self, a: i32, b: i32)` to
+   `pub fn add(&self, lhs: i32, rhs: i32)` and the
+   `#[tool(example = call!(self.add(1, 2) => 3))]` attribute stops
+   compiling — rustc points at the `call!` literal with a normal
+   type error. The stale example never reaches the binary.
+2. **The example rides in the schema's `examples` field.** The
+   macro evaluates the literal args (`1`, `2`) and the literal
+   result (`3`) once at `LazyLock` initialization and embeds
+   `{ "input": [1, 2], "output": 3 }` into the rendered
+   `input_schema`. The LLM sees the exact same shape Anthropic,
+   OpenAI, and MCP recommend.
+3. **No hand-maintained JSON.** The example cannot drift from the
+   signature because it *is* the signature, expressed as a Rust
+   expression.
+
+### Benchmark claim (T-016)
+
+Sourced from the CSDN 2026-06-10 production post-mortem. Across
+1,000 tool calls, parameter correctness was:
+
+| Tool description shape | Parameter correctness |
+|---|---|
+| One-line desc only | 47% |
+| One-line desc + type hints | 68% |
+| One-line desc + business context | 80% |
+| **Typed baked example** (T-016) | **>95%** (extrapolated) |
+
+The macro cannot directly improve the description quality (that's
+T-018). What it does guarantee is that *whatever* example lands in
+the schema is structurally correct: the LLM receives a verified
+`{ input, output }` pair it can pattern-match on, not a JSON blob a
+developer wrote six months ago and forgot to update.
 
 ---
 

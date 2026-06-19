@@ -1,5 +1,6 @@
 //! 方法级工具属性解析
 
+use proc_macro2::TokenStream;
 use quote::ToTokens;
 use syn::{
     parse::{Parse, ParseStream},
@@ -9,6 +10,7 @@ use syn::{
 use super::param::{
     parse_json_value, parse_lit_to_f64, parse_lit_to_string, parse_lit_to_usize, parse_value_string,
 };
+use crate::tool::example::{parse_example_singular, parse_examples_array, BakedExample};
 use crate::tool::types::param::ParamToolAttrs;
 
 /// impl-block-level tool attributes.
@@ -111,6 +113,13 @@ pub struct MethodToolAttrs {
     pub cache: Option<String>,
     pub rate_limit: Option<String>,
     pub param_validations: Vec<(String, ParamToolAttrs)>,
+    /// T-016: baked few-shot examples as Rust expressions. Each
+    /// entry is the parsed `(args_tokens, result_tokens)` pair
+    /// from a `call!(self.method(args) => result)` literal. The
+    /// macro inlines them at two sites: a compile-time type check
+    /// (so stale examples cannot ship) and the schema's
+    /// `examples` field (so the LLM sees `{ "input": ..., "output": ... }`).
+    pub baked_examples: Vec<BakedExample>,
 }
 
 impl Parse for MethodToolAttrs {
@@ -161,6 +170,7 @@ impl Parse for MethodToolAttrs {
                         cache: None,
                         rate_limit: None,
                         param_validations: Vec::new(),
+                        baked_examples: Vec::new(),
                     });
                 }
             }
@@ -190,6 +200,7 @@ impl Parse for MethodToolAttrs {
         let mut cache: Option<String> = None;
         let mut rate_limit: Option<String> = None;
         let mut param_validations: Vec<(String, ParamToolAttrs)> = Vec::new();
+        let mut baked_examples: Vec<BakedExample> = Vec::new();
 
         while !input.is_empty() {
             let key: Ident = input.parse()?;
@@ -283,9 +294,128 @@ impl Parse for MethodToolAttrs {
                     let value: LitStr = input.parse()?;
                     context = Some(value.value());
                 }
-                "example_input" | "example" => {
+                "example_input" => {
                     input.parse::<token::Eq>()?;
                     example_input = parse_json_value(input)?;
+                }
+                // T-016: `example = call!(self.method(args) => result)` —
+                // singular baked-example form. Reads a single token
+                // tree (which will be a `call!(...)` macro invocation)
+                // as raw tokens and stores it for downstream codegen.
+                "baked_example" | "bake_example" | "example_call" => {
+                    input.parse::<token::Eq>()?;
+                    let value = consume_single_value(input)?;
+                    baked_examples.push(parse_example_singular(value)?);
+                }
+                // T-016: `examples = [call!(...), call!(...)]` — plural
+                // form. Reads a bracketed array of `call!(...)` literals.
+                "baked_examples" | "bake_examples" | "examples_call" => {
+                    input.parse::<token::Eq>()?;
+                    let content;
+                    syn::bracketed!(content in input);
+                    let mut elements: Vec<TokenStream> = Vec::new();
+                    while !content.is_empty() {
+                        elements.push(consume_single_value(&content)?);
+                        if content.peek(token::Comma) {
+                            content.parse::<token::Comma>()?;
+                        }
+                    }
+                    baked_examples.extend(parse_examples_array(elements)?);
+                }
+                // T-016: prefer `example = call!(...)` over the old
+                // `example_input = <json>` shape when the value
+                // starts with the `call` ident. The parser peeks
+                // the first token; if it sees `call`, it routes to
+                // the baked-example parser; otherwise it falls
+                // back to the JSON-literal path so the existing
+                // `example_input` shape is unaffected.
+                "example" => {
+                    input.parse::<token::Eq>()?;
+                    let raw = consume_single_value(input)?;
+                    if crate::tool::example::looks_like_call_macro(&raw) {
+                        baked_examples.push(parse_example_singular(raw)?);
+                    } else {
+                        // Re-parse the captured tokens as a JSON
+                        // value so existing `example_input = {...}`
+                        // users continue to work.
+                        let lit: LitStr = syn::parse2(raw).map_err(|_| {
+                            syn::Error::new(
+                                proc_macro2::Span::call_site(),
+                                "tokitai `example = ...` must be either a JSON literal or a `call!(...)` invocation",
+                            )
+                        })?;
+                        example_input = Some(serde_json::from_str(&lit.value()).map_err(|e| {
+                            syn::Error::new(
+                                proc_macro2::Span::call_site(),
+                                format!("invalid JSON for `example`: {}", e),
+                            )
+                        })?);
+                    }
+                }
+                "examples" => {
+                    input.parse::<token::Eq>()?;
+                    let raw = consume_single_value(input)?;
+                    // Detect bracketed array of `call!(...)` literals
+                    // vs. bare JSON. The bracketed form is the
+                    // canonical `examples = [...]` for baked
+                    // examples; the bare form is reserved for
+                    // future use (none today).
+                    let first_token_kind = raw.clone().into_iter().next().map(|t| t.to_string());
+                    if first_token_kind.as_deref() == Some("[")
+                        || raw.to_string().trim_start().starts_with('[')
+                    {
+                        // Unwrap the bracketed group so we can
+                        // walk its inner tokens and split on
+                        // top-level commas.
+                        let mut elements: Vec<TokenStream> = Vec::new();
+                        let inner_stream: TokenStream =
+                            if let Some(proc_macro2::TokenTree::Group(g)) =
+                                raw.clone().into_iter().next()
+                            {
+                                if g.delimiter() == proc_macro2::Delimiter::Bracket {
+                                    g.stream()
+                                } else {
+                                    raw.clone()
+                                }
+                            } else {
+                                raw.clone()
+                            };
+                        let inner = inner_stream.into_iter();
+                        let mut current = TokenStream::new();
+                        let mut depth = 0i32;
+                        for tok in inner {
+                            let s = tok.to_string();
+                            if s == "]" && depth == 0 {
+                                if !current.is_empty() {
+                                    elements.push(current.clone());
+                                    current = TokenStream::new();
+                                }
+                                break;
+                            }
+                            if s == "," && depth == 0 {
+                                if !current.is_empty() {
+                                    elements.push(current.clone());
+                                    current = TokenStream::new();
+                                }
+                                continue;
+                            }
+                            if s == "[" {
+                                depth += 1;
+                            } else if s == "]" {
+                                depth -= 1;
+                            }
+                            current.extend(std::iter::once(tok));
+                        }
+                        if !current.is_empty() {
+                            elements.push(current);
+                        }
+                        baked_examples.extend(parse_examples_array(elements)?);
+                    } else {
+                        return Err(syn::Error::new_spanned(
+                            raw,
+                            "tokitai `examples = ...` must be a bracketed array of `call!(...)` invocations (e.g. `examples = [call!(self.f(1) => 2)]`)",
+                        ));
+                    }
                 }
                 "param_order" => {
                     input.parse::<token::Eq>()?;
@@ -516,6 +646,41 @@ impl Parse for MethodToolAttrs {
             cache,
             rate_limit,
             param_validations,
+            baked_examples,
         })
     }
+}
+
+/// T-016: consume a single attribute value (anything between an `=`
+/// and the next top-level comma / end-of-input). The returned
+/// token stream captures the full syntactic shape of the value —
+/// in particular, a `call!(...)` invocation comes through as
+/// `call ! ( ... )` because we don't expand the macro ourselves;
+/// the downstream example parser detects the `call` ident and
+/// parses the body.
+///
+/// Syn's `ParseStream` doesn't expose a "consume one value" method
+/// out of the box, so we read tokens one at a time and stop at a
+/// top-level comma. Parenthesis / bracket nesting is handled by
+/// `proc_macro2::Group` — when we see an opening group we read
+/// the whole group (including its balanced children) in one
+/// step.
+fn consume_single_value(input: ParseStream) -> syn::Result<TokenStream> {
+    let mut out = TokenStream::new();
+    loop {
+        // Stop at end-of-input or a top-level comma.
+        if input.is_empty() {
+            break;
+        }
+        if input.peek(token::Comma) {
+            break;
+        }
+        // Consume one token tree (ident, punct, literal, or a
+        // balanced group — the `Group` variant carries its own
+        // nested token stream, so commas inside a group are
+        // opaque to us and don't terminate the value).
+        let next: proc_macro2::TokenTree = input.parse()?;
+        out.extend(std::iter::once(next));
+    }
+    Ok(out)
 }

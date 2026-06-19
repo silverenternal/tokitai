@@ -6,6 +6,7 @@ use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::{format_ident, quote};
 use syn::{Expr, Ident};
 
+use crate::tool::example::emit_type_checks;
 use crate::tool::types::tool_method::ToolMethodInfo;
 
 /// T-015: `true` when the consumer opted into in-process
@@ -513,6 +514,21 @@ pub fn generate_wrapper_method_sync(tool: &ToolMethodInfo) -> TokenStream2 {
         }
     };
 
+    // T-016: bake the user-supplied `#[tool(example = call!(...))]`
+    // examples into the wrapper as a no-op type-check. The host
+    // compiler still type-checks the call against the real method
+    // signature, so a stale example cannot ship. This wrapper is
+    // always sync (it is the legacy sync wrapper used when the
+    // impl block has no async methods), so the comparison runs
+    // without `.await`.
+    let baked_example_checks = emit_type_checks(
+        &tool.baked_examples,
+        &method_name,
+        false,
+        tool.is_async,
+        &tool.return_type,
+    );
+
     // T-015: emit a `#[tracing::instrument(...)]` attribute when
     // `TOKITAI_TRACE` is set in the consumer build environment.
     // The attribute is *no-op* (i.e. the `quote!` collapses to
@@ -537,6 +553,11 @@ pub fn generate_wrapper_method_sync(tool: &ToolMethodInfo) -> TokenStream2 {
             // so this does not affect the hot path.
             #record_static
 
+            // T-016: compile-time type checks for baked examples.
+            // Each block resolves to `()` and is never executed at
+            // runtime; the compiler still type-checks it.
+            #baked_example_checks
+
             #(#param_parsing)*
 
             // 参数验证
@@ -558,6 +579,24 @@ pub fn generate_wrapper_method_sync(tool: &ToolMethodInfo) -> TokenStream2 {
 /// 生成异步包装方法
 pub fn generate_wrapper_method(tool: &ToolMethodInfo, is_async: bool) -> TokenStream2 {
     let method_name = Ident::new(&tool.name, Span::call_site());
+    // T-016: bake the user-supplied `#[tool(example = call!(...))]`
+    // examples into the async / sync wrapper as a no-op
+    // type-check. The host compiler still type-checks the call
+    // against the real method signature, so a stale example
+    // cannot ship.
+    //
+    // The `is_async` flag passed here is the *wrapper's* async
+    // setting — the macro emits a sync wrapper alongside the
+    // async one for runtime-agnostic callers, so we must NOT
+    // `.await` when the wrapper is sync even if the underlying
+    // method is async.
+    let baked_example_checks = emit_type_checks(
+        &tool.baked_examples,
+        &method_name,
+        is_async,
+        tool.is_async,
+        &tool.return_type,
+    );
     let wrapper_name = if is_async {
         format_ident!("__call_{}", method_name)
     } else {
@@ -959,6 +998,11 @@ pub fn generate_wrapper_method(tool: &ToolMethodInfo, is_async: bool) -> TokenSt
             // block collapses to `{}` on the default build,
             // so this does not affect the hot path.
             #record_static
+
+            // T-016: compile-time type checks for baked examples.
+            // Each block resolves to `()` and is never executed at
+            // runtime; the compiler still type-checks it.
+            #baked_example_checks
 
             #(#param_parsing)*
 

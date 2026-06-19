@@ -109,6 +109,7 @@ pub fn extract_tool_info(fn_item: &ImplItemFn) -> Option<ToolMethodInfo> {
             rate_limit: None,
             param_validations: Vec::new(),
             description_explicit: false,
+            baked_examples: Vec::new(),
         });
     }
 
@@ -135,6 +136,7 @@ pub fn extract_tool_info(fn_item: &ImplItemFn) -> Option<ToolMethodInfo> {
     let mut cache: Option<String> = None;
     let mut rate_limit: Option<String> = None;
     let mut param_validations: Vec<(String, ParamToolAttrs)> = Vec::new();
+    let mut baked_examples = Vec::new();
 
     for attr in &fn_item.attrs {
         if attr.path().is_ident("tool") {
@@ -165,6 +167,7 @@ pub fn extract_tool_info(fn_item: &ImplItemFn) -> Option<ToolMethodInfo> {
                 cache = args.cache;
                 rate_limit = args.rate_limit;
                 param_validations = args.param_validations;
+                baked_examples = args.baked_examples;
             }
         }
     }
@@ -231,5 +234,6 @@ pub fn extract_tool_info(fn_item: &ImplItemFn) -> Option<ToolMethodInfo> {
         rate_limit,
         param_validations,
         description_explicit,
+        baked_examples,
     })
 }

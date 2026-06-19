@@ -263,6 +263,41 @@ pub use tokitai_macros::{
     tool_validate,
 };
 
+/// T-016: `call!(self.method(args) => result)` declarative macro.
+///
+/// The macro is a marker — its real work happens inside the
+/// `#[tool]` proc-macro, which sees the *pre-expansion* tokens
+/// (because attribute arguments are not macro-expanded before the
+/// proc-macro sees them). The macro_rules! body emits a
+/// `compile_error!` so the user gets a clear pointer to T-016
+/// when they accidentally use `call!` outside a `#[tool(...)]`
+/// attribute. Inside a valid attribute, the macro is never
+/// expanded — the parser detects the `call` ident and parses the
+/// parenthesised body as raw tokens.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use tokitai::{tool, call};
+///
+/// #[tool]
+/// impl Calculator {
+///     #[tool(example = call!(self.add(1, 2) => 3))]
+///     pub fn add(&self, a: i32, b: i32) -> i32 { a + b }
+/// }
+/// ```
+#[macro_export]
+macro_rules! call {
+    ($($tt:tt)*) => {
+        ::core::compile_error!(
+            "tokitai's `call!(...)` macro is only valid inside a \
+             `#[tool(example = call!(...))]` or \
+             `#[tool(examples = [call!(...), ...])]` attribute; \
+             see T-016 in docs/AI_INTEGRATION.md."
+        )
+    };
+}
+
 // T-015: re-export the `tracing` crate when the `trace`
 // feature is on so consumers do not need to add a separate
 // `tracing = "0.1"` dependency in their Cargo.toml. The
