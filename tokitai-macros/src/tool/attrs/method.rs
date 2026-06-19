@@ -40,6 +40,14 @@ pub struct ToolAttributes {
     /// T-012: schema dialect for compile-time correctness
     /// audits (`mcp` / `openai-strict` / `anthropic`).
     pub dialect: Option<String>,
+    /// T-018: per-impl minimum description score. Methods whose
+    /// `desc = "..."` literal scores below this threshold are
+    /// rejected at compile time. Defaults to 60 when `None`.
+    pub min_desc_score: Option<u8>,
+    /// T-018: when `true`, every `desc = "..."` literal on this
+    /// impl block bypasses the score lint. Used for one-word
+    /// verbs and other intentionally terse descriptions.
+    pub allow_short_desc: bool,
 }
 
 impl Parse for ToolAttributes {
@@ -47,6 +55,8 @@ impl Parse for ToolAttributes {
         let mut name = None;
         let mut description = None;
         let mut dialect = None;
+        let mut min_desc_score: Option<u8> = None;
+        let mut allow_short_desc = false;
 
         // 支持空输入（impl 块级别的 #[tool] 不需要参数）
         if input.is_empty() {
@@ -54,12 +64,43 @@ impl Parse for ToolAttributes {
                 name,
                 description,
                 dialect,
+                min_desc_score,
+                allow_short_desc,
             });
         }
 
         while !input.is_empty() {
             let key: Ident = input.parse()?;
+
+            // T-018: `allow_short_desc` is a bare flag (no `= "..."`).
+            // The other keys are key=value pairs.
+            if key == "allow_short_desc" {
+                allow_short_desc = true;
+                if input.peek(token::Comma) {
+                    input.parse::<token::Comma>()?;
+                }
+                continue;
+            }
+
             input.parse::<token::Eq>()?;
+
+            // T-018: `min_desc_score` accepts an integer literal
+            // (`= 60`) instead of a string literal. We peek at the
+            // first token: if it is a `LitInt`, we consume it and
+            // parse as a `u8`; otherwise we fall through to the
+            // string-literal path so every other key continues to
+            // work.
+            if key == "min_desc_score" {
+                if let Ok(lit_int) = input.parse::<syn::LitInt>() {
+                    min_desc_score = lit_int.base10_parse::<u8>().ok();
+                } else if let Ok(lit_str) = input.parse::<LitStr>() {
+                    min_desc_score = lit_str.value().parse().ok();
+                }
+                if input.peek(token::Comma) {
+                    input.parse::<token::Comma>()?;
+                }
+                continue;
+            }
 
             let value: LitStr = input.parse()?;
             match key.to_string().as_str() {
@@ -83,6 +124,8 @@ impl Parse for ToolAttributes {
             name,
             description,
             dialect,
+            min_desc_score,
+            allow_short_desc,
         })
     }
 }
@@ -120,6 +163,14 @@ pub struct MethodToolAttrs {
     /// (so stale examples cannot ship) and the schema's
     /// `examples` field (so the LLM sees `{ "input": ..., "output": ... }`).
     pub baked_examples: Vec<BakedExample>,
+    /// T-018: per-method override of the score threshold. Used
+    /// when one method in an impl legitimately needs a lower
+    /// bar (e.g. a getter whose name carries all the meaning).
+    pub min_desc_score: Option<u8>,
+    /// T-018: when `true`, this method's `desc = "..."` literal
+    /// bypasses the score lint. Used for one-word verbs and
+    /// other intentionally terse descriptions.
+    pub allow_short_desc: bool,
 }
 
 impl Parse for MethodToolAttrs {
@@ -171,6 +222,8 @@ impl Parse for MethodToolAttrs {
                         rate_limit: None,
                         param_validations: Vec::new(),
                         baked_examples: Vec::new(),
+                        min_desc_score: None,
+                        allow_short_desc: false,
                     });
                 }
             }
@@ -201,6 +254,8 @@ impl Parse for MethodToolAttrs {
         let mut rate_limit: Option<String> = None;
         let mut param_validations: Vec<(String, ParamToolAttrs)> = Vec::new();
         let mut baked_examples: Vec<BakedExample> = Vec::new();
+        let mut min_desc_score: Option<u8> = None;
+        let mut allow_short_desc = false;
 
         while !input.is_empty() {
             let key: Ident = input.parse()?;
@@ -487,6 +542,24 @@ impl Parse for MethodToolAttrs {
                     let value: LitStr = input.parse()?;
                     rate_limit = Some(value.value());
                 }
+                // T-018: per-method score threshold override and
+                // bare opt-out flag. Mirrors the impl-level parser
+                // in `ToolAttributes::parse` so the two shapes are
+                // symmetrical.
+                "min_desc_score" => {
+                    input.parse::<token::Eq>()?;
+                    if let Ok(lit_int) = input.parse::<syn::LitInt>() {
+                        min_desc_score = lit_int.base10_parse::<u8>().ok();
+                    } else if let Ok(lit_str) = input.parse::<LitStr>() {
+                        min_desc_score = lit_str.value().parse().ok();
+                    }
+                }
+                "allow_short_desc" => {
+                    allow_short_desc = true;
+                    if input.peek(token::Comma) {
+                        let _ = input.parse::<token::Comma>();
+                    }
+                }
                 _ => {
                     let key_str = key.to_string();
                     let validation_prefixes = [
@@ -647,6 +720,8 @@ impl Parse for MethodToolAttrs {
             rate_limit,
             param_validations,
             baked_examples,
+            min_desc_score,
+            allow_short_desc,
         })
     }
 }

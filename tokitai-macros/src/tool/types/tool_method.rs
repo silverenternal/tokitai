@@ -56,4 +56,16 @@ pub struct ToolMethodInfo {
     /// inlines them at two sites: a compile-time type-check in
     /// each generated wrapper, and the schema's `examples` field.
     pub baked_examples: Vec<BakedExample>,
+    /// T-018: span of the `desc = "..."` literal, if the user
+    /// supplied one. The lint uses this span to anchor the
+    /// `compile_error!` so the diagnostic points at the literal
+    /// in the user's source.
+    pub desc_span: Option<Span>,
+    /// T-018: per-method minimum description score override.
+    /// When `None`, the impl-level threshold (or default 60)
+    /// applies.
+    pub min_desc_score: Option<u8>,
+    /// T-018: per-method opt-out flag. When `true`, the lint is
+    /// bypassed for this method regardless of score.
+    pub allow_short_desc: bool,
 }

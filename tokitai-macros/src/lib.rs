@@ -184,6 +184,7 @@
 //! - [`tokitai-core`](https://crates.io/crates/tokitai-core) - Core types and traits
 
 mod compose;
+mod description;
 mod error;
 mod tool;
 

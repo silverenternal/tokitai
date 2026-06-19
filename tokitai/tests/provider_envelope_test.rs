@@ -66,13 +66,17 @@ struct SampleWeatherTools;
 #[tool]
 impl SampleWeatherTools {
     /// Get the current weather for a city.
-    #[tool(desc = "Get the current weather for a city.")]
+    #[tool(
+        desc = "Returns the current weather forecast for the supplied city as a String; requires the city parameter to be a non-empty string."
+    )]
     pub fn get_weather(&self, city: String, unit: Option<String>) -> String {
         format!("{}/{:?}", city, unit)
     }
 
     /// Add two integers together.
-    #[tool(desc = "Add two integers together.")]
+    #[tool(
+        desc = "Returns the sum of the two i64 operands as i64; throws an arithmetic overflow on extreme inputs."
+    )]
     pub fn add(&self, a: i64, b: i64) -> i64 {
         a + b
     }
@@ -85,12 +89,12 @@ fn reference_definitions() -> Vec<ToolDefinition> {
     vec![
         ToolDefinition::new(
             "get_weather",
-            "Get the current weather for a city.",
+            "Returns the current weather forecast for the supplied city as a String; requires the city parameter to be a non-empty string.",
             r#"{"type":"object","properties":{"city":{"type":"string","description":"City name"},"unit":{"type":"string","description":"celsius or fahrenheit"}},"required":["city"]}"#,
         ),
         ToolDefinition::new(
             "add",
-            "Add two integers together.",
+            "Returns the sum of the two i64 operands as i64; throws an arithmetic overflow on extreme inputs.",
             r#"{"type":"object","properties":{"a":{"type":"integer"},"b":{"type":"integer"}},"required":["a","b"]}"#,
         ),
     ]

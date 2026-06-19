@@ -6,10 +6,11 @@
 
 1. [Overview](#overview)
 2. [Why bake examples](#why-bake-examples)
-3. [Integrating with Ollama](#integrating-with-ollama)
-4. [Integrating with other AI platforms](#integrating-with-other-ai-platforms)
-5. [End-to-end workflow](#end-to-end-workflow)
-6. [Troubleshooting](#troubleshooting)
+3. [Writing tool descriptions that score well](#writing-tool-descriptions-that-score-well)
+4. [Integrating with Ollama](#integrating-with-ollama)
+5. [Integrating with other AI platforms](#integrating-with-other-ai-platforms)
+6. [End-to-end workflow](#end-to-end-workflow)
+7. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -117,6 +118,101 @@ Tokitai is designed to be **vendor-neutral**. The tool definitions produced by i
 |  (to AI)           |   |  (get result)      |   |  (run business)    |
 +--------------------+   +--------------------+   +--------------------+
 ```
+
+---
+
+## Writing tool descriptions that score well
+
+The CSDN 2026-06-10 production post-mortem (cited in `todo.json`
+as the rationale for T-018) measured 1,000 real tool calls and
+found that **description quality is a measurable lever**:
+
+| Tool description shape | Parameter correctness |
+|---|---|
+| One-line desc only | **47%** |
+| One-line desc + type hints | **68%** |
+| One-line desc + business context | **80%** |
+| Typed baked example (T-016) + descriptive desc (T-018) | >95% (extrapolated) |
+
+The macro's compile-time linter enforces this. Every
+`#[tool(desc = "...")]` literal is scored against four signals
+(25 points each, 100 total). Below the per-impl threshold
+(default **60/100**) the macro refuses to compile with
+`error[E0031]`, anchored at the literal so the editor jumps
+straight to the offending text.
+
+### The four signals
+
+| Signal | Max | What it detects |
+|---|---|---|
+| **Length** | 25 | Character count: 0 chars = 0, 30+ chars = 25, linear in between |
+| **Type / unit hint** | 25 | Mentions a Rust type (`i32`, `String`, `Vec`, `Option`, `HashMap`, ...), a unit (`bytes`, `ms`, `%`, `USD`, `count`, ...), or a domain noun (`database`, `file`, `user`, `request`, `cache`, ...) |
+| **Business context** | 25 | Contains any of `returns`, `side-effect`, `requires`, `throws`, `mutates`, `persists`, `asynchronous`, `blocking`, `idempotent`, `transaction`, `retry`, `rate-limit`, `validation`, ... |
+| **Sentence count** | 25 | At least two sentences separated by `.` or `;` (one for action, one for caveats) |
+
+### What a 100/100 description looks like
+
+```rust,ignore
+#[tool(
+    desc = "Adds two 32-bit integers and returns their sum as i32.             Requires both operands to be in the i32 range;             returns Err on overflow."
+)]
+pub fn add(&self, a: i32, b: i32) -> i32 { a + b }
+```
+
+Walk-through:
+- **Length**: 134 chars, well past the 30-char cap -> **25/25**
+- **Type hint**: `i32` appears twice, `i32` is a `TYPE_HINT` -> **25/25**
+- **Business context**: `returns`, `Requires`, `returns Err` -> **25/25**
+- **Sentences**: three `.`-terminated chunks (action + caveat + caveat) -> **25/25**
+- **Total: 100/100**.
+
+### Tuning the threshold
+
+Three knobs shape how strict the lint is for a given impl block:
+
+```rust,ignore
+// 1. Default: 60/100. Most impl blocks should not need to change this.
+#[tool]
+impl Calculator { /* ... */ }
+
+// 2. Lower the bar for an impl where brevity is the point.
+#[tool(min_desc_score = 30)]
+impl ShortNames { /* ... */ }
+
+// 3. Opt out entirely for one-word verbs.
+#[tool(allow_short_desc)]
+impl TinyCommands { /* ... */ }
+```
+
+Per-method overrides also exist:
+
+```rust,ignore
+#[tool]
+impl Mixed {
+    // Per-method: drop the bar for this one method.
+    #[tool(min_desc_score = 20)]
+    pub fn special(&self) -> i32 { 0 }
+
+    // Per-method: opt out for this one method only.
+    #[tool(desc = "x", allow_short_desc)]
+    pub fn x(&self) -> i32 { 0 }
+}
+```
+
+### Why this is a compile-time check, not a runtime one
+
+The score is computed at macro-expansion time by a
+`pub const fn score_description(literal: &str) -> u8` in
+`tokitai-macros/src/description/score.rs`. There is zero
+runtime cost: the description string is either passed through
+unchanged (when the score is above the threshold) or the build
+fails before any binary is produced.
+
+The const-fn shape also lets the macro's own `#[test]` code
+exercise the scorer directly, so the test file
+`tokitai-macros/tests/description_score_test.rs` covers 11
+shapes (5 positive, 3 negative, 2 opt-out, 1 lowered-threshold)
+without spinning up trybuild snapshots.
 
 ---
 

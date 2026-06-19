@@ -8,7 +8,7 @@ pub struct DataProcessor;
 
 #[tool]
 impl DataProcessor {
-    #[tool(name = "process_data", desc = "处理数据并返回结果")]
+    #[tool(name = "process_data", desc = "处理输入的 String 参数并返回处理结果；requires the input parameter to be non-empty.", allow_short_desc)]
     pub fn process(&self, input: String) -> String {
         format!("Processed: {}", input)
     }
@@ -28,7 +28,7 @@ fn main() {
 
     // 验证自定义名称
     let process_tool = tools.iter().find(|t| t.name == "process_data").unwrap();
-    assert_eq!(process_tool.description, "处理数据并返回结果");
+    assert_eq!(process_tool.description, "处理输入的 String 参数并返回处理结果；requires the input parameter to be non-empty.");
 
     // 验证默认名称
     let transform_tool = tools.iter().find(|t| t.name == "transform").unwrap();

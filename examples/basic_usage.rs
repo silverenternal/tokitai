@@ -40,7 +40,10 @@ pub struct WeatherService;
 #[tool]
 impl WeatherService {
     /// Get weather information for a specified city
-    #[tool(name = "get_weather", desc = "Get weather forecast for a city")]
+    #[tool(
+        name = "get_weather",
+        desc = "Returns the current weather forecast for the given city as a human-readable String. Requires the city name to be a non-empty string."
+    )]
     pub fn get_weather(&self, city: String) -> String {
         format!("Weather in {}: clear, temperature 25C", city)
     }

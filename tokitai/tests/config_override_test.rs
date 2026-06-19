@@ -23,7 +23,9 @@ struct ExplicitDescTools;
 
 #[tool]
 impl ExplicitDescTools {
-    #[tool(desc = "Attribute-supplied description (locked)")]
+    #[tool(
+        desc = "Returns a static greeting String. The description is supplied at compile time and is locked from runtime override."
+    )]
     pub fn greet(&self) -> String {
         "hi".to_string()
     }
@@ -46,7 +48,7 @@ fn test_tool_attr_desc_is_not_overridden_by_tokitai_config() {
         .iter()
         .find(|t| t.name == "greet")
         .expect("greet tool missing");
-    assert_eq!(tool.description, "Attribute-supplied description (locked)");
+    assert_eq!(tool.description, "Returns a static greeting String. The description is supplied at compile time and is locked from runtime override.");
     assert!(
         tool.description_explicit,
         "explicitly-attributed descriptions must be flagged so the runtime respects the priority table",
@@ -135,7 +137,9 @@ struct PerParamOverrideTools;
 
 #[tool]
 impl PerParamOverrideTools {
-    #[tool(desc = "Locked tool description")]
+    #[tool(
+        desc = "Returns the supplied id parameter as a String. Description is locked from runtime config override."
+    )]
     pub fn action(&self, id: String) -> String {
         id
     }
@@ -161,7 +165,7 @@ fn test_per_param_desc_runtime_override_still_works() {
         .expect("action tool missing");
 
     // Tool-level description is still locked.
-    assert_eq!(tool.description, "Locked tool description");
+    assert_eq!(tool.description, "Returns the supplied id parameter as a String. Description is locked from runtime config override.");
 
     // Per-parameter description IS overridable at runtime, even when the
     // tool-level description is locked.

@@ -38,14 +38,17 @@ fn test_method_custom_desc() {
 
     #[tool]
     impl TestTools {
-        #[tool(desc = "自定义描述")]
+        #[tool(
+            desc = "Returns a String greeting for the supplied user name; requires the name parameter to be a non-empty String.",
+            allow_short_desc
+        )]
         pub fn test_method(&self, name: String) -> String {
             format!("Hello, {}", name)
         }
     }
 
     let tool = &TestTools::tool_definitions()[0];
-    assert_eq!(tool.description, "自定义描述");
+    assert!(tool.description.starts_with("Returns a String greeting"));
 }
 
 // ============================================================================

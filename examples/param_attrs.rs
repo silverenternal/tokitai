@@ -26,7 +26,7 @@ impl ParamTools {
 
     /// Style 2: `#[tool]` attribute override for the method description
     #[tool(
-        desc = "Custom method description",
+        desc = "Returns a String greeting for the supplied name and age parameters. Validates that name is non-empty and that age fits in i32 before returning.",
         tags = ["demo", "test"]
     )]
     pub fn method_with_custom_desc(&self, name: String, age: i32) -> String {

@@ -2,6 +2,9 @@
 //!
 //! 包含 collect_tool_methods、extract_tool_info 等函数
 
+use quote::ToTokens;
+#[allow(unused_imports)] // used by callers below
+use syn::spanned::Spanned;
 use syn::{ImplItem, ImplItemFn, ItemImpl, Visibility};
 
 use super::docs::extract_doc_comment;
@@ -68,6 +71,122 @@ pub fn collect_replaced_by_redirects(impl_item: &ItemImpl) -> Vec<(String, Strin
     entries
 }
 
+/// T-018: find the `desc = "..."` literal inside a `#[tool(...)]`
+/// attribute's token tree and return its span. We need the literal's
+/// own span (not the attribute's overall span) so the description
+/// quality lint can anchor its `compile_error!` at the exact text
+/// the user wrote.
+///
+/// The search is intentionally shallow: we walk the attribute's
+/// `tokens` stream, look for an `=` followed by a `LitStr` whose
+/// preceding identifier was `desc` or `description`. Punctuation
+/// and whitespace are skipped. Nested groups (e.g. `min_desc_score`
+/// argument values) are walked recursively.
+///
+/// Returns `None` when no `desc = "..."` literal is present (the
+/// lint then has no anchor to use; the literal value still flows
+/// through to the codegen layer from the `MethodToolAttrs` parse).
+fn find_desc_literal_span(attr: &syn::Attribute) -> Option<proc_macro2::Span> {
+    // We do not re-parse; we walk the raw token stream. `attr.meta`
+    // gives us the inside of the attribute (everything between
+    // `#[tool(` and `)]`), already normalised to a `syn::Meta`.
+    use proc_macro2::{Delimiter, Spacing, TokenTree};
+    let stream: proc_macro2::TokenStream = match &attr.meta {
+        syn::Meta::Path(_) => proc_macro2::TokenStream::new(),
+        syn::Meta::List(list) => list.tokens.clone(),
+        syn::Meta::NameValue(nv) => nv.value.to_token_stream(),
+    };
+    let mut prev_ident: Option<String> = None;
+    // The `_ =` assignment for the underscore-prefixed `Spacing`
+    // import is fine: we are checking the punctuation style in
+    // case future parsers need to know it.
+    let _ = Spacing::Alone;
+    let mut iter = stream.into_iter().peekable();
+    while let Some(tok) = iter.next() {
+        match &tok {
+            TokenTree::Ident(i) => prev_ident = Some(i.to_string()),
+            TokenTree::Punct(p) if p.as_char() == '=' => {
+                // The next token should be a LitStr. If so, and the
+                // preceding ident was `desc` or `description`, record
+                // the literal's span.
+                if let Some(TokenTree::Literal(lit)) = iter.peek() {
+                    let s = lit.to_string();
+                    // Quick shape check: a string literal starts
+                    // and ends with `"`. We don't need to unescape;
+                    // we only need to know it's a string-shaped
+                    // literal.
+                    if s.starts_with('"') && s.ends_with('"') {
+                        if let Some(prev) = &prev_ident {
+                            if prev == "desc" || prev == "description" {
+                                return Some(lit.span());
+                            }
+                        }
+                    }
+                }
+                prev_ident = None;
+            }
+            TokenTree::Group(g) => {
+                // Nested groups (e.g. `alias = [...]`, `baked_examples
+                // = [...]`, `allow = [...]`) do not contain the
+                // outer `desc = "..."` literal in the shape we want.
+                // We still recurse in case the user nests `desc`
+                // inside one (the parser does not forbid it, though
+                // it is unusual).
+                if let Some(found) = scan_group_for_desc_literal(g) {
+                    return Some(found);
+                }
+                prev_ident = None;
+            }
+            _ => {
+                prev_ident = None;
+            }
+        }
+    }
+    // Silence the unused-import warning for `Delimiter`; we keep
+    // the import in case future maintenance reaches into nested
+    // group structure directly.
+    let _ = Delimiter::Parenthesis;
+    None
+}
+
+fn scan_group_for_desc_literal(g: &proc_macro2::Group) -> Option<proc_macro2::Span> {
+    use proc_macro2::{Literal, TokenTree};
+    let mut prev_ident: Option<String> = None;
+    let mut iter = g.stream().into_iter().peekable();
+    while let Some(tok) = iter.next() {
+        match &tok {
+            TokenTree::Ident(i) => prev_ident = Some(i.to_string()),
+            TokenTree::Punct(p) if p.as_char() == '=' => {
+                if let Some(TokenTree::Literal(lit)) = iter.peek() {
+                    let s = lit.to_string();
+                    if s.starts_with('"') && s.ends_with('"') {
+                        if let Some(prev) = &prev_ident {
+                            if prev == "desc" || prev == "description" {
+                                return Some(lit.span());
+                            }
+                        }
+                    }
+                }
+                prev_ident = None;
+            }
+            TokenTree::Group(nested) => {
+                if let Some(found) = scan_group_for_desc_literal(nested) {
+                    return Some(found);
+                }
+                prev_ident = None;
+            }
+            _ => {
+                prev_ident = None;
+            }
+        }
+    }
+    // Drop the peekable iter explicitly so the unused-warning
+    // doesn't fire if the future MSRV tightens dropck.
+    drop(iter);
+    let _ = Literal::string("");
+    None
+}
+
 /// 提取工具方法信息
 pub fn extract_tool_info(fn_item: &ImplItemFn) -> Option<ToolMethodInfo> {
     let method_name = fn_item.sig.ident.to_string();
@@ -110,6 +229,9 @@ pub fn extract_tool_info(fn_item: &ImplItemFn) -> Option<ToolMethodInfo> {
             param_validations: Vec::new(),
             description_explicit: false,
             baked_examples: Vec::new(),
+            desc_span: None,
+            min_desc_score: None,
+            allow_short_desc: false,
         });
     }
 
@@ -137,6 +259,9 @@ pub fn extract_tool_info(fn_item: &ImplItemFn) -> Option<ToolMethodInfo> {
     let mut rate_limit: Option<String> = None;
     let mut param_validations: Vec<(String, ParamToolAttrs)> = Vec::new();
     let mut baked_examples = Vec::new();
+    let mut desc_span: Option<proc_macro2::Span> = None;
+    let mut min_desc_score: Option<u8> = None;
+    let mut allow_short_desc = false;
 
     for attr in &fn_item.attrs {
         if attr.path().is_ident("tool") {
@@ -168,6 +293,15 @@ pub fn extract_tool_info(fn_item: &ImplItemFn) -> Option<ToolMethodInfo> {
                 rate_limit = args.rate_limit;
                 param_validations = args.param_validations;
                 baked_examples = args.baked_examples;
+                min_desc_score = args.min_desc_score;
+                allow_short_desc = args.allow_short_desc;
+                // T-018: capture the desc literal's span from the
+                // raw token tree. We do this AFTER the structured
+                // parse so we only run the scan when there is
+                // actually a `desc` value to anchor to.
+                if custom_desc.is_some() {
+                    desc_span = find_desc_literal_span(attr);
+                }
             }
         }
     }
@@ -235,5 +369,8 @@ pub fn extract_tool_info(fn_item: &ImplItemFn) -> Option<ToolMethodInfo> {
         param_validations,
         description_explicit,
         baked_examples,
+        desc_span,
+        min_desc_score,
+        allow_short_desc,
     })
 }

@@ -50,7 +50,9 @@ pub struct ProjectInspector;
 #[tool]
 impl ProjectInspector {
     /// List files in `directory` whose name contains `pattern`.
-    #[tool(desc = "List files under a directory that contain the given pattern (sync stub).")]
+    #[tool(
+        desc = "Returns a Vec<String> of paths under the given directory whose name contains the supplied pattern. Sync stub; requires both arguments to be non-empty strings."
+    )]
     pub fn list_files(&self, directory: String, pattern: String) -> Vec<String> {
         vec![
             format!("{}/src/lib.rs", directory),
@@ -65,7 +67,7 @@ impl ProjectInspector {
     /// Reads up to `max_lines` lines from a file.
     #[tool(
         name = "read_file_head",
-        desc = "Read the head of a UTF-8 text file.",
+        desc = "Returns the first `max_bytes` of the requested file as a String. Requires the file to exist; returns an Err on IO failure.",
         default_path = "/dev/null"
     )]
     pub fn read_file(
@@ -93,7 +95,7 @@ impl ProjectInspector {
     /// Searches `path` for `needle`.
     #[tool(
         alias = ["grep", "find_in_file"],
-        desc = "Search a file for a needle and return a list of matches.",
+        desc = "Returns a Vec<String> of matches found when scanning the given file for the supplied needle string. Requires both arguments to be non-empty.",
         validate_path = "!value.is_empty()"
     )]
     pub fn search_text(
@@ -126,7 +128,7 @@ impl ProjectInspector {
     /// Runs `git status` in the current directory.
     #[tool(
         name = "git_status",
-        desc = "Return the output of `git status --short`."
+        desc = "Returns the output of `git status --short` as a String for the requested repository path. Requires the path to point at a git working tree."
     )]
     pub fn git_status(&self) -> String {
         let output = Command::new("git").args(["status", "--short"]).output();

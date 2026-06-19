@@ -595,6 +595,57 @@ fn generate_for_impl(mut impl_item: ItemImpl, attrs: ToolAttributes) -> TokenStr
         };
     }
 
+    // T-018: lint every `desc = "..."` literal at compile time.
+    // The lint computes a quality score (length, type/unit hint,
+    // business-context keywords, sentence count — 25 points each,
+    // 100 total) and refuses to compile when the score is below
+    // the per-impl threshold (default 60/100). Each method's
+    // `desc_span` anchors the `compile_error!` at the literal so
+    // the user sees the diagnostic pointing at the exact text
+    // that needs work. The user can opt out per-impl with
+    // `#[tool(allow_short_desc)]` or per-method with the same
+    // flag, or lower the threshold with
+    // `#[tool(min_desc_score = N)]`.
+    let impl_min_score = attrs
+        .min_desc_score
+        .unwrap_or(crate::description::score::DEFAULT_MIN_SCORE);
+    let impl_allow_short = attrs.allow_short_desc;
+    let mut desc_lint_tokens = TokenStream2::new();
+    for tool in &tool_methods {
+        if tool.desc_span.is_none() {
+            // No `desc = "..."` literal was written for this
+            // method; the description came from a doc comment or
+            // the synthesized default. The lint only fires on
+            // explicit literals (T-018's north star is the
+            // literal in the source).
+            continue;
+        }
+        // Per-method override wins over impl-level. If neither
+        // was set, fall back to the impl threshold (or default).
+        let effective_threshold = tool.min_desc_score.unwrap_or(impl_min_score);
+        let effective_allow = impl_allow_short || tool.allow_short_desc;
+        let span = tool.desc_span.unwrap();
+        let lint = crate::description::lint_description(
+            span,
+            &tool.description,
+            effective_threshold,
+            effective_allow,
+        );
+        if let Some(err) = lint.error {
+            desc_lint_tokens.extend(err.to_compile_error());
+        }
+    }
+    if !desc_lint_tokens.is_empty() {
+        // First desc lint wins (rustc only shows one error per
+        // macro invocation anyway), but we emit the rest so the
+        // user's terminal lists every offending literal at once
+        // if the tool supports multi-error rendering.
+        return quote! {
+            #impl_item
+            #desc_lint_tokens
+        };
+    }
+
     if tool_methods.is_empty() && replaced_by_redirects.is_empty() {
         return quote! { #impl_item };
     }

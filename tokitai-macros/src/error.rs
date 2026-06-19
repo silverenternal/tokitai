@@ -132,6 +132,13 @@ pub enum ErrorCode {
     /// rule set found a shape it cannot accept (e.g. OpenAI
     /// strict-mode rejecting `additionalProperties: true`).
     E0030,
+    /// T-018: the `desc = "..."` literal on a `#[tool(...)]`
+    /// attribute scored below the per-impl threshold (default
+    /// 60/100). The macro refuses to compile so the LLM-side
+    /// never sees an underspecified description. Lower the
+    /// threshold with `#[tool(min_desc_score = N)]` or opt out
+    /// with `#[tool(allow_short_desc)]`.
+    E0031,
     /// An internal consistency check failed; this is a bug in the
     /// macro, not a user error.
     E0099,
@@ -170,6 +177,7 @@ impl ErrorCode {
             ErrorCode::E0027 => "E0027",
             ErrorCode::E0028 => "E0028",
             ErrorCode::E0030 => "E0030",
+            ErrorCode::E0031 => "E0031",
             ErrorCode::E0099 => "E0099",
         }
     }

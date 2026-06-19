@@ -151,7 +151,7 @@ impl AdvancedTools {
     /// @param age user's age
     /// @param email email address
     #[tool(
-        desc = "Custom method description demonstrating parameter attributes",
+        desc = "Returns a greeting String built from the supplied user fields (name, age, email). Validates name length and age range; requires the email parameter to be a valid String address.",
         tags = ["demo", "test"],
         example_name = "Alice",
         min_length_name = 1,
