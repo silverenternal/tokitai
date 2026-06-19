@@ -183,6 +183,7 @@
 //! - [`tokitai`](https://crates.io/crates/tokitai) - Main crate with runtime support
 //! - [`tokitai-core`](https://crates.io/crates/tokitai-core) - Core types and traits
 
+mod compose;
 mod error;
 mod tool;
 
@@ -488,6 +489,52 @@ pub fn param_tool(_attr: TokenStream, item: TokenStream) -> TokenStream {
 // `proc-macro` crates cannot export `macro_rules!`. The `#[tool]`
 // attribute parser sees the pre-expansion tokens so it does not
 // depend on `call!` being defined for its parsing logic.)
+
+/// # `#[compose]` Attribute Macro
+///
+/// T-017: declarative multi-step tool composition. Collapses a
+/// sequence of named `pub` methods into a SINGLE tool the LLM
+/// calls once. The macro generates a synthetic public method on
+/// the impl block whose body threads the LLM's arguments through
+/// the named sub-methods in order.
+///
+/// ## Usage
+///
+/// ```rust,ignore
+/// use tokitai::tool;
+///
+/// pub struct TripPlanner;
+///
+/// #[tool]
+/// #[compose(name = "book_trip", steps = [search_flights, filter_by_price, book_flight, send_email])]
+/// impl TripPlanner {
+///     pub fn search_flights(&self, origin: String, dest: String) -> Vec<Flight> { ... }
+///     pub fn filter_by_price(&self, flights: Vec<Flight>, max: f64) -> Vec<Flight> { ... }
+///     pub fn book_flight(&self, flights: Vec<Flight>) -> BookingConfirmation { ... }
+///     pub fn send_email(&self, confirmation: BookingConfirmation) -> String { ... }
+/// }
+/// ```
+///
+/// The LLM sees ONE tool (`book_trip`) with input schema
+/// `{ origin, dest, max }` (the first step's parameters) and
+/// output schema matching `send_email`'s return type. The
+/// runtime threads `origin, dest` through `search_flights`,
+/// feeds its output to `filter_by_price` along with `max`,
+/// and so on.
+///
+/// ## Compile-time checks
+///
+/// - Every named step method exists on the same `impl` block.
+/// - The chain of types connects: step N's return type matches
+///   step N+1's first non-`self` argument type.
+/// - The composition is acyclic (no step appears twice).
+///
+/// Diagnostics are anchored at the offending step's span
+/// (T-001) so editors jump to the right place.
+#[proc_macro_attribute]
+pub fn compose(attr: TokenStream, item: TokenStream) -> TokenStream {
+    crate::compose::expand(attr, item)
+}
 
 /// # `tokitai!` Configuration Macro
 ///

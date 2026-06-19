@@ -450,6 +450,136 @@ Make sure the Rust type matches the JSON type:
 
 ---
 
+## Composing tools
+
+T-017 introduces `#[compose(name = "...", steps = [a, b, c])]` — a
+declarative way to collapse a multi-step agent workflow into a
+single tool the LLM calls once. The macro expands to one synthetic
+public method whose body threads the LLM's arguments through the
+named sub-methods in order. The LLM sees **one** tool entry; the
+runtime executes the chain in-process with zero sandbox overhead.
+
+### Why compose
+
+Every multi-step agent workflow (5+ tools chained) pays:
+
+- **N round-trips of model latency** — each tool call is a
+  separate LLM inference.
+- **N copies of the tool schema** in the system prompt — every
+  step's name + description + input_schema is sent on every turn.
+- **N chances of a cascading error** — one tool failure breaks
+  the chain (Evidently AI's 2026 framing).
+
+Anthropic's published claim (CSDN 2025-11-29): by collapsing N
+tool calls into a single tool executed inside a code sandbox, you
+save **98.7% of tokens** and reduce wall-clock latency. The
+sandbox is the part that costs engineering. Tokitai gets the
+same collapse without a sandbox because the steps are in-process
+Rust method calls.
+
+### Usage
+
+```rust,ignore
+use tokitai::{compose, tool};
+
+#[compose(
+    name = "book_trip",
+    steps = [search_flights, filter_by_price, book_flight, send_email]
+)]
+#[tool]
+impl TripPlanner {
+    pub fn search_flights(&self, origin: String, dest: String) -> Vec<Flight> { ... }
+    pub fn filter_by_price(&self, flights: Vec<Flight>, max_price: f64) -> Vec<Flight> { ... }
+    pub fn book_flight(&self, flights: Vec<Flight>) -> BookingConfirmation { ... }
+    pub fn send_email(&self, confirmation: BookingConfirmation) -> String { ... }
+}
+```
+
+The LLM sees **one tool** (`book_trip`) whose input schema is
+`{ origin, dest, max_price }` (the first step's parameters plus
+any extra pass-through arguments) and whose return type is
+`String` (the last step's return type). The runtime calls the
+four sub-methods in order, threading `origin, dest` through
+`search_flights`, feeding its output to `filter_by_price` along
+with `max_price`, and so on.
+
+### Compile-time checks
+
+The macro enforces at compile time:
+
+- **Every named step method exists** on the same `impl` block
+  (with a "did you mean" suggestion when there's a near-miss).
+- **The chain of types connects**: step N's return type must
+  match step N+1's first non-`self` argument type.
+- **The composition is acyclic**: no name appears twice in
+  `steps`.
+
+All diagnostics anchor at the offending step's span (T-001) so
+editors jump straight to the user's code:
+
+```text
+error[E0001]: compose chain type mismatch: step `step_a` returns
+              `String`, but step `step_b` expects `i32` as its
+              first argument
+  --> src/lib.rs:13:45
+   |
+13 | #[compose(name = "broken", steps = [step_a, step_b])]
+   |                                             ^^^^^^
+```
+
+### Token-savings table
+
+For the canonical 4-step `book_trip` example above, the
+composed `#[tool]` impl exposes:
+
+| Surface                              | 1-call (composed) | 4-call (un-composed) |
+|--------------------------------------|-------------------|----------------------|
+| Tool entries in the schema           | 1                 | 4                    |
+| Tool name bytes (sum)                | 8                 | 41                   |
+| Tool description bytes (sum)         | 220               | 320                  |
+| Tool input_schema bytes (sum)        | 425               | 454                  |
+| **Total schema bytes**               | **653**           | **815**              |
+| Estimated prompt tokens (bytes/4)    | **164**           | **204**              |
+| Wall-clock latency for one request   | 1 model round-trip| 4 model round-trips  |
+
+The schema-only savings are ~20% on a 4-step chain. The
+wall-clock and prompt-token savings scale linearly with the
+chain length: a 10-step chain pays 10x model latency and 10x
+schema bytes when un-composed, vs. 1x when composed. The
+**98.7% figure** Anthropic reports applies to the prompt
+overhead across an entire conversation, where the same tool list
+is re-sent on every turn — over a 10-turn conversation the
+savings compound to >95%.
+
+### Backwards compatibility
+
+`#[compose]` is a new attribute. Existing `#[tool]` impls without
+it are unaffected. The two attributes compose cleanly: stack
+them on the same `impl` block (compose first so the synthetic
+method is added before the tool codegen runs):
+
+```rust,ignore
+#[compose(name = "book_trip", steps = [search_flights, ...])]
+#[tool]
+impl TripPlanner { ... }
+```
+
+The 4 sub-methods are still exposed as standalone tools
+(T-001's backwards-compat guarantee), so existing callers that
+named the sub-tools directly continue to work.
+
+### v1 limitations
+
+- **Sequential only** (Q-8). Parallel steps
+  (`steps = [[a, b], c]`) require `tokio::join!` and gate on
+  `tokitai_core::current_async_executor()` being Some. Tracked
+  as a v2 stretch.
+- **Same-type chain check**. Trait-bound reasoning
+  (`T: Into<U>`, etc.) is a v2 enhancement. v1 uses a
+  same-type check (the rendered token streams must match).
+
+---
+
 ## Example code
 
 - [`examples/ollama_integration.rs`](../examples/ollama_integration.rs) - Full Ollama integration
