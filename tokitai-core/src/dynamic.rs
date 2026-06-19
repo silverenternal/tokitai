@@ -371,6 +371,17 @@ impl crate::ToolCaller for DynamicToolRegistry {
     }
 }
 
+/// T-023: dynamic registries inherit the trait's default
+/// (empty) capability manifest. Operators who need a
+/// per-tenant capability allowlist for a dynamic registry can
+/// wrap it in a `McpServerBuilder::with_tool(registry)` and
+/// configure the allowlist on the builder. The static
+/// `#[tool]` macro path is the primary T-023 surface; the
+/// dynamic path is left as a follow-up (the per-tenant gating
+/// already provides a richer policy surface than the static
+/// manifest, so collapsing the two would be a net loss).
+impl crate::CapabilityManifestProvider for DynamicToolRegistry {}
+
 /// T-010: per-tenant error variant for the case where a tool exists
 /// globally but is gated off for the caller. Distinct from
 /// [`ToolErrorKind::NotFound`] so callers can distinguish "I never

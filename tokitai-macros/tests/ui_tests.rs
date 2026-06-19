@@ -192,3 +192,25 @@ fn test_desc_safety_clean_compiles() {
     let t = trybuild::TestCases::new();
     t.pass("tests/ui/desc_safety_clean.rs");
 }
+
+// ---------------------------------------------------------------------------
+// T-023: per-tool capability manifest. The negative fixture
+// (`capabilities_requires_non_string.rs`) confirms the
+// `requires = [...]` parser refuses non-string entries at compile
+// time. The companion positive fixture
+// (`capabilities_requires_basic.rs`) confirms the canonical
+// `requires = ["..."]` shape still compiles and emits the
+// `CAPABILITIES_<NAME>` const + the aggregated `CAPABILITIES`
+// slice.
+// ---------------------------------------------------------------------------
+#[test]
+fn test_capabilities_requires_non_string_is_compile_error() {
+    let t = trybuild::TestCases::new();
+    t.compile_fail("tests/ui/capabilities_requires_non_string.rs");
+}
+
+#[test]
+fn test_capabilities_requires_basic_compiles() {
+    let t = trybuild::TestCases::new();
+    t.pass("tests/ui/capabilities_requires_basic.rs");
+}

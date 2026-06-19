@@ -90,4 +90,22 @@ pub struct ToolMethodInfo {
     /// T-020: upper bound (exclusive) of the schema-evolution
     /// interval. Mirrors `#[tool(until = "...")]`.
     pub until: Option<String>,
+    /// T-023: per-method declared capabilities. Each entry is a
+    /// stringly-typed capability token (e.g. `"db:read:sales"`,
+    /// `"net:egress:smtp"`). The macro emits
+    /// `pub const CAPABILITIES_<NAME>: &[&str]` for every
+    /// method, plus a per-impl aggregated
+    /// `pub const CAPABILITIES: &[(&str, &[&str])]`. The MCP
+    /// server walks the aggregated slice at startup to enforce
+    /// the operator's allowlist. An empty vec means the method
+    /// has no declared blast radius; the macro emits
+    /// `#[warn(missing_capabilities)]` on the method in that
+    /// case (warn-only in this release; the deny gate is the
+    /// follow-up).
+    pub requires: Vec<String>,
+    /// T-023: `true` when the parser saw a non-string-literal
+    /// entry in `requires = [...]`. The post-parse validation
+    /// in `generate_for_impl` emits a `compile_error!` at
+    /// the offending method's span.
+    pub requires_invalid: bool,
 }

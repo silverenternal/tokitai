@@ -237,6 +237,8 @@ pub fn extract_tool_info(fn_item: &ImplItemFn) -> Option<ToolMethodInfo> {
             result_truncate_bytes: None,
             since: None,
             until: None,
+            requires: Vec::new(),
+            requires_invalid: false,
         });
     }
 
@@ -251,6 +253,8 @@ pub fn extract_tool_info(fn_item: &ImplItemFn) -> Option<ToolMethodInfo> {
     let mut version = None;
     let mut since: Option<String> = None;
     let mut until: Option<String> = None;
+    let mut requires: Vec<String> = Vec::new();
+    let mut requires_invalid: bool = false;
     let mut is_visible = true;
     let mut tool_tags = Vec::new();
     let mut group = None;
@@ -290,6 +294,8 @@ pub fn extract_tool_info(fn_item: &ImplItemFn) -> Option<ToolMethodInfo> {
                 version = args.version;
                 since = args.since;
                 until = args.until;
+                requires = args.requires;
+                requires_invalid = args.requires_invalid;
                 is_visible = args.visible;
                 tool_tags = args.tags;
                 group = args.group;
@@ -392,5 +398,7 @@ pub fn extract_tool_info(fn_item: &ImplItemFn) -> Option<ToolMethodInfo> {
         result_truncate_bytes,
         since,
         until,
+        requires,
+        requires_invalid,
     })
 }

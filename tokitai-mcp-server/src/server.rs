@@ -93,6 +93,18 @@ pub enum ServerError {
     InvalidArguments(String),
     /// Server startup failed
     ServerStartupError(String),
+    /// T-023: a tool declared one or more capabilities that
+    /// the operator-supplied allowlist does not cover. The
+    /// offending tool's name and the list of missing
+    /// capabilities are returned so the operator can decide
+    /// whether to widen the allowlist or remove the tool.
+    CapabilityNotInAllowlist {
+        /// Name of the tool that failed the allowlist check.
+        tool: String,
+        /// Capabilities declared by the tool that the
+        /// allowlist does not cover.
+        missing: Vec<String>,
+    },
 }
 
 impl fmt::Display for ServerError {
@@ -102,6 +114,11 @@ impl fmt::Display for ServerError {
             ServerError::ToolExecutionError(msg) => write!(f, "Tool execution error: {}", msg),
             ServerError::InvalidArguments(msg) => write!(f, "Invalid arguments: {}", msg),
             ServerError::ServerStartupError(msg) => write!(f, "Server startup error: {}", msg),
+            ServerError::CapabilityNotInAllowlist { tool, missing } => write!(
+                f,
+                "T-023 capability check failed: tool `{}` declares capabilities {:?} that are not in the allowlist",
+                tool, missing
+            ),
         }
     }
 }
@@ -125,6 +142,18 @@ pub struct McpServerConfig {
     pub cors_enabled: bool,
     /// Enable request tracing
     pub tracing_enabled: bool,
+    /// T-023: capability allowlist. When `Some`, the server
+    /// walks every tool's declared capabilities at startup and
+    /// refuses to start (`ServerError::CapabilityNotInAllowlist`)
+    /// if any capability is not covered. When `None` (the
+    /// default), no allowlist check is performed and existing
+    /// deployments keep working unchanged. The fail-closed
+    /// contract applies only when the user opts in via
+    /// `with_capability_allowlist(...)`: an empty
+    /// `Some(vec![])` is a valid (and strict) configuration
+    /// that refuses to start any tool that declares any
+    /// capability.
+    pub capability_allowlist: Option<Vec<String>>,
 }
 
 impl Default for McpServerConfig {
@@ -134,6 +163,7 @@ impl Default for McpServerConfig {
             port: 8080,
             cors_enabled: true,
             tracing_enabled: true,
+            capability_allowlist: None,
         }
     }
 }
@@ -303,6 +333,30 @@ where
         self
     }
 
+    /// T-023: install the operator-supplied capability
+    /// allowlist. When the server starts, it walks every
+    /// registered tool's `CAPABILITIES_*` slice and refuses to
+    /// start (`ServerError::CapabilityNotInAllowlist { tool,
+    /// missing }`) if any declared capability is not in the
+    /// allowlist. An empty allowlist is the fail-closed
+    /// configuration: any tool that declares a capability
+    /// fails to start. Allowlist entries may use a trailing
+    /// `*` for prefix matching (e.g. `db:read:*` covers
+    /// `db:read:sales`).
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use tokitai_mcp_server::McpServerBuilder;
+    ///
+    /// let builder = McpServerBuilder::with_tool(MyTools::default())
+    ///     .with_capability_allowlist(vec!["db:read:*".to_string()]);
+    /// ```
+    pub fn with_capability_allowlist(mut self, allowlist: Vec<String>) -> Self {
+        self.config.capability_allowlist = Some(allowlist);
+        self
+    }
+
     /// Build the server
     pub fn build(self) -> McpServerWithProvider<T>
     where
@@ -395,7 +449,37 @@ where
     Some(multi.tool_definitions().to_vec())
 }
 
-/// T-010: return the tool definitions held by a `DynamicToolRegistry`,
+/// T-023: returns the aggregated per-sub-provider manifest of a
+/// `MultiToolProvider`, or an empty `Vec` if `provider` is not
+/// one. Used by `McpServerWithProvider::run_with_address` so the
+/// allowlist check at startup walks the same data the user
+/// registered with `multi.add(...)`. For a `MultiToolProvider`
+/// the static `T::capability_manifest()` shim returns an empty
+/// slice (the sub-provider manifests are stored in
+/// `MultiToolProvider::manifests`), so the `T`-shim path
+/// short-circuits past the multi case.
+pub(crate) fn multi_provider_tool_caps<T>(
+    provider: &T,
+) -> Vec<(&'static str, &'static [&'static str])>
+where
+    T: tokitai_core::ToolProvider
+        + tokitai_core::ToolCaller
+        + tokitai_core::CapabilityManifestProvider
+        + Send
+        + Sync
+        + 'static,
+{
+    use std::any::Any;
+    let multi = match (provider as &dyn Any).downcast_ref::<MultiToolProvider>() {
+        Some(m) => m,
+        None => return Vec::new(),
+    };
+    let mut out: Vec<(&'static str, &'static [&'static str])> = Vec::new();
+    for slice in &multi.manifests {
+        out.extend_from_slice(slice);
+    }
+    out
+}
 /// or `None` if `provider` is not one. Used by both the HTTP server and
 /// the stdio transport so a dynamic registry plugs into the same
 /// `McpServerBuilder::with_tool(...)` entry point as a static provider.
@@ -428,7 +512,12 @@ pub struct McpServerWithProvider<T> {
 
 impl<T> McpServerWithProvider<T>
 where
-    T: tokitai_core::ToolProvider + tokitai_core::ToolCaller + Send + Sync + 'static,
+    T: tokitai_core::ToolProvider
+        + tokitai_core::ToolCaller
+        + tokitai_core::CapabilityManifestProvider
+        + Send
+        + Sync
+        + 'static,
 {
     /// Create a new MCP server with a tool provider
     pub fn new(config: McpServerConfig, tool_provider: T) -> Self {
@@ -457,6 +546,73 @@ where
     /// server.run_with_address("0.0.0.0:3000").await?;
     /// ```
     pub async fn run_with_address(&self, addr: &str) -> Result<(), ServerError> {
+        // T-023: walk the provider's `CAPABILITIES` slice and
+        // verify every declared capability is covered by the
+        // operator-supplied allowlist. An unset allowlist
+        // (`None`) skips the check (fail-open for backward
+        // compatibility); a set allowlist (even an empty one)
+        // enforces the fail-closed contract. On the first
+        // tool with a missing capability we log a `warn!` and
+        // return `CapabilityNotInAllowlist { tool, missing }`
+        // so the binary exits before binding the port. The
+        // `log`-emitted `warn!` line is the operator's hook
+        // for "what was the offending tool?" — the typed
+        // `Err` carries the same info for programmatic
+        // consumers.
+        //
+        // T-023: the `T::capability_manifest()` shim returns
+        // the macro-baked aggregated slice for plain
+        // `#[tool]`-processed providers, and an empty slice
+        // for `MultiToolProvider` (whose per-sub-provider
+        // manifests are walked through `multi_provider_manifest`
+        // below). Both paths are checked.
+        if let Some(allowlist) = self.config.capability_allowlist.as_ref() {
+            for (tool_name, requires) in T::capability_manifest() {
+                let mut missing: Vec<String> = Vec::new();
+                for cap in *requires {
+                    if !tokitai_core::capability_in_allowlist(cap, allowlist) {
+                        missing.push((*cap).to_string());
+                    }
+                }
+                if !missing.is_empty() {
+                    warn!(
+                        "T-023 capability check refused to start: tool `{}` requires \
+                         capabilities {:?} that are not in the allowlist {:?}",
+                        tool_name, missing, allowlist
+                    );
+                    return Err(ServerError::CapabilityNotInAllowlist {
+                        tool: (*tool_name).to_string(),
+                        missing,
+                    });
+                }
+            }
+            // T-023: also walk the per-sub-provider manifest
+            // slices captured by `MultiToolProvider::add`.
+            // Type-based dispatch keeps the generic `T` bound
+            // minimal (no need to require a `CapabilityManifest
+            // Provider`-shaped supertrait on `ToolCallerDyn`).
+            let multi_manifest = multi_provider_tool_caps(&*self.tool_provider);
+            for (tool_name, requires) in &multi_manifest {
+                let mut missing: Vec<String> = Vec::new();
+                for cap in *requires {
+                    if !tokitai_core::capability_in_allowlist(cap, allowlist) {
+                        missing.push((*cap).to_string());
+                    }
+                }
+                if !missing.is_empty() {
+                    warn!(
+                        "T-023 capability check refused to start: tool `{}` requires \
+                         capabilities {:?} that are not in the allowlist {:?}",
+                        tool_name, missing, allowlist
+                    );
+                    return Err(ServerError::CapabilityNotInAllowlist {
+                        tool: (*tool_name).to_string(),
+                        missing,
+                    });
+                }
+            }
+        }
+
         // Initialize tracing (only if not already set)
         if self.config.tracing_enabled && !tracing::dispatcher::has_been_set() {
             tracing_subscriber::fmt()
@@ -677,6 +833,16 @@ impl McpServer {
     /// server.run_with_address("0.0.0.0:3000").await?;
     /// ```
     pub async fn run_with_address(&self, addr: &str) -> Result<(), ServerError> {
+        // T-023: the read-only `McpServer` does not own a
+        // `T: CapabilityManifestProvider`, so the allowlist
+        // check is a no-op here. The check lives on
+        // `McpServerWithProvider::run_with_address` (the
+        // generic-T impl), which is the entry point
+        // `McpServerBuilder::with_tool(...)` builds into.
+        // Setting `capability_allowlist` on a read-only
+        // `McpServer` is accepted by the config but never
+        // enforced (documented behaviour).
+
         // Initialize tracing (only if not already set)
         if self.config.tracing_enabled && !tracing::dispatcher::has_been_set() {
             tracing_subscriber::fmt()
@@ -909,6 +1075,12 @@ async fn health_handler() -> &'static str {
 pub struct MultiToolProvider {
     providers: Vec<Box<dyn ToolCallerDyn>>,
     tool_defs: Vec<mcp::McpTool>,
+    /// T-023: per-sub-provider capability manifest slices.
+    /// Each entry is the aggregated `CAPABILITIES` slice of
+    /// the provider passed to `add(...)`. The
+    /// `CapabilityManifestProvider` impl flattens them into
+    /// the single slice the server walks at startup.
+    manifests: Vec<&'static [(&'static str, &'static [&'static str])]>,
 }
 
 /// Dynamic tool caller trait object for runtime polymorphism
@@ -982,6 +1154,7 @@ impl MultiToolProvider {
         Self {
             providers: Vec::new(),
             tool_defs: Vec::new(),
+            manifests: Vec::new(),
         }
     }
 
@@ -994,9 +1167,23 @@ impl MultiToolProvider {
     /// provider.add(Calculator::default());
     /// provider.add(TextTools::default());
     /// ```
+    ///
+    /// T-023: the bound is widened to include
+    /// [`tokitai_core::CapabilityManifestProvider`] so the aggregated
+    /// `CAPABILITIES` slice is captured at `add` time and the
+    /// server-side allowlist check at startup has something
+    /// to walk. Providers that did not opt into the manifest
+    /// path (e.g. unit structs that do not carry `#[tool]`
+    /// methods) satisfy the bound through the trait's default
+    /// empty-slice implementation and contribute no entries.
     pub fn add<T>(&mut self, tool: T)
     where
-        T: tokitai_core::ToolProvider + tokitai_core::ToolCaller + Send + Sync + 'static,
+        T: tokitai_core::ToolProvider
+            + tokitai_core::ToolCaller
+            + tokitai_core::CapabilityManifestProvider
+            + Send
+            + Sync
+            + 'static,
     {
         // Collect tool definitions from this provider
         for def in T::tool_definitions() {
@@ -1015,6 +1202,12 @@ impl MultiToolProvider {
 
         // Add the provider
         self.providers.push(Box::new(tool));
+        // T-023: capture the sub-provider's `CAPABILITIES`
+        // slice so the server-side allowlist check has
+        // something to walk. The slice is `&'static` (the
+        // `#[tool]` macro bakes it into the binary), so this
+        // is a single pointer-sized copy per `add` call.
+        self.manifests.push(T::capability_manifest());
     }
 
     /// Get all tool definitions
@@ -1076,6 +1269,13 @@ impl MultiToolProvider {
         Self {
             providers: Vec::new(),
             tool_defs: self.tool_defs.clone(),
+            // T-023: the clone carries the per-sub-provider
+            // manifest slices too. The slices themselves are
+            // `&'static` references to the macro-baked
+            // `CAPABILITIES` consts, so cloning the `Vec` is
+            // a pointer-sized copy per sub-provider — no
+            // schema data is duplicated.
+            manifests: self.manifests.clone(),
         }
     }
 }
@@ -1119,6 +1319,18 @@ impl tokitai_core::ToolCaller for MultiToolProvider {
         )))
     }
 }
+
+// T-023: the `MultiToolProvider` carries per-sub-provider
+// manifest slices in its `manifests` field (populated at `add`
+// time). The trait shim below is a placeholder: the server
+// reaches the per-sub-provider manifests via
+// [`multi_provider_manifest`], not through this shim, so the
+// `T::capability_manifest()` path stays empty here. The shim
+// exists only to satisfy the `CapabilityManifestProvider`
+// supertrait bound on `MultiToolProvider::add`; the default
+// trait implementation already returns `&[]` so we inherit
+// the empty-slice behaviour without overriding the method.
+impl tokitai_core::CapabilityManifestProvider for MultiToolProvider {}
 
 // =====================================================================
 // T-021 fail-closed state-drift visibility test.

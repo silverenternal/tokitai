@@ -533,7 +533,14 @@ impl ToolTypeAttrs {
 /// impl 块级别的工具属性
 fn generate_for_impl(mut impl_item: ItemImpl, attrs: ToolAttributes) -> TokenStream2 {
     let tool_methods = collect_tool_methods(&impl_item);
-
+    // T-023: hoist the impl-type binding so the empty-impl
+    // early-return path can still emit the `CAPABILITIES`
+    // const + the `CapabilityManifestProvider` trait impl.
+    // (Without this, an impl that filters every method out
+    // via `#[tool(skip)]` would short-circuit past the
+    // const, and the trait auto-impl would fail to resolve
+    // `Self::CAPABILITIES`.)
+    let impl_type_early = impl_item.self_ty.clone();
     // T-012: pick the active schema dialect from the impl-level
     // attribute. Unknown names are reported by `validate_impl`
     // as `E0030` before we get here, so by the time this runs
@@ -747,6 +754,33 @@ fn generate_for_impl(mut impl_item: ItemImpl, attrs: ToolAttributes) -> TokenStr
         }
     }
 
+    // T-023: reject `#[tool(requires = [..., 42, ...])]` (a
+    // non-string entry) at compile time. The parser stores the
+    // failure flag (`requires_invalid: true`); the rejection
+    // has to live here because the
+    // `attr.parse_args::<MethodToolAttrs>()` call site in
+    // `extract_tool_info` silently swallows parse errors
+    // (same swallow-and-default pattern as the T-019
+    // `result_truncate_bytes = 0` rejection above). The
+    // diagnostic anchors at the offending method's name span
+    // so the user can find the bad entry in their source.
+    for tool in &tool_methods {
+        if tool.requires_invalid {
+            let err = crate::error::MacroError::new(
+                crate::error::ErrorCode::E0099, // generic catch-all
+                tool.ident_span,
+                "tokitai `requires = [...]` must be an array of string literals \
+                 (e.g. `requires = [\"db:read:sales\", \"net:egress:smtp\"]`). \
+                 Non-string entries are rejected at compile time.",
+            );
+            let err_tokens = err.to_compile_error();
+            return quote! {
+                #impl_item
+                #err_tokens
+            };
+        }
+    }
+
     // T-020: schema-evolution interval check. When the impl
     // opted into `version_policy = "semver"`, every
     // `since = "..."` / `until = "..."` literal must parse as
@@ -771,7 +805,30 @@ fn generate_for_impl(mut impl_item: ItemImpl, attrs: ToolAttributes) -> TokenStr
     }
 
     if tool_methods.is_empty() && replaced_by_redirects.is_empty() {
-        return quote! { #impl_item };
+        // T-023: even when the impl has no active methods
+        // (every method was `#[tool(skip)]` or `__`-prefixed),
+        // emit the aggregated `CAPABILITIES` const + the
+        // `CapabilityManifestProvider` trait impl so downstream
+        // consumers that wire this provider into
+        // `McpServerBuilder::with_tool(...)` still satisfy
+        // the trait bound. The const is an empty `&[]`; the
+        // server's allowlist walk short-circuits past it.
+        let capabilities_consts_empty = definitions::generate_capabilities_consts(&[]);
+        let mut cap_items = TokenStream2::new();
+        for item in capabilities_consts_empty {
+            cap_items.extend(item);
+        }
+        return quote! {
+            #impl_item
+
+            #cap_items
+
+            impl ::tokitai_core::CapabilityManifestProvider for #impl_type_early {
+                fn capability_manifest() -> &'static [(&'static str, &'static [&'static str])] {
+                    Self::CAPABILITIES
+                }
+            }
+        };
     }
 
     // T-014: emit the per-impl-block token-cost warning when the
@@ -899,6 +956,33 @@ fn generate_for_impl(mut impl_item: ItemImpl, attrs: ToolAttributes) -> TokenStr
             );
             eprintln!("  --> help: use `async fn` or remove `context`");
         }
+
+        // T-023: warn when a `#[tool]` method does not declare
+        // `requires = [...]`. The compile-time defence
+        // (T-023 acceptance criterion 2) is the per-impl
+        // recommendation list printed in the warning, so an
+        // operator can see the full category set without
+        // reading the docs. The warning is *not* a hard error
+        // in this release; the follow-up release flips it to
+        // `deny(missing_capabilities)`. The
+        // `allow_missing_capabilities` opt-out mirrors the
+        // existing per-method `allow = [...]` list pattern
+        // (T-018 short-desc opt-out, T-022 insecure-desc
+        // opt-out).
+        if should_show_warnings()
+            && tool.requires.is_empty()
+            && !tool.allow.contains(&"missing_capabilities".to_string())
+        {
+            eprintln!(
+                "[tokitai] [W023] method `{}` has no `requires = [...]` manifest; \
+                 declare its blast radius (recommended categories: \
+                 `db:read|write|delete:<resource>`, `net:egress:<proto>`, \
+                 `fs:read|write|delete:<path>`, `process:exec`, `mail:send`, \
+                 `auth:assume:<role>`) or pass `allow = [\"missing_capabilities\"]` \
+                 to opt out of this warning",
+                tool.name
+            );
+        }
     }
 
     let impl_type = &impl_item.self_ty;
@@ -908,6 +992,16 @@ fn generate_for_impl(mut impl_item: ItemImpl, attrs: ToolAttributes) -> TokenStr
         dispatcher::generate_call_tool_method(&tool_methods, &replaced_by_redirects);
     let helper_methods = wrappers::generate_helper_methods(&tool_methods);
     let tool_count_const = definitions::generate_tool_count_const(&tool_methods);
+    // T-023: emit per-method CAPABILITIES_<NAME> constants plus
+    // the aggregated CAPABILITIES slice the MCP server walks at
+    // startup. Emitted alongside `__TOOL_COUNT` so the const
+    // block stays contiguous. Always emitted (even when
+    // `tool_methods` is empty) so the `impl
+    // CapabilityManifestProvider for #impl_type` below always
+    // resolves `Self::CAPABILITIES` to a valid item. An empty
+    // impl block produces an empty `&[]` const that the server
+    // short-circuits past in the allowlist walk.
+    let capabilities_consts = definitions::generate_capabilities_consts(&tool_methods);
     // T-013: when the impl has no active methods (only
     // `replaced_by` redirects), the `__TOOL_COUNT` const is not
     // emitted. Fall back to deriving the count from the static
@@ -931,6 +1025,15 @@ fn generate_for_impl(mut impl_item: ItemImpl, attrs: ToolAttributes) -> TokenStr
     // 【P3 优化】添加编译期工具计数常量
     if let Ok(item) = syn::parse2::<ImplItem>(tool_count_const) {
         new_items.push(item);
+    }
+
+    // T-023: per-method + per-impl capability constants. The
+    // aggregated `CAPABILITIES` slice is what the MCP server
+    // walks at startup to enforce the operator's allowlist.
+    for cap_const in capabilities_consts {
+        if let Ok(item) = syn::parse2::<ImplItem>(cap_const) {
+            new_items.push(item);
+        }
     }
 
     let all_tool_defs_tokens = &all_tool_defs;
@@ -1093,6 +1196,17 @@ fn generate_for_impl(mut impl_item: ItemImpl, attrs: ToolAttributes) -> TokenStr
                 // definitions slice so the impl still satisfies
                 // the trait contract.
                 #tool_count_const_or_fallback
+            }
+        }
+
+        // T-023: auto-implement the capability-manifest trait so
+        // the MCP server can read the aggregated `CAPABILITIES`
+        // slice at startup. The trait method is a thin shim
+        // around the per-impl const; the macro already generated
+        // the const items above.
+        impl ::tokitai_core::CapabilityManifestProvider for #impl_type {
+            fn capability_manifest() -> &'static [(&'static str, &'static [&'static str])] {
+                Self::CAPABILITIES
             }
         }
 

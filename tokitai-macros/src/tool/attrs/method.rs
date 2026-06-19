@@ -184,6 +184,28 @@ pub struct MethodToolAttrs {
     /// interval. When set, the dispatcher hides the tool when
     /// `tokitai_core::current_version() >= until`.
     pub until: Option<String>,
+    /// T-023: per-method capability manifest. Each entry is a
+    /// stringly-typed capability token (e.g. `"db:read:sales"`,
+    /// `"net:egress:smtp"`). The macro emits one
+    /// `pub const CAPABILITIES_<NAME>: &[&str]` per method that
+    /// declares `requires`, plus a per-impl aggregated
+    /// `pub const CAPABILITIES: &[(&str, &[&str])]` that the
+    /// MCP server walks at startup to enforce the operator's
+    /// allowlist. An empty vec (the default) means "no
+    /// capabilities declared"; the macro emits a
+    /// `#[warn(missing_capabilities)]` on the method in that case
+    /// (warn-only in this release; the deny gate is the
+    /// follow-up).
+    pub requires: Vec<String>,
+    /// T-023: `true` when the parser saw a non-string-literal
+    /// entry in `requires = [...]`. The post-parse validation
+    /// in `generate_for_impl` emits a `compile_error!` at
+    /// the offending method's span. The flag is a soft check
+    /// because the `attr.parse_args::<MethodToolAttrs>()`
+    /// call site in `extract_tool_info` silently swallows
+    /// parse errors (the same swallow-and-default pattern
+    /// T-019 works around for `result_truncate_bytes = 0`).
+    pub requires_invalid: bool,
     pub visible: bool,
     pub tags: Vec<String>,
     pub group: Option<String>,
@@ -271,6 +293,8 @@ impl Parse for MethodToolAttrs {
                         version: None,
                         since: None,
                         until: None,
+                        requires: Vec::new(),
+                        requires_invalid: false,
                         visible: true,
                         tags: Vec::new(),
                         group: None,
@@ -307,6 +331,8 @@ impl Parse for MethodToolAttrs {
         let mut version = None;
         let mut since: Option<String> = None;
         let mut until: Option<String> = None;
+        let mut requires: Vec<String> = Vec::new();
+        let mut requires_invalid: bool = false;
         let mut visible = true;
         let mut tags = Vec::new();
         let mut group = None;
@@ -399,6 +425,47 @@ impl Parse for MethodToolAttrs {
                     input.parse::<token::Eq>()?;
                     let value: LitStr = input.parse()?;
                     until = Some(value.value());
+                }
+                // T-023: `requires = ["db:read:sales", "net:egress:smtp"]`.
+                // Each entry is a string literal; the macro validates
+                // (via the type system) that every element parses as
+                // a `LitStr`. The server walks the aggregated
+                // `CAPABILITIES` slice at startup to enforce the
+                // operator's allowlist. A non-string entry is a
+                // compile error via the structural parser below.
+                "requires" => {
+                    input.parse::<token::Eq>()?;
+                    let content;
+                    syn::bracketed!(content in input);
+                    // T-023: structural validation per entry.
+                    // We can't `return Err(...)` here because
+                    // the `attr.parse_args::<MethodToolAttrs>()`
+                    // call site in `extract_tool_info` silently
+                    // swallows parse errors (the same
+                    // swallow-and-default pattern T-019 works
+                    // around for `result_truncate_bytes = 0`).
+                    // We use a per-entry soft check: if the
+                    // next token is not a string literal we
+                    // record the failure so
+                    // `generate_for_impl` emits a
+                    // `compile_error!` there. Good entries
+                    // are still pushed to `requires` so the
+                    // macro emits the const.
+                    while !content.is_empty() {
+                        if content.peek(LitStr) {
+                            let cap: LitStr = content.parse()?;
+                            requires.push(cap.value());
+                        } else {
+                            // Skip the bad token; record
+                            // that the entry was
+                            // non-string.
+                            let _ = content.parse::<proc_macro2::TokenTree>();
+                            requires_invalid = true;
+                        }
+                        if content.peek(token::Comma) {
+                            content.parse::<token::Comma>()?;
+                        }
+                    }
                 }
                 "group" => {
                     input.parse::<token::Eq>()?;
@@ -858,6 +925,8 @@ impl Parse for MethodToolAttrs {
             version,
             since,
             until,
+            requires,
+            requires_invalid,
             visible,
             tags,
             group,

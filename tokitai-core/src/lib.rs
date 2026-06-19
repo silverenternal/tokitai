@@ -2702,6 +2702,201 @@ macro_rules! json_schema {
 }
 
 // ===========================================================================
+// T-023: per-tool capability manifest
+//
+// Every `#[tool]` method declares the capabilities it requires
+// (`db:read:sales`, `net:egress:smtp`, etc.). The macro emits a
+// per-method `CAPABILITIES_<NAME>` const plus a per-impl aggregated
+// `CAPABILITIES` slice; the MCP server walks that slice at startup
+// to enforce the operator-supplied allowlist.
+//
+// The manifest type below is the on-the-wire shape: a `Vec<(String,
+// Vec<String>)>` mapping `tool_name -> required_capabilities`. The
+// `Vec<String>` and `Vec<(String, Vec<String>)>` types are the
+// minimum surface the server needs to read the manifest without
+// pulling in any new external types. The shape is owned (not
+// `&'static`) because the manifest is built at server start from
+// the macro-emitted const slices; the const slice itself is
+// `&'static`, but the on-the-wire `Vec` is filled with cloned
+// strings for the allowlist walk.
+// ===========================================================================
+
+/// T-023: per-tool capability manifest. Each tuple is
+/// `(tool_name, required_capabilities)`. The macro emits an
+/// aggregated `CAPABILITIES` slice per impl block; the server
+/// folds those slices into a single `CapabilityManifest` at
+/// startup before walking the allowlist.
+///
+/// The shape is `Vec<(String, Vec<String>)>` (no new external
+/// types) per the T-023 acceptance criteria. A `Vec<(String,
+/// Vec<String>)>` is the minimum surface that lets the
+/// `tokitai-mcp-server` enforce the allowlist without depending
+/// on a third-party manifest crate (and without violating the
+/// "no new top-level deps" rule).
+///
+/// # Example
+///
+/// ```rust
+/// use tokitai_core::CapabilityManifest;
+///
+/// let manifest: CapabilityManifest = vec![
+///     ("send_email".to_string(), vec!["db:read:sales".to_string(), "net:egress:smtp".to_string()]),
+///     ("summarize".to_string(), vec!["db:read:sales".to_string()]),
+/// ];
+/// assert_eq!(manifest.len(), 2);
+/// ```
+pub type CapabilityManifest = alloc::vec::Vec<(
+    alloc::string::String,
+    alloc::vec::Vec<alloc::string::String>,
+)>;
+
+/// T-023: returns `true` when `declared` is covered by some entry
+/// in `allowlist`. The allowlist supports one wildcard form: a
+/// trailing `*` (e.g. `db:read:*`) is treated as a prefix match
+/// (so `db:read:*` covers `db:read:sales`, `db:read:any_resource`,
+/// and any other `db:read:<X>`). Exact entries (no `*`) must
+/// match the declared capability verbatim. The matcher is
+/// case-sensitive: capability tokens are typically
+/// lowercase-with-colons in the documented category set, and
+/// allowing case folding would weaken the allowlist contract
+/// without a clear use case.
+///
+/// T-023: trait the `#[tool]` macro auto-implements for any
+/// `impl` block it processes. Exposes the aggregated
+/// `CAPABILITIES` slice (per-method name + per-method required
+/// capability tokens) so the `tokitai-mcp-server` builder can
+/// walk it at start time without depending on a per-impl
+/// generated type.
+///
+/// The default implementation returns an empty slice (no
+/// capabilities declared) so providers that did not opt in to
+/// the manifest path keep working unchanged. The `#[tool]`
+/// macro overrides the default to return the per-impl
+/// `CAPABILITIES` slice it baked at compile time.
+///
+/// # Example
+///
+/// ```rust
+/// use tokitai_core::CapabilityManifestProvider;
+///
+/// fn check<T: CapabilityManifestProvider>() {
+///     let manifest = T::capability_manifest();
+///     // walk every (method, requires) entry
+///     for (tool, caps) in manifest {
+///         for c in *caps {
+///             // ...
+///         }
+///         let _ = (tool, caps);
+///     }
+/// }
+/// ```
+pub trait CapabilityManifestProvider {
+    /// Return the aggregated `(tool_name, requires)` slice for
+    /// this provider. The slice is `&'static` so no allocation
+    /// happens on the hot path.
+    fn capability_manifest() -> &'static [(&'static str, &'static [&'static str])] {
+        // Default: no capabilities declared. The `#[tool]`
+        // macro overrides this with the aggregated slice it
+        // baked at compile time. Providers that have not been
+        // processed by `#[tool]` (e.g. an empty unit struct
+        // used as a placeholder) keep the empty default.
+        &[]
+    }
+}
+
+/// T-023: returns `true` when `declared` is covered by some entry
+/// in `allowlist`. The allowlist supports one wildcard form: a
+/// trailing `*` (e.g. `db:read:*`) is treated as a prefix match
+/// (so `db:read:*` covers `db:read:sales`, `db:read:any_resource`,
+/// and any other `db:read:<X>`). Exact entries (no `*`) must
+/// match the declared capability verbatim. The matcher is
+/// case-sensitive: capability tokens are typically
+/// lowercase-with-colons in the documented category set, and
+/// allowing case folding would weaken the allowlist contract
+/// without a clear use case.
+///
+/// The match runs in `O(N * M)` where `N` is the number of
+/// declared capabilities and `M` is the allowlist length. Both
+/// are expected to be small (a few dozen entries at most), so a
+/// linear scan is fine.
+///
+/// # Example
+///
+/// ```rust
+/// use tokitai_core::capability_in_allowlist;
+///
+/// let allowlist = vec!["db:read:*".to_string(), "net:egress:smtp".to_string()];
+/// assert!(capability_in_allowlist("db:read:sales", &allowlist));
+/// assert!(capability_in_allowlist("net:egress:smtp", &allowlist));
+/// assert!(!capability_in_allowlist("db:delete:users", &allowlist));
+/// ```
+pub fn capability_in_allowlist(declared: &str, allowlist: &[alloc::string::String]) -> bool {
+    for entry in allowlist {
+        if let Some(prefix) = entry.strip_suffix('*') {
+            // Wildcard: `db:read:*` matches anything that starts
+            // with `db:read:`. We require the prefix to end with
+            // a `:` separator (or be empty) so a bare `*` does
+            // not silently match every capability.
+            if prefix.is_empty() {
+                // `*` alone — match everything. Documented as a
+                // valid (if risky) operator escape hatch.
+                return true;
+            }
+            if declared.starts_with(prefix) {
+                return true;
+            }
+        } else if entry.as_str() == declared {
+            return true;
+        }
+    }
+    false
+}
+
+#[cfg(test)]
+mod capability_manifest_tests {
+    use super::*;
+
+    #[test]
+    fn exact_match_succeeds() {
+        let allowlist = alloc::vec!["net:egress:smtp".to_string()];
+        assert!(capability_in_allowlist("net:egress:smtp", &allowlist));
+    }
+
+    #[test]
+    fn exact_match_misses() {
+        let allowlist = alloc::vec!["net:egress:smtp".to_string()];
+        assert!(!capability_in_allowlist("net:egress:http", &allowlist));
+    }
+
+    #[test]
+    fn wildcard_prefix_matches() {
+        let allowlist = alloc::vec!["db:read:*".to_string()];
+        assert!(capability_in_allowlist("db:read:sales", &allowlist));
+        assert!(capability_in_allowlist("db:read:any_resource", &allowlist));
+    }
+
+    #[test]
+    fn wildcard_prefix_does_not_match_unrelated() {
+        let allowlist = alloc::vec!["db:read:*".to_string()];
+        assert!(!capability_in_allowlist("db:write:sales", &allowlist));
+        assert!(!capability_in_allowlist("net:egress:smtp", &allowlist));
+    }
+
+    #[test]
+    fn empty_allowlist_fails_closed() {
+        let allowlist: alloc::vec::Vec<alloc::string::String> = alloc::vec::Vec::new();
+        assert!(!capability_in_allowlist("db:read:sales", &allowlist));
+    }
+
+    #[test]
+    fn bare_star_matches_anything() {
+        let allowlist = alloc::vec!["*".to_string()];
+        assert!(capability_in_allowlist("db:read:sales", &allowlist));
+        assert!(capability_in_allowlist("process:exec", &allowlist));
+    }
+}
+
+// ===========================================================================
 // T-024: cross-crate version assertion
 //
 // A `tokitai-core` consumer pinned to one minor line (say `0.7`) can

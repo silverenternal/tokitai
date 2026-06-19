@@ -794,3 +794,156 @@ Tests run identically with `--features mcp-typed` and
 `--no-default-features`; the feature gate is verified separately
 in CI by `cargo build --no-default-features` and
 `cargo build --features mcp-typed`.
+
+## Capability model (T-023)
+
+**Threat model**: Tencent Cloud's 2026-06-19 AI security report
+identifies the "super-user problem" as the root cause of injection
+severity. The standard mitigation (split the agent into N
+specialized sub-agents, each with a narrow permission) is
+hand-rolled and never enforced. T-023 makes it structural: every
+`#[tool]` method declares the capabilities it requires, the
+`#[tool]` macro emits a `CAPABILITIES_*` manifest, and the MCP
+server refuses to start when the operator-supplied allowlist does
+not cover the declared capabilities.
+
+### Declaration shape
+
+```rust
+use tokitai::tool;
+
+#[tool]
+impl EmailTools {
+    /// Send an email to a customer.
+    #[tool(
+        desc = "Send an email to a customer. Subject and body are required string parameters.",
+        requires = ["db:read:sales", "net:egress:smtp"]
+    )]
+    pub fn send_email(&self, subject: String, body: String) -> String {
+        // ...
+    }
+}
+```
+
+The macro emits one `pub const CAPABILITIES_SEND_EMAIL: &[&str]`
+per method plus a per-impl aggregated `pub const CAPABILITIES:
+&[(&str, &[&str])]`. The MCP server walks the aggregated slice at
+startup.
+
+### Operator allowlist
+
+```rust
+use tokitai_mcp_server::{McpServerBuilder, serve_with_manifest};
+
+let allowlist = serve_with_manifest(&["db:read:*", "net:egress:smtp"]);
+
+let server = McpServerBuilder::with_tool(EmailTools::default())
+    .with_capability_allowlist(allowlist)
+    .with_port(8080)
+    .build();
+
+server.run().await?; // Ok — allowlist covers every declared cap
+```
+
+The `serve_with_manifest(&[&str])` helper is the documented entry
+point for operators who do not want to construct the
+`Vec<String>` by hand at every call site. The `with_capability_allowlist(Vec<String>)`
+builder method is the equivalent for code that already has a
+`Vec<String>` in scope.
+
+### Fail-closed contract
+
+When the operator sets an allowlist (even an empty one), the
+fail-closed contract applies: any tool that declares a capability
+not covered by the allowlist causes the server to refuse to bind.
+The typed error is `ServerError::CapabilityNotInAllowlist { tool,
+missing }`, returned from `McpServerWithProvider::run_with_address`
+before the listener binds. Operators who do NOT set an allowlist
+keep the historical behaviour (no allowlist check fires; existing
+deployments continue to work).
+
+The fail-closed rule is the whole point of T-023: an operator
+who runs `McpServerBuilder::with_tool(provider).with_capability_allowlist(vec![])`
+sees a `ServerError::CapabilityNotInAllowlist` for any tool that
+declares *any* capability, forcing them to think about the blast
+radius before exposing the server to an LLM.
+
+### Wildcard matching
+
+Allowlist entries may use a trailing `*` for prefix matching:
+
+| Allowlist entry | Matches | Does not match |
+|-----------------|---------|----------------|
+| `db:read:*`     | `db:read:sales`, `db:read:any_resource` | `db:write:sales`, `net:egress:smtp` |
+| `*`             | any capability | (n/a) |
+| `db:read:sales` | `db:read:sales` (exact) | `db:read:sales_archive` |
+
+Wildcards are recommended in the **operator** allowlist, not in
+the **tool** declaration. The recommended practice is to declare
+exact capabilities in code (so the blast radius is visible to
+reviewers) and to write wildcard allowlist entries in deployment
+config (so the operator can match a category with one line).
+
+### Default categories
+
+The recommended category set, mirrored in the T-023 warn-time
+diagnostic:
+
+| Prefix                       | Meaning                                  | Example                          |
+|------------------------------|------------------------------------------|----------------------------------|
+| `db:read:<resource>`         | Read access to a named resource          | `db:read:sales`, `db:read:users` |
+| `db:write:<resource>`        | Insert / update access                   | `db:write:audit_log`             |
+| `db:delete:<resource>`       | Destructive access                       | `db:delete:users`                |
+| `net:egress:<proto>`         | Outbound network on a given protocol     | `net:egress:smtp`, `net:egress:http` |
+| `fs:read:<path>`             | Read a file path                         | `fs:read:/var/log/app.log`       |
+| `fs:write:<path>`            | Write / create a file path               | `fs:write:/tmp/email_draft.txt`  |
+| `fs:delete:<path>`           | Delete a file path                       | `fs:delete:/tmp/cache.json`      |
+| `process:exec`               | Spawn a subprocess                       | `process:exec`                   |
+| `mail:send`                  | Send an email (alias for net:egress:smtp)| `mail:send`                      |
+| `auth:assume:<role>`         | Assume an IAM / OAuth role               | `auth:assume:read_only`          |
+
+The list is **suggested**, not enforced: the macro accepts any
+string in `requires = [...]`, and the allowlist accepts any string
+too. Operators are free to extend the namespace (e.g.
+`slack:post:<channel>`) as long as both the tool declaration and
+the allowlist agree on the token.
+
+### Warn-but-pass for missing `requires`
+
+A method that does NOT declare `requires = [...]` triggers a
+`W023` warning at compile time (e.g. `[tokitai] [W023] method
+\`foo\` has no \`requires = [...]\` manifest; ...`). The warning
+is **warn-only** in this release; the follow-up release flips it
+to a hard error. The warning can be silenced per-method with
+`#[tool(allow = ["missing_capabilities"])]`.
+
+The default-build (no `TOKITAI_QUIET=1`) is intentionally noisy:
+the warning is the only mechanism that surfaces the missing
+manifest to the user, and silently opting everyone in would
+defeat the T-023 design.
+
+### No new dependencies
+
+The capability manifest type is `pub type CapabilityManifest = Vec<(String, Vec<String>)>` in
+`tokitai-core`. The allowlist is `Vec<String>`. The matcher
+(`capability_in_allowlist`) lives in `tokitai-core` and uses only
+`std`. No new crates are pulled in. The `#[tool]` macro
+auto-implements `CapabilityManifestProvider` for every `impl` block
+it processes; the trait's default implementation returns an empty
+slice, so unit structs and empty impl blocks keep their current
+behaviour.
+
+### Test surface
+
+- `tokitai-macros/tests/capabilities_macro_test.rs` (3 tests):
+  per-method consts reachable, aggregated manifest correct,
+  trait method matches the aggregated const.
+- `tokitai-macros/tests/ui/capabilities_requires_basic.rs` +
+  `tests/ui/capabilities_requires_non_string.rs` (trybuild):
+  positive shape compiles, non-string entry is a compile error.
+- `tokitai-mcp-server/tests/capability_manifest_test.rs` (7
+  tests): positive, negative, wildcard, warn-but-pass, builder
+  ergonomics, typed error shape, and multi-provider aggregation.
+- `tokitai-core` unit tests in
+  `mod capability_manifest_tests`: exact match, wildcard prefix,
+  empty allowlist (fail-closed), bare `*`.

@@ -249,3 +249,92 @@ pub fn generate_tool_count_const(tools: &[ToolMethodInfo]) -> TokenStream2 {
         const __TOOL_COUNT: usize = #tool_count;
     }
 }
+
+// =====================================================================
+// T-023: per-method + per-impl capability manifests.
+//
+// Every `#[tool]` method that declares `requires = ["db:read:sales",
+// "net:egress:smtp"]` produces one
+// `pub const CAPABILITIES_<METHOD_NAME_UPPER>: &[&str]` constant. The
+// impl block aggregates them into a single
+// `pub const CAPABILITIES: &[(&str, &[&str])]` table the
+// `tokitai-mcp-server` builder walks at startup to enforce the
+// operator-supplied allowlist.
+//
+// The constants are `&'static` so the server side never has to
+// re-allocate. The "no declared requires" case is represented by an
+// empty slice (rather than a `None`) so the aggregated table is dense
+// and the server can walk it in one pass without unwrapping an
+// `Option`. The warn-but-pass semantics for the
+// `missing_capabilities` case is emitted at the impl-block level (see
+// `generate_capabilities_consts`) — the constants themselves do not
+// carry the warning.
+//
+// Tools that opted out of the manifest path entirely (e.g. alias
+// entries) are intentionally omitted from the per-method const set
+// but included in the aggregated slice by name so the server can
+// still find the right slice to consult via the primary tool name.
+// =====================================================================
+
+/// Build the `(name, requires)` slice entries for the aggregated
+/// `CAPABILITIES` table. Used by [`generate_capabilities_consts`] to
+/// reference the per-method constants by name.
+fn capability_aggregate_entries(tools: &[ToolMethodInfo]) -> Vec<TokenStream2> {
+    let mut entries: Vec<TokenStream2> = Vec::with_capacity(tools.len());
+    for tool in tools {
+        if tool.is_generic {
+            continue;
+        }
+        let method_name = &tool.name;
+        let const_ident = format_ident!("CAPABILITIES_{}", tool.name.to_uppercase());
+        entries.push(quote! {
+            (#method_name, Self::#const_ident)
+        });
+    }
+    entries
+}
+
+/// Emit the per-method `CAPABILITIES_<NAME>` constants plus the
+/// aggregated `CAPABILITIES` slice. Each per-method constant carries
+/// the method's declared `requires = [...]` entries verbatim. Methods
+/// with no `requires` get an empty `&[]` slice; the
+/// `missing_capabilities` warning is emitted at the impl-block level
+/// (alongside the other per-method warnings in `generate_for_impl`),
+/// not at the constant site, so the diagnostic anchors at the
+/// method's name token in the user's source.
+///
+/// Returns a `Vec<TokenStream2>` (one entry per emitted item) so
+/// the caller can `syn::parse2::<ImplItem>(item)` each one and
+/// append it to the impl block. The aggregated `CAPABILITIES`
+/// const is the last entry in the returned vec; the per-method
+/// consts come first. An empty `tools` slice still produces a
+/// single `CAPABILITIES` const (pointing at an empty `&[]`) so
+/// the trait auto-impl's `Self::CAPABILITIES` always resolves.
+pub fn generate_capabilities_consts(tools: &[ToolMethodInfo]) -> Vec<TokenStream2> {
+    let mut out: Vec<TokenStream2> = Vec::with_capacity(tools.len() + 1);
+    for tool in tools {
+        if tool.is_generic {
+            continue;
+        }
+        let const_ident = format_ident!("CAPABILITIES_{}", tool.name.to_uppercase());
+        let entries = &tool.requires;
+        out.push(quote! {
+            #[allow(dead_code)]
+            pub const #const_ident: &[&'static str] = &[#(#entries),*];
+        });
+    }
+    let entries = capability_aggregate_entries(tools);
+    out.push(quote! {
+        /// T-023: aggregated capability manifest for the impl block.
+        /// The MCP server walks this slice at startup to enforce
+        /// the operator's allowlist. Each entry is
+        /// `(method_name, requires_slice)`. The slice is
+        /// `&'static` so no per-call allocation happens on the
+        /// hot path.
+        #[allow(dead_code)]
+        pub const CAPABILITIES: &[(&'static str, &'static [&'static str])] = &[
+            #(#entries),*
+        ];
+    });
+    out
+}

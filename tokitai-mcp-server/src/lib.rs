@@ -134,5 +134,27 @@ pub use server::{
 };
 pub use stdio::StdioServer;
 
+/// T-023: convenience helper that takes a `&[&str]` allowlist
+/// (the canonical literal form operators write in deployment
+/// configs) and returns a `Vec<String>` the builder can
+/// consume. The conversion is a no-op clone: each `&str` is
+/// converted to a `String`. The function is the documented
+/// entry point for operators who do not want to construct the
+/// `Vec<String>` by hand at every call site.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use tokitai_mcp_server::{serve_with_manifest, McpServerBuilder};
+///
+/// let allowlist = serve_with_manifest(&["db:read:*", "net:egress:smtp"]);
+/// let server = McpServerBuilder::with_tool(MyTools::default())
+///     .with_capability_allowlist(allowlist)
+///     .build();
+/// ```
+pub fn serve_with_manifest(allowlist: &[&str]) -> Vec<String> {
+    allowlist.iter().map(|s| s.to_string()).collect()
+}
+
 /// Library version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

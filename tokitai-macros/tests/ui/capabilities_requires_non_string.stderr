@@ -1,0 +1,8 @@
+error: error[E0099]: tokitai `requires = [...]` must be an array of string literals (e.g. `requires = ["db:read:sales", "net:egress:smtp"]`). Non-string entries are rejected at compile time.
+              = help: see the docs page for this error code
+              = help: see https://docs.rs/tokitai/latest/tokitai/errors.html#E0099
+
+  --> tests/ui/capabilities_requires_non_string.rs:24:12
+   |
+24 |     pub fn read_sales(&self, region: String) -> String {
+   |            ^^^^^^^^^^
