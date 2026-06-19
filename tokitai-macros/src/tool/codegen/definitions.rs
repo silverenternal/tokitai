@@ -311,7 +311,14 @@ fn capability_aggregate_entries(tools: &[ToolMethodInfo]) -> Vec<TokenStream2> {
 /// single `CAPABILITIES` const (pointing at an empty `&[]`) so
 /// the trait auto-impl's `Self::CAPABILITIES` always resolves.
 pub fn generate_capabilities_consts(tools: &[ToolMethodInfo]) -> Vec<TokenStream2> {
-    let mut out: Vec<TokenStream2> = Vec::with_capacity(tools.len() + 1);
+    // T-026: zero-capacity Vec when no tools exist — no allocation
+    // for the empty case. The `CAPABILITIES` const still resolves
+    // as `&[]` (a static reference, not an allocated empty Vec).
+    let mut out: Vec<TokenStream2> = if tools.is_empty() {
+        Vec::new()
+    } else {
+        Vec::with_capacity(tools.len() + 1)
+    };
     for tool in tools {
         if tool.is_generic {
             continue;

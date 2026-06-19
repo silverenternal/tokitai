@@ -2,7 +2,7 @@ error: error[E0099]: tokitai `requires = [...]` must be an array of string liter
               = help: see the docs page for this error code
               = help: see https://docs.rs/tokitai_macros/latest/tokitai_macros/enum.ErrorCode.html#variant.E0099
 
-  --> tests/ui/capabilities_requires_non_string.rs:24:12
+  --> tests/ui/capabilities_requires_non_string.rs:22:38
    |
-24 |     pub fn read_sales(&self, region: String) -> String {
-   |            ^^^^^^^^^^
+22 |         requires = ["db:read:sales", 42]
+   |                                      ^^

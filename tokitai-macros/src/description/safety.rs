@@ -223,7 +223,7 @@ pub const fn desc_safety_score(literal: &str, user_blocklist: &[&str]) -> u8 {
 /// owned by the macro caller because splitting requires
 /// allocation, which is fine at expansion time but cannot run
 /// inside a `const fn`.
-pub fn parse_blocklist_env() -> &'static str {
+pub(crate) fn parse_blocklist_env() -> &'static str {
     // `option_env!` is the compile-time read of an env var
     // forwarded by `build.rs` via `cargo:rustc-env=...`. When the
     // consumer crate did not set the var the macro sees `None`

@@ -106,6 +106,14 @@ pub struct ToolMethodInfo {
     /// T-023: `true` when the parser saw a non-string-literal
     /// entry in `requires = [...]`. The post-parse validation
     /// in `generate_for_impl` emits a `compile_error!` at
-    /// the offending method's span.
+    /// the offending entry's span (stored in
+    /// `requires_invalid_span`).
     pub requires_invalid: bool,
+    /// T-023: span of the offending non-string entry in
+    /// `requires = [...]`, if any. When `Some(span)`, the
+    /// `compile_error!` in `generate_for_impl` anchors at
+    /// this span (the individual entry) rather than the
+    /// method's ident span, so the diagnostic points at
+    /// the bad token in the user's source.
+    pub requires_invalid_span: Option<Span>,
 }

@@ -201,11 +201,13 @@ fn empty_allowlist_refuses_to_start() {
     let err = ServerError::CapabilityNotInAllowlist {
         tool: tool.clone(),
         missing: missing.clone(),
+        allowlist: vec!["db:read:sales".to_string()],
     };
     match &err {
         ServerError::CapabilityNotInAllowlist {
             tool: t,
             missing: m,
+            allowlist: _,
         } => {
             assert_eq!(t, "read_sales");
             assert!(m.contains(&"db:read:sales".to_string()));
@@ -356,11 +358,13 @@ fn negative_destructive_tool_not_in_allowlist_refuses_to_start() {
     let err = ServerError::CapabilityNotInAllowlist {
         tool: "delete_user".to_string(),
         missing: missing.clone(),
+        allowlist: vec!["db:read:*".to_string()],
     };
     match &err {
         ServerError::CapabilityNotInAllowlist {
             tool: t,
             missing: m,
+            allowlist: _,
         } => {
             assert_eq!(t, "delete_user");
             assert_eq!(m, &vec!["db:delete:users".to_string()]);

@@ -786,13 +786,15 @@ fn generate_for_impl(mut impl_item: ItemImpl, attrs: ToolAttributes) -> TokenStr
     // `extract_tool_info` silently swallows parse errors
     // (same swallow-and-default pattern as the T-019
     // `result_truncate_bytes = 0` rejection above). The
-    // diagnostic anchors at the offending method's name span
-    // so the user can find the bad entry in their source.
+    // diagnostic anchors at the offending entry's span
+    // (not the method's ident) so editors jump to the bad
+    // token in `requires = [..., BAD, ...]`.
     for tool in &tool_methods {
         if tool.requires_invalid {
+            let span = tool.requires_invalid_span.unwrap_or(tool.ident_span);
             let err = crate::error::MacroError::new(
                 crate::error::ErrorCode::E0099, // generic catch-all
-                tool.ident_span,
+                span,
                 "tokitai `requires = [...]` must be an array of string literals \
                  (e.g. `requires = [\"db:read:sales\", \"net:egress:smtp\"]`). \
                  Non-string entries are rejected at compile time.",
@@ -1003,7 +1005,9 @@ fn generate_for_impl(mut impl_item: ItemImpl, attrs: ToolAttributes) -> TokenStr
                  `db:read|write|delete:<resource>`, `net:egress:<proto>`, \
                  `fs:read|write|delete:<path>`, `process:exec`, `mail:send`, \
                  `auth:assume:<role>`) or pass `allow = [\"missing_capabilities\"]` \
-                 to opt out of this warning",
+                 to opt out of this warning. Other per-method `allow = [...]` \
+                 opt-outs follow the same pattern: `allow_short_desc` (T-018) \
+                 and `allow_insecure_desc` (T-022).",
                 tool.name
             );
         }

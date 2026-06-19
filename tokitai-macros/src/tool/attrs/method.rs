@@ -205,7 +205,7 @@ pub struct MethodToolAttrs {
     /// call site in `extract_tool_info` silently swallows
     /// parse errors (the same swallow-and-default pattern
     /// T-019 works around for `result_truncate_bytes = 0`).
-    pub requires_invalid: bool,
+    pub requires_invalid_span: Option<proc_macro2::Span>,
     pub visible: bool,
     pub tags: Vec<String>,
     pub group: Option<String>,
@@ -294,7 +294,7 @@ impl Parse for MethodToolAttrs {
                         since: None,
                         until: None,
                         requires: Vec::new(),
-                        requires_invalid: false,
+                        requires_invalid_span: None,
                         visible: true,
                         tags: Vec::new(),
                         group: None,
@@ -332,7 +332,7 @@ impl Parse for MethodToolAttrs {
         let mut since: Option<String> = None;
         let mut until: Option<String> = None;
         let mut requires: Vec<String> = Vec::new();
-        let mut requires_invalid: bool = false;
+        let mut requires_invalid_span: Option<proc_macro2::Span> = None;
         let mut visible = true;
         let mut tags = Vec::new();
         let mut group = None;
@@ -456,11 +456,14 @@ impl Parse for MethodToolAttrs {
                             let cap: LitStr = content.parse()?;
                             requires.push(cap.value());
                         } else {
-                            // Skip the bad token; record
-                            // that the entry was
-                            // non-string.
-                            let _ = content.parse::<proc_macro2::TokenTree>();
-                            requires_invalid = true;
+                            // Skip the bad token; record the span
+                            // so `generate_for_impl` can anchor its
+                            // `compile_error!` at the individual
+                            // entry rather than the method ident.
+                            let bad: proc_macro2::TokenTree = content.parse()?;
+                            if requires_invalid_span.is_none() {
+                                requires_invalid_span = Some(bad.span());
+                            }
                         }
                         if content.peek(token::Comma) {
                             content.parse::<token::Comma>()?;
@@ -928,7 +931,7 @@ impl Parse for MethodToolAttrs {
             since,
             until,
             requires,
-            requires_invalid,
+            requires_invalid_span,
             visible,
             tags,
             group,

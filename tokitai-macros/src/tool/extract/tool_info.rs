@@ -239,6 +239,7 @@ pub fn extract_tool_info(fn_item: &ImplItemFn) -> Option<ToolMethodInfo> {
             until: None,
             requires: Vec::new(),
             requires_invalid: false,
+            requires_invalid_span: None,
         });
     }
 
@@ -255,6 +256,7 @@ pub fn extract_tool_info(fn_item: &ImplItemFn) -> Option<ToolMethodInfo> {
     let mut until: Option<String> = None;
     let mut requires: Vec<String> = Vec::new();
     let mut requires_invalid: bool = false;
+    let mut requires_invalid_span: Option<proc_macro2::Span> = None;
     let mut is_visible = true;
     let mut tool_tags = Vec::new();
     let mut group = None;
@@ -295,7 +297,8 @@ pub fn extract_tool_info(fn_item: &ImplItemFn) -> Option<ToolMethodInfo> {
                 since = args.since;
                 until = args.until;
                 requires = args.requires;
-                requires_invalid = args.requires_invalid;
+                requires_invalid = args.requires_invalid_span.is_some();
+                requires_invalid_span = args.requires_invalid_span;
                 is_visible = args.visible;
                 tool_tags = args.tags;
                 group = args.group;
@@ -400,5 +403,6 @@ pub fn extract_tool_info(fn_item: &ImplItemFn) -> Option<ToolMethodInfo> {
         until,
         requires,
         requires_invalid,
+        requires_invalid_span,
     })
 }

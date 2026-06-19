@@ -104,6 +104,9 @@ pub enum ServerError {
         /// Capabilities declared by the tool that the
         /// allowlist does not cover.
         missing: Vec<String>,
+        /// The operator-configured allowlist that the
+        /// tool's capabilities were checked against.
+        allowlist: Vec<String>,
     },
 }
 
@@ -114,10 +117,15 @@ impl fmt::Display for ServerError {
             ServerError::ToolExecutionError(msg) => write!(f, "Tool execution error: {}", msg),
             ServerError::InvalidArguments(msg) => write!(f, "Invalid arguments: {}", msg),
             ServerError::ServerStartupError(msg) => write!(f, "Server startup error: {}", msg),
-            ServerError::CapabilityNotInAllowlist { tool, missing } => write!(
+            ServerError::CapabilityNotInAllowlist {
+                tool,
+                missing,
+                allowlist,
+            } => write!(
                 f,
-                "T-023 capability check failed: tool `{}` declares capabilities {:?} that are not in the allowlist",
-                tool, missing
+                "T-023 capability check failed: tool `{}` declares capabilities {:?} that \
+                 are not in the allowlist {:?}",
+                tool, missing, allowlist
             ),
         }
     }
@@ -458,6 +466,7 @@ where
 /// slice (the sub-provider manifests are stored in
 /// `MultiToolProvider::manifests`), so the `T`-shim path
 /// short-circuits past the multi case.
+#[allow(dead_code)]
 pub(crate) fn multi_provider_tool_caps<T>(
     provider: &T,
 ) -> Vec<(&'static str, &'static [&'static str])>
@@ -583,31 +592,7 @@ where
                     return Err(ServerError::CapabilityNotInAllowlist {
                         tool: (*tool_name).to_string(),
                         missing,
-                    });
-                }
-            }
-            // T-023: also walk the per-sub-provider manifest
-            // slices captured by `MultiToolProvider::add`.
-            // Type-based dispatch keeps the generic `T` bound
-            // minimal (no need to require a `CapabilityManifest
-            // Provider`-shaped supertrait on `ToolCallerDyn`).
-            let multi_manifest = multi_provider_tool_caps(&*self.tool_provider);
-            for (tool_name, requires) in &multi_manifest {
-                let mut missing: Vec<String> = Vec::new();
-                for cap in *requires {
-                    if !tokitai_core::capability_in_allowlist(cap, allowlist) {
-                        missing.push((*cap).to_string());
-                    }
-                }
-                if !missing.is_empty() {
-                    warn!(
-                        "T-023 capability check refused to start: tool `{}` requires \
-                         capabilities {:?} that are not in the allowlist {:?}",
-                        tool_name, missing, allowlist
-                    );
-                    return Err(ServerError::CapabilityNotInAllowlist {
-                        tool: (*tool_name).to_string(),
-                        missing,
+                        allowlist: allowlist.iter().map(|s| s.to_string()).collect(),
                     });
                 }
             }
