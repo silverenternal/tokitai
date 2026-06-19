@@ -177,6 +177,16 @@ pub(crate) fn parse_semver_tuple(s: &str) -> Option<(u64, u64, u64, usize)> {
     let mut parts = core.split('.');
     let mut arity: usize = 0;
     let mut out: [u64; 3] = [0, 0, 0];
+    // C-1: refuse a 4th component before iterating. This mirrors
+    // the const guard added to `parse_semver_const` in
+    // `tokitai-core`. The inner `arity >= 3` check below is
+    // sufficient on its own today, but checking up-front keeps
+    // this function safe even if a future refactor reorders the
+    // inner loop body.
+    let pre_count = core.split('.').count();
+    if pre_count > 3 {
+        return None;
+    }
     for piece in &mut parts {
         if piece.is_empty() {
             return None;
@@ -474,5 +484,20 @@ mod tests {
         assert_eq!(parse_semver_tuple("0.5."), None);
         assert_eq!(parse_semver_tuple("01.0.0"), None);
         assert_eq!(parse_semver_tuple("0"), Some((0, 0, 0, 1)));
+    }
+
+    #[test]
+    fn parse_semver_tuple_rejects_extra_component() {
+        // C-1: a fourth component used to slip past the
+        // `arity >= 3` guard in the inline parse path and
+        // panic. The const parser in `tokitai-core` panicked
+        // in const context; this runtime parser silently
+        // returned Some((0, 0, 0, 3)) on `0.0.0.0` while
+        // letting the fourth component go unobserved. Both
+        // parsers must reject anything with more than three
+        // components.
+        assert_eq!(parse_semver_tuple("0.0.0.0"), None);
+        assert_eq!(parse_semver_tuple("1.2.3.4"), None);
+        assert_eq!(parse_semver_tuple("0.5.1.2.3"), None);
     }
 }

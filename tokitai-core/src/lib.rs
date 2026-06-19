@@ -3134,6 +3134,16 @@ const fn parse_semver_const(s: &str) -> Option<(u64, u64, u64, usize)> {
                     }
                 }
             }
+            // Refuse to accumulate a fourth component. We must
+            // check this BEFORE writing `parts[arity]`, otherwise
+            // an input like "0.0.0.0" would silently index past
+            // the end of the `parts` array and panic in const
+            // context. The `.`-terminated case is caught by the
+            // `arity >= 3` guard above; the digit case (no dot
+            // before the 4th component) needs its own guard.
+            if arity >= 3 {
+                return None;
+            }
             // Accumulate into the current component. We are
             // guaranteed `arity < 3` because we early-return above
             // when arity would reach 3, and we increment AFTER the
@@ -3175,6 +3185,22 @@ mod tests {
         let tool = ToolDefinition::new("test", "A test tool", "{}");
         assert_eq!(tool.name, "test");
         assert_eq!(tool.description, "A test tool");
+    }
+
+    /// C-1: `parse_semver_const` must reject anything with more
+    /// than three numeric components. The pre-fix code only
+    /// guarded the `.`-terminated branch (`if arity >= 3`),
+    /// leaving a hole: an input like `"0.0.0.0"` reaches the
+    /// fourth digit, falls into the digit-accumulation branch,
+    /// and writes `parts[arity]` with `arity == 3`, panicking
+    /// in const context.
+    #[test]
+    fn parse_semver_const_rejects_extra_component() {
+        assert_eq!(parse_semver_const("0.0.0.0"), None);
+        assert_eq!(parse_semver_const("1.2.3.4"), None);
+        assert_eq!(parse_semver_const("0.5.1.2.3"), None);
+        // Sanity: 3-component inputs still parse.
+        assert_eq!(parse_semver_const("0.5.1"), Some((0, 5, 1, 3)));
     }
 
     #[cfg(feature = "serde")]
