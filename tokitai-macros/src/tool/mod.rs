@@ -22,6 +22,7 @@ pub(crate) mod codegen;
 pub(crate) mod config;
 pub(crate) mod example;
 pub(crate) mod extract;
+pub(crate) mod llm;
 pub(crate) mod resilience;
 pub(crate) mod schema;
 pub(crate) mod types;
@@ -1013,6 +1014,20 @@ fn generate_for_impl(mut impl_item: ItemImpl, attrs: ToolAttributes) -> TokenStr
         }
     }
 
+    // T-034 (macro side): surface every finding from the
+    // optional LLM verification cache as a `cargo:warning=`
+    // line so the operator sees them in the same build log as
+    // every other tokitai diagnostic. The helper short-circuits
+    // to zero cost when `TOKITAI_LLM_VERIFY_REPORT` is unset
+    // (the default), so the default `cargo build` pays nothing.
+    // We place this AFTER the existing W001..W003 loop so the
+    // implementation-order the operator reads is preserved
+    // (legacy warnings first, then LLM-side findings).
+    if llm::any_hook_enabled() {
+        let impl_name = quote::ToTokens::to_token_stream(&impl_item.self_ty).to_string();
+        llm::emit_verify_warnings(&impl_name);
+    }
+
     let impl_type = &impl_item.self_ty;
     let tool_def_consts = definitions::generate_tool_def_consts(&tool_methods, dialect);
     let all_tool_defs = definitions::generate_all_tool_defs_array(&tool_methods, impl_type);
@@ -1053,6 +1068,19 @@ fn generate_for_impl(mut impl_item: ItemImpl, attrs: ToolAttributes) -> TokenStr
     // 【P3 优化】添加编译期工具计数常量
     if let Ok(item) = syn::parse2::<ImplItem>(tool_count_const) {
         new_items.push(item);
+    }
+
+    // T-034 (macro side): when the consumer opts in via
+    // `#[tool(llm_cache_key = true)]`, emit a hidden const
+    // carrying the stable schema cache key. Default is no
+    // const (zero `.rodata` cost). The opt-in is plumbed
+    // through `_attrs` above; v0 of the integration always
+    // returns None so consumers do not see a new attribute
+    // they have to learn.
+    if let Some(cache_key_const) = llm::emit_cache_key_const(&tool_methods, false) {
+        if let Ok(item) = syn::parse2::<ImplItem>(cache_key_const) {
+            new_items.push(item);
+        }
     }
 
     // T-023: per-method + per-impl capability constants. The

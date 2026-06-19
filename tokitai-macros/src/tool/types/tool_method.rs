@@ -9,6 +9,7 @@ use crate::tool::example::BakedExample;
 
 /// 工具方法信息
 #[allow(dead_code)]
+#[derive(Clone)]
 pub struct ToolMethodInfo {
     /// Span of the method's identifier in the user's source.
     /// T-001: every `compile_error!` emitted by `#[tool]` is

@@ -1,8 +1,8 @@
 {
   "$schema_version": "4.0",
   "created": "2026-06-18",
-  "updated": "2026-06-19",
-  "previous_version": "3.0 (M-0.9.0 all shipped: T-022/T-023/T-024 via ultracode workflow; M-0.9.1 hotfix: 9 commits remediating 8 code-review findings via manual fix-forward)",
+  "updated": "2026-06-20",
+  "previous_version": "4.0 (M-0.9.0..M-0.10.0 all shipped: T-025/T-026/T-027/T-028 via ultracode workflow; M-0.12.0 T-034 via worktree-parallel agents)",
   "scope": "Tokitai v0.10.x: code-review deferred findings batch (post M-0.9.1 hotfix ship at HEAD 31d34ea)",
   "philosophy_anchor": "Preserve the in-process compile-time dispatch advantage. Every new task must justify itself by exploiting the compile-time seam that runtime-only competitors cannot reach. Hard constraint: no dependency on `rmcp` or any other MCP SDK; spec is pinned via fixture + manual re-sync, not a moving dep.",
   "differentiating_strategy": {
@@ -17,7 +17,8 @@
       {"id": "DS-7", "title": "Per-tool result-size budget at the wrapper", "task": "T-019", "commit": "a3b5979"},
       {"id": "PP-H1", "title": "Adversarial description lint", "task": "T-022", "commit": "e064a1b + bd9db10 + f03927c"},
       {"id": "PP-H2", "title": "Per-tool capability manifest", "task": "T-023", "commit": "3994050 + afc5b73"},
-      {"id": "PP-H3", "title": "Cross-crate version assertion", "task": "T-024", "commit": "16497a3 + 936f688 + aac501a + 416962a + 0160895"}
+      {"id": "PP-H3", "title": "Cross-crate version assertion", "task": "T-024", "commit": "16497a3 + 936f688 + aac501a + 416962a + 0160895"},
+      {"id": "M-12-1", "title": "Compile-time LLM integration infra", "task": "T-034", "commit": "WIP"}
     ],
     "pillars_we_reject": [
       "Becoming a second MCP SDK. We do not chase spec-conformance market share; rmcp does that. Hard rule reaffirmed: no rmcp or any other MCP SDK as a dependency.",
@@ -97,6 +98,21 @@
         {"id": "H-5/M-11", "title": "W023 missing_capabilities coverage + correct doc claim", "commit": "afc5b73"},
         {"id": "M-7", "title": "Correct desc_blocklist syntax in docs to match parser", "commit": "77c620c"},
         {"id": "Changelog", "title": "[Unreleased] entry for M-0.9.0 and M-0.9.1 hotfix", "commit": "31d34ea"}
+      ]
+    },
+    "M-0.10.0": {
+      "label": "Consolidation: code-review deferred findings batch (T-025..T-028)",
+      "tasks": [
+        {"id": "T-025", "title": "Adversarial description lint follow-ups", "commit": "shipped"},
+        {"id": "T-026", "title": "Capability manifest ergonomics", "commit": "5ffd6a4"},
+        {"id": "T-027", "title": "TypedDispatcher and serve() hardening", "commit": "2907c16"},
+        {"id": "T-028", "title": "Code quality / API surface cleaning pass", "commit": "ebef200"}
+      ]
+    },
+    "M-0.12.0": {
+      "label": "Compile-time LLM integration (T-034 infra + macro hooks)",
+      "tasks": [
+        {"id": "T-034", "title": "tokitai-llm binary crate + macro integration hooks", "commit": "WIP"}
       ]
     },
     "verification": {

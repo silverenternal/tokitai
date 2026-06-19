@@ -1,0 +1,77 @@
+[package]
+name = "tokitai-llm"
+version = "0.1.0"
+edition = "2021"
+authors = ["silverenternal <3147264070@qq.com>"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/silverenternal/tokitai"
+homepage = "https://github.com/silverenternal/tokitai"
+description = "Tokitai LLM CLI - OpenAI/Anthropic/Ollama tool-calling harness with response cache"
+keywords = ["llm", "ai", "tool-calling", "cli", "openai", "anthropic", "ollama"]
+categories = ["command-line-utilities", "development-tools"]
+rust-version = "1.80"
+# T-034: a thin CLI that loads a `#[tool]`-annotated provider, builds
+# the OpenAI/Anthropic/Ollama tool envelope, runs a chat completion,
+# dispatches every returned tool call through `ToolProvider::call_tool`,
+# and feeds the result back to the model. Designed as the
+# developer-loop counterpart of `tokitai-mcp-server` (which serves the
+# same tools over MCP). All LLM I/O goes through a single
+# `provider::Provider` trait so swapping OpenAI for Anthropic for
+# Ollama is a one-line change in the CLI args.
+build = "build.rs"
+
+[[bin]]
+name = "tokitai-llm"
+path = "src/main.rs"
+
+[dependencies]
+# Core types - what the `#[tool]` macro emits.
+tokitai-core = { path = "../tokitai-core", version = "0.5.1", features = ["serde"] }
+# The user-facing re-export surface (re-exports the `#[tool]` macro,
+# `ToolProvider`, `AiToolError`).
+tokitai = { path = "../tokitai", version = "0.5.1", features = ["mcp", "http-server"] }
+
+# Async runtime + HTTP client
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "time"] }
+async-trait = "0.1"
+reqwest = { version = "0.11", features = ["json", "stream", "rustls-tls"], default-features = false }
+futures = "0.3"
+
+# Serialisation
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# CLI parsing
+clap = { version = "4", features = ["derive", "env"] }
+
+# Logging / tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Caching
+blake3 = "1.5"
+rusqlite = { version = "0.31", features = ["bundled"], optional = true }
+
+# Errors
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Optional JSON-Schema validator for the verify subcommand.
+# Mirrors the `mcp-typed` feature in tokitai-mcp-server (T-021):
+# the verifier is fail-closed when this feature is on.
+jsonschema = { version = "0.17", optional = true }
+
+[features]
+default = []
+# Persist the response cache to a SQLite database instead of in-memory.
+# Without this feature, the cache is a plain `HashMap` in the
+# process and is lost on exit.
+sqlite-cache = ["dep:rusqlite"]
+# Enable the JSON-Schema verifier (used by `tokitai-llm verify`).
+schema-verify = ["dep:jsonschema"]
+# Pull in the heavy `tokitai` features (axum, tower) for parity with
+# tokitai-mcp-server. Off by default so the binary stays slim.
+http-server = []
+
+[dev-dependencies]
+tempfile = "3.10"

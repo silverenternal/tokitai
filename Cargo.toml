@@ -4,6 +4,7 @@ members = [
     "tokitai-macros",
     "tokitai",
     "tokitai-mcp-server",
+    "tokitai-llm",
     "examples",
     "examples/database_tool",
 ]
