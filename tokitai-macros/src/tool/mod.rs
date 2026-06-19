@@ -25,6 +25,7 @@ pub(crate) mod extract;
 pub(crate) mod resilience;
 pub(crate) mod schema;
 pub(crate) mod types;
+pub(crate) mod version_evolution;
 // The three wrap modules below are intentionally not yet compiled as
 // part of `lib.rs`. They are referenced by the docs (and by tracking
 // issues for each attribute) but their bodies still require follow-up
@@ -681,6 +682,29 @@ fn generate_for_impl(mut impl_item: ItemImpl, attrs: ToolAttributes) -> TokenStr
         }
     }
 
+    // T-020: schema-evolution interval check. When the impl
+    // opted into `version_policy = "semver"`, every
+    // `since = "..."` / `until = "..."` literal must parse as
+    // SemVer, and the intervals must tile the version line
+    // without overlap. The check emits `compile_error!`
+    // diagnostics anchored at the offending method's span so
+    // the user sees exactly which tool trip the rule. Non-semver
+    // policies skip the strict parse and overlap checks so CalVer
+    // and commit-SHA intervals keep working.
+    let version_policy_str = attrs.version_policy.as_deref();
+    let interval_errors =
+        version_evolution::check_impl_intervals(&tool_methods, version_policy_str);
+    if !interval_errors.is_empty() {
+        let mut err_tokens = TokenStream2::new();
+        for err in &interval_errors {
+            err_tokens.extend(err.to_compile_error());
+        }
+        return quote! {
+            #impl_item
+            #err_tokens
+        };
+    }
+
     if tool_methods.is_empty() && replaced_by_redirects.is_empty() {
         return quote! { #impl_item };
     }
@@ -851,8 +875,19 @@ fn generate_for_impl(mut impl_item: ItemImpl, attrs: ToolAttributes) -> TokenStr
         ///
         /// # 注意
         /// 此函数使用 `LazyLock` 进行延迟初始化。在初始化过程中会访问
-        /// `GLOBAL_CONFIG_REGISTRY`，如果配置注册表也在 LazyLock 中初始化，
+        /// `GLOBAL_CONFIG_REGISTRY`，如果配置注册表也在 LazyLock 中初始化,
         /// 可能存在死锁风险。当前实现已确保初始化顺序安全。
+        ///
+        /// T-020: when an impl block carries
+        /// `#[tool(since = "...")]` / `#[tool(until = "...")]`
+        /// attributes, the dispatcher filters the static slice
+        /// against the value last set via
+        /// `tokitai_core::set_current_version(...)`. The filter
+        /// runs at every `tool_definitions()` call so a process
+        /// that bumps its version at runtime sees the active
+        /// schema set change without a rebuild. Tools without
+        /// `since` / `until` attributes are always served; the
+        /// default behaviour is backwards compatible.
         fn __get_tool_definitions() -> &'static [::tokitai_core::ToolDefinition] {
             static TOOLS: ::std::sync::LazyLock<::std::vec::Vec<::tokitai_core::ToolDefinition>> = ::std::sync::LazyLock::new(|| {
                 let mut defs = ::std::vec::Vec::from([#(#all_tool_defs_tokens.clone()),*]);
@@ -867,7 +902,57 @@ fn generate_for_impl(mut impl_item: ItemImpl, attrs: ToolAttributes) -> TokenStr
                 defs
             });
 
-            &TOOLS
+            // T-020: version-aware filter. The cached `TOOLS`
+            // LazyLock is the single source of truth (so the
+            // dispatched ToolProvider impl is still a zero-cost
+            // re-read of a static slice). When the consumer has
+            // called `set_current_version(...)`, we re-compute the
+            // filtered view once per version change and `Box::leak`
+            // it into a `&'static [ToolDefinition]`. The previous
+            // filtered slice is dropped (its `Vec` was already
+            // moved out by `Box::leak`, so no double-free). We
+            // memoise on the version string itself so changing the
+            // version triggers exactly one fresh allocation;
+            // repeated calls with the same version hit the cache.
+            static FILTER_CACHE: ::std::sync::LazyLock<::std::sync::Mutex<(
+                ::std::option::Option<::std::string::String>,
+                &'static [::tokitai_core::ToolDefinition],
+            )>> = ::std::sync::LazyLock::new(|| {
+                ::std::sync::Mutex::new((::std::option::Option::None, &[]))
+            });
+
+            let cur: ::std::option::Option<::std::string::String> = ::tokitai_core::current_version();
+
+            // Fast path: no current version => no filtering.
+            // The full slice is returned unchanged so callers
+            // that never set a version pay zero overhead.
+            let cur_ref: ::std::option::Option<&str> = cur.as_deref();
+            if cur_ref.is_none() {
+                return TOOLS.as_slice();
+            }
+
+            // Cache hit: the cached version string equals the
+            // current one. Return the cached static slice.
+            if let Ok(cache) = FILTER_CACHE.lock() {
+                if cache.0.as_deref() == cur_ref {
+                    return cache.1;
+                }
+            }
+
+            // Cache miss: build the filtered Vec, leak it into a
+            // `&'static [ToolDefinition]`, and update the cache.
+            let mut filtered: ::std::vec::Vec<::tokitai_core::ToolDefinition> = ::std::vec::Vec::with_capacity(TOOLS.len());
+            for def in TOOLS.iter() {
+                if def.is_in_interval(cur_ref) {
+                    filtered.push(def.clone());
+                }
+            }
+            let leaked: &'static [::tokitai_core::ToolDefinition] = filtered.leak();
+            if let Ok(mut cache) = FILTER_CACHE.lock() {
+                cache.0 = cur;
+                cache.1 = leaked;
+            }
+            leaked
         }
     };
     new_items.push(get_tool_definitions_fn);

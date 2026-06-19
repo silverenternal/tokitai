@@ -48,6 +48,13 @@ pub struct ToolAttributes {
     /// impl block bypasses the score lint. Used for one-word
     /// verbs and other intentionally terse descriptions.
     pub allow_short_desc: bool,
+    /// T-020: when `Some("semver")`, the macro parses every
+    /// `since = "..."` / `until = "..."` literal as SemVer and
+    /// refuses to compile when a literal fails to parse or
+    /// produces an invalid interval (`since >= until`). When
+    /// `None`, the macro accepts any string and uses
+    /// lexicographic ordering at runtime.
+    pub version_policy: Option<String>,
 }
 
 impl Parse for ToolAttributes {
@@ -57,6 +64,7 @@ impl Parse for ToolAttributes {
         let mut dialect = None;
         let mut min_desc_score: Option<u8> = None;
         let mut allow_short_desc = false;
+        let mut version_policy: Option<String> = None;
 
         // 支持空输入（impl 块级别的 #[tool] 不需要参数）
         if input.is_empty() {
@@ -66,6 +74,7 @@ impl Parse for ToolAttributes {
                 dialect,
                 min_desc_score,
                 allow_short_desc,
+                version_policy,
             });
         }
 
@@ -112,6 +121,11 @@ impl Parse for ToolAttributes {
                 // user sees the diagnostic at the impl-block
                 // span, not at the first method.
                 "dialect" => dialect = Some(value.value()),
+                // T-020: opt into SemVer-ordered comparison for
+                // `since` / `until` literals. Accepts `"semver"`
+                // (the only value today); unknown values are
+                // surfaced by `validate_impl` as `E0030`.
+                "version_policy" => version_policy = Some(value.value()),
                 _ => {}
             }
 
@@ -126,6 +140,7 @@ impl Parse for ToolAttributes {
             dialect,
             min_desc_score,
             allow_short_desc,
+            version_policy,
         })
     }
 }
@@ -142,6 +157,16 @@ pub struct MethodToolAttrs {
     pub deprecated_since: Option<String>,
     pub remove_in: Option<String>,
     pub version: Option<String>,
+    /// T-020: lower bound (inclusive) of the schema-evolution
+    /// interval. When set, the dispatcher only serves the tool
+    /// when `tokitai_core::current_version() >= since`. Compared
+    /// via SemVer when `version_policy = "semver"` is set on the
+    /// impl block; otherwise lexicographic.
+    pub since: Option<String>,
+    /// T-020: upper bound (exclusive) of the schema-evolution
+    /// interval. When set, the dispatcher hides the tool when
+    /// `tokitai_core::current_version() >= until`.
+    pub until: Option<String>,
     pub visible: bool,
     pub tags: Vec<String>,
     pub group: Option<String>,
@@ -214,6 +239,8 @@ impl Parse for MethodToolAttrs {
                         deprecated_since: None,
                         remove_in: None,
                         version: None,
+                        since: None,
+                        until: None,
                         visible: true,
                         tags: Vec::new(),
                         group: None,
@@ -246,6 +273,8 @@ impl Parse for MethodToolAttrs {
         let mut deprecated_since = None;
         let mut remove_in = None;
         let mut version = None;
+        let mut since: Option<String> = None;
+        let mut until: Option<String> = None;
         let mut visible = true;
         let mut tags = Vec::new();
         let mut group = None;
@@ -319,6 +348,23 @@ impl Parse for MethodToolAttrs {
                     input.parse::<token::Eq>()?;
                     let value: LitStr = input.parse()?;
                     version = Some(value.value());
+                }
+                // T-020: schema-evolution interval bounds. Both
+                // accept any string by default so CalVer / commit
+                // SHA work out of the box; the macro emits a
+                // `compile_error!` recommending
+                // `version_policy = "semver"` when the impl opted
+                // into semver ordering and a literal fails to
+                // parse as SemVer.
+                "since" => {
+                    input.parse::<token::Eq>()?;
+                    let value: LitStr = input.parse()?;
+                    since = Some(value.value());
+                }
+                "until" => {
+                    input.parse::<token::Eq>()?;
+                    let value: LitStr = input.parse()?;
+                    until = Some(value.value());
                 }
                 "group" => {
                     input.parse::<token::Eq>()?;
@@ -751,6 +797,8 @@ impl Parse for MethodToolAttrs {
             deprecated_since,
             remove_in,
             version,
+            since,
+            until,
             visible,
             tags,
             group,

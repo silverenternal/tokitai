@@ -23,6 +23,15 @@ syn = { version = "2.0", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 phf = { version = "0.11", features = ["macros"] }
+# T-020: parse `since = "..."` / `until = "..."` literals at
+# macro time and enforce ordered SemVer comparisons when the
+# user opts into `version_policy = "semver"`. We use the
+# canonical `semver` crate so the ordering rules match the
+# rest of the Rust ecosystem (SemVer 2.0 + pre-release
+# ordering, build metadata ignored for comparison). The crate
+# is only used at macro-expansion time, so it has zero
+# impact on the consumer's binary size.
+semver = "1.0"
 # T-015: the macro emits `#[tracing::instrument(...)]` as a
 # string template inside `quote!`. The attribute is parsed by
 # `tracing`'s own proc-macro at the *consumer* site, not by

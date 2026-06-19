@@ -24,9 +24,24 @@
 #![allow(non_snake_case, non_upper_case_globals)]
 #![allow(clippy::default_constructed_unit_structs, clippy::useless_format)]
 
+use std::sync::Mutex;
+
 use serde_json::json;
 use tokitai::tool;
 use tokitai::{set_current_version, ToolCaller, ToolErrorKind, ToolProvider};
+
+/// Process-wide lock shared with `schema_evolution_test.rs`.
+/// Every test in this file that touches `set_current_version`
+/// (T-013) or the T-020 `FILTER_CACHE` must hold this mutex
+/// so the suite is deterministic under `cargo test`'s default
+/// parallel scheduler.
+static VERSION_LOCK: Mutex<()> = Mutex::new(());
+
+/// Acquire the shared mutex at the top of a `#[test]` body.
+#[allow(dead_code)]
+fn lock_versions() -> std::sync::MutexGuard<'static, ()> {
+    VERSION_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
 
 // ============================================================================
 // Test impl 1: a stable tool, a deprecated tool, and a removed tool.
@@ -70,6 +85,7 @@ impl VersionedTools {
 
 #[test]
 fn test_version_attribute_lands_on_definition() {
+    let _lock = lock_versions();
     let tools = VersionedTools::tool_definitions();
 
     let add = tools.iter().find(|t| t.name == "add").unwrap();
@@ -107,6 +123,7 @@ fn test_deprecation_marker_serialized_into_input_schema() {
 
 #[test]
 fn test_call_to_removed_tool_returns_removed_error() {
+    let _lock = lock_versions();
     // Lock the program to a version at or after `remove_in = 2.0.0`.
     set_current_version("2.5.0");
     let tools_inst = VersionedTools::default();
@@ -139,6 +156,7 @@ fn test_call_to_removed_tool_returns_removed_error() {
 
 #[test]
 fn test_call_to_removed_tool_with_equal_current_version_also_rejected() {
+    let _lock = lock_versions();
     set_current_version("2.0.0");
     let tools_inst = VersionedTools::default();
     let _ = VersionedTools::tool_definitions();
@@ -153,6 +171,7 @@ fn test_call_to_removed_tool_with_equal_current_version_also_rejected() {
 
 #[test]
 fn test_call_to_current_tool_still_succeeds_after_version_set() {
+    let _lock = lock_versions();
     set_current_version("2.5.0");
     let tools_inst = VersionedTools::default();
     let result =
@@ -244,6 +263,7 @@ fn test_non_deprecated_tool_envelopes_have_no_meta_or_suffix() {
 
 #[test]
 fn test_dispatch_to_replaced_by_redirects_to_successor() {
+    let _lock = lock_versions();
     set_current_version("1.6.0");
     let tools_inst = VersionedTools::default();
     // At v1.6.0 the tool is deprecated but not yet removed; the call
@@ -281,6 +301,7 @@ impl AliasRedirectTools {
 
 #[test]
 fn test_replaced_by_redirects_when_source_is_skipped() {
+    let _lock = lock_versions();
     let tools_inst = AliasRedirectTools::default();
     // `legacy_add` was removed from the match arms (`#[tool(skip)]`).
     // The dispatcher must fall through to the `replaced_by`
@@ -296,6 +317,7 @@ fn test_replaced_by_redirects_when_source_is_skipped() {
 
 #[test]
 fn test_dispatcher_does_not_loop_on_missing_replacement() {
+    let _lock = lock_versions();
     #[derive(Default)]
     struct GhostRedirectTools;
 
@@ -341,6 +363,7 @@ impl UnversionedTools {
 
 #[test]
 fn test_unversioned_tool_unaffected_by_current_version() {
+    let _lock = lock_versions();
     // Even after pinning a current version, an unversioned tool must
     // keep working. This is the "no gating" path.
     set_current_version("99.0.0");

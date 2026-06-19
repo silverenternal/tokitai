@@ -149,6 +149,29 @@ pub struct ToolDefinition {
     pub baked_examples: Option<serde_json::Value>,
     #[cfg(not(feature = "serde"))]
     pub baked_examples: Option<&'static str>,
+    /// T-020: lower bound of the tool's schema-evolution interval
+    /// (inclusive). Set from `#[tool(since = "1.0")]` on the
+    /// method. The dispatcher serves the tool only when
+    /// `current_version()` falls inside the `[since, until)`
+    /// half-open interval; methods without `since` / `until`
+    /// attributes are always served. The strings are compared
+    /// using the parse helper when possible, falling back
+    /// to lexicographic order otherwise.
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg(feature = "serde")]
+    pub since: Option<alloc::string::String>,
+    #[cfg(not(feature = "serde"))]
+    pub since: Option<&'static str>,
+    /// T-020: upper bound of the tool's schema-evolution interval
+    /// (exclusive). Set from `#[tool(until = "2.0")]` on the
+    /// method. The dispatcher hides the tool when
+    /// `current_version() >= until` (same ordering rules as
+    /// the `since` field above).
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg(feature = "serde")]
+    pub until: Option<alloc::string::String>,
+    #[cfg(not(feature = "serde"))]
+    pub until: Option<&'static str>,
 }
 
 /// Single source of truth for the priority order of configuration
@@ -216,6 +239,8 @@ impl ToolDefinition {
             replaced_by: None,
             description_explicit: false,
             baked_examples: None,
+            since: None,
+            until: None,
         }
     }
 
@@ -249,6 +274,8 @@ impl ToolDefinition {
             replaced_by: None,
             description_explicit: false,
             baked_examples: None,
+            since: None,
+            until: None,
         }
     }
 
@@ -274,6 +301,8 @@ impl ToolDefinition {
             replaced_by: None,
             description_explicit: false,
             baked_examples: None,
+            since: None,
+            until: None,
         }
     }
 
@@ -371,6 +400,119 @@ impl ToolDefinition {
     pub fn with_version(mut self, version: &'static str) -> Self {
         self.version = Some(version);
         self
+    }
+
+    /// T-020: set the lower bound of the schema-evolution interval.
+    /// The dispatcher serves the tool only when `current_version()`
+    /// is at or after `since` (and before `until`, if set).
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::ToolDefinition;
+    ///
+    /// let tool = ToolDefinition::new("add", "Add two numbers", "{}")
+    ///     .with_since("1.0.0");
+    /// assert_eq!(tool.since.as_deref(), Some("1.0.0"));
+    /// ```
+    #[cfg(feature = "serde")]
+    #[must_use]
+    pub fn with_since(mut self, since: impl Into<alloc::string::String>) -> Self {
+        self.since = Some(since.into());
+        self
+    }
+
+    /// `no_std` `since` setter: `since` must be `'static`.
+    #[cfg(not(feature = "serde"))]
+    #[must_use]
+    pub fn with_since(mut self, since: &'static str) -> Self {
+        self.since = Some(since);
+        self
+    }
+
+    /// T-020: set the upper bound (exclusive) of the
+    /// schema-evolution interval. When `current_version() >=
+    /// until`, the dispatcher hides the tool.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::ToolDefinition;
+    ///
+    /// let tool = ToolDefinition::new("legacy", "Old API", "{}")
+    ///     .with_since("1.0.0")
+    ///     .with_until("2.0.0");
+    /// assert_eq!(tool.until.as_deref(), Some("2.0.0"));
+    /// ```
+    #[cfg(feature = "serde")]
+    #[must_use]
+    pub fn with_until(mut self, until: impl Into<alloc::string::String>) -> Self {
+        self.until = Some(until.into());
+        self
+    }
+
+    /// `no_std` `until` setter: `until` must be `'static`.
+    #[cfg(not(feature = "serde"))]
+    #[must_use]
+    pub fn with_until(mut self, until: &'static str) -> Self {
+        self.until = Some(until);
+        self
+    }
+
+    /// T-020: returns `true` when `current_version` falls inside
+    /// the tool's `[since, until)` half-open interval.
+    ///
+    /// Returns `true` when:
+    /// * `since` is `None` and `until` is `None` (unversioned tool,
+    ///   always served — backwards-compatible default).
+    /// * `current_version` is `None` (no program-wide version
+    ///   configured; the dispatcher falls open to honour the
+    ///   legacy `tool_definitions()` contract).
+    /// * `current_version >= since` AND `current_version < until`,
+    ///   compared via `parse_semver` (the private helper used by
+    ///   `remove_in`/`since`/`until`) when possible and
+    ///   lexicographically otherwise (so CalVer / commit-SHA
+    ///   strings still produce a deterministic dispatch).
+    ///
+    /// Returns `false` when one bound is set and `current_version`
+    /// falls outside the half-open window.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::ToolDefinition;
+    ///
+    /// let tool = ToolDefinition::new("legacy", "Old API", "{}")
+    ///     .with_since("1.0.0")
+    ///     .with_until("2.0.0");
+    /// assert!(tool.is_in_interval(Some("1.5.0")));
+    /// assert!(!tool.is_in_interval(Some("2.0.0")));
+    /// assert!(!tool.is_in_interval(Some("0.9.0")));
+    /// assert!(tool.is_in_interval(None));
+    /// ```
+    pub fn is_in_interval(&self, current_version: Option<&str>) -> bool {
+        // Both bounds unset => always served.
+        if self.since.is_none() && self.until.is_none() {
+            return true;
+        }
+        // No program-wide version => fail open so existing
+        // tool_definitions() callers keep working unchanged.
+        let Some(current) = current_version else {
+            return true;
+        };
+        // Lower bound: current >= since (when since is set).
+        if let Some(since) = self.since.as_deref() {
+            if !version_gte(current, since) {
+                return false;
+            }
+        }
+        // Upper bound: current < until (when until is set).
+        if let Some(until) = self.until.as_deref() {
+            if version_gte(current, until) {
+                return false;
+            }
+        }
+        true
     }
 
     /// Mark the tool as deprecated.
@@ -1030,6 +1172,20 @@ pub(crate) fn parse_semver(s: &str) -> Option<(u32, u32, u32)> {
         return None;
     }
     Some((major, minor, patch))
+}
+
+/// T-020: ordered comparison helper used by `is_in_interval`.
+/// Returns `true` when `current >= other` under SemVer ordering
+/// when both strings parse as SemVer, otherwise lexicographic
+/// `>=` on the trimmed strings. Failing back to lexicographic
+/// order keeps CalVer (e.g. `2026.06`) and commit-SHA strings
+/// dispatch deterministically — every well-formed version
+/// has a total order, even when neither side is SemVer.
+pub(crate) fn version_gte(current: &str, other: &str) -> bool {
+    match (parse_semver(current), parse_semver(other)) {
+        (Some(a), Some(b)) => a >= b,
+        _ => current.trim() >= other.trim(),
+    }
 }
 
 /// T-013: process-wide current version used to gate `remove_in`

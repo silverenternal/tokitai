@@ -1,0 +1,8 @@
+error: error[E0099]: method `stuck` has an empty schema-evolution interval (since=2.0.0 is not strictly before until=2.0.0). The dispatcher would never serve this tool.
+              = help: swap the two bounds, or drop one of them. The interval is half-open: `[since, until)`.
+              = help: see https://docs.rs/tokitai/latest/tokitai/errors.html#E0099
+
+  --> tests/ui/version_interval_empty.rs:15:12
+   |
+15 |     pub fn stuck(&self) -> i64 {
+   |            ^^^^^

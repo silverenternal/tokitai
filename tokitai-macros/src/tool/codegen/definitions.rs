@@ -114,6 +114,23 @@ pub fn generate_tool_def_consts(tools: &[ToolMethodInfo], dialect: Dialect) -> V
             quote! {}
         };
 
+        // T-020: bake the `since` / `until` interval bounds into
+        // the `ToolDefinition`. We emit a `.with_since(...)` /
+        // `.with_until(...)` chain when either is set, so the
+        // lazy-initialised `ToolDefinition` carries the metadata
+        // the runtime dispatch filter reads via
+        // `ToolDefinition::is_in_interval`.
+        let since_tokens = tool
+            .since
+            .as_deref()
+            .map(|s| quote! { .with_since(#s) })
+            .unwrap_or_else(|| quote! {});
+        let until_tokens = tool
+            .until
+            .as_deref()
+            .map(|s| quote! { .with_until(#s) })
+            .unwrap_or_else(|| quote! {});
+
         // T-002: when the user wrote `#[tool(desc = "...")]`, mark the
         // `ToolDefinition` so the runtime `tokitai!` config respects the
         // priority table (`CONFIG_PRIORITY_ORDER`). Doc comments and
@@ -175,7 +192,7 @@ pub fn generate_tool_def_consts(tools: &[ToolMethodInfo], dialect: Dialect) -> V
                             __base.to_string()
                         }
                     };
-                    ::tokitai::ToolDefinition::new(#tool_name, #description, __schema_json) #version_tokens #deprecated_tokens #explicit_desc_tokens #baked_examples_tokens
+                    ::tokitai::ToolDefinition::new(#tool_name, #description, __schema_json) #version_tokens #deprecated_tokens #explicit_desc_tokens #baked_examples_tokens #since_tokens #until_tokens
                 });
                 &*DEF
             }

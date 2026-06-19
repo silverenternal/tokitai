@@ -233,6 +233,8 @@ pub fn extract_tool_info(fn_item: &ImplItemFn) -> Option<ToolMethodInfo> {
             min_desc_score: None,
             allow_short_desc: false,
             result_truncate_bytes: None,
+            since: None,
+            until: None,
         });
     }
 
@@ -245,6 +247,8 @@ pub fn extract_tool_info(fn_item: &ImplItemFn) -> Option<ToolMethodInfo> {
     let mut deprecated_since = None;
     let mut remove_in = None;
     let mut version = None;
+    let mut since: Option<String> = None;
+    let mut until: Option<String> = None;
     let mut is_visible = true;
     let mut tool_tags = Vec::new();
     let mut group = None;
@@ -280,6 +284,8 @@ pub fn extract_tool_info(fn_item: &ImplItemFn) -> Option<ToolMethodInfo> {
                 deprecated_since = args.deprecated_since;
                 remove_in = args.remove_in;
                 version = args.version;
+                since = args.since;
+                until = args.until;
                 is_visible = args.visible;
                 tool_tags = args.tags;
                 group = args.group;
@@ -376,5 +382,7 @@ pub fn extract_tool_info(fn_item: &ImplItemFn) -> Option<ToolMethodInfo> {
         min_desc_score,
         allow_short_desc,
         result_truncate_bytes,
+        since,
+        until,
     })
 }

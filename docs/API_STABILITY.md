@@ -75,6 +75,99 @@ question Q-5, deferred to a later release).
 
 ---
 
+## Schema evolution (T-020)
+
+T-013's `replaced_by` covers the rename case. The remaining
+pain is the additive-vs-breaking distinction across versions:
+adding an optional field is non-breaking across releases, but
+removing a field or changing its type is breaking, and the
+dispatcher has no way to tell. T-020 introduces two
+per-method attributes that declare the schema-evolution
+interval of each `#[tool]` method:
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `since` | string | Lower bound (inclusive) of the schema's evolution interval. The dispatcher hides the method when `current_version() < since`. |
+| `until` | string | Upper bound (exclusive) of the interval. The dispatcher hides the method when `current_version() >= until`. |
+
+When combined with `tokitai_core::set_current_version(...)`, the
+dispatcher serves the method whose interval contains the current
+version. Multiple methods in the same `impl` block can declare
+non-overlapping intervals so each generation of the schema
+replaces its predecessor without forcing every caller to migrate
+in lockstep:
+
+```rust
+#[tool(version_policy = "semver")]
+impl UserApi {
+    #[tool(since = "1.0.0", until = "2.0.0")]
+    pub fn query_v1(&self, sql: String) -> Value { /* ... */ }
+
+    #[tool(since = "2.0.0")]
+    pub fn query_v2(&self, sql: String, params: Option<Value>) -> Value { /* ... */ }
+}
+```
+
+At `current_version() = "1.5.0"` only `query_v1` is exposed to the
+LLM. At `current_version() = "2.0.0"` only `query_v2` is
+exposed. The half-open `[since, until)` interval makes the
+boundary deterministic and easy to reason about (no off-by-one
+between consecutive versions).
+
+### Compile-time interval checks
+
+When `version_policy = "semver"` is set on the impl block, the
+macro enforces three rules at compile time:
+
+1. **Strict parse**: every `since = "..."` / `until = "..."`
+   literal must parse as SemVer (with an optional `v` prefix).
+   CalVer (`2026.06`) and commit-SHA strings are rejected
+   because they cannot be compared with SemVer rules.
+2. **Non-empty interval**: `since` must be strictly less than
+   `until`. A method whose interval is empty would never be
+   served by the dispatcher.
+3. **No overlap**: intervals across the same impl must tile the
+   version line without overlap. Two methods whose intervals
+   overlap would both be candidates for some
+   `current_version`, and the dispatcher picks the first
+   match in declaration order — a recipe for stale schemas.
+
+Loose strings (CalVer, commit SHA) are accepted when the impl
+does NOT opt into `version_policy = "semver"`. The macro skips
+the strict parse and overlap checks, and the runtime uses
+lexicographic ordering via `tokitai_core::parse_semver`'s
+fallback path. This is the recommended escape hatch for
+projects whose version policy is not SemVer.
+
+### Activation
+
+The version filter only runs when the program has called
+`tokitai_core::set_current_version(...)`. Without a registered
+version every method is served (the macro's fast path returns
+the full static slice unchanged), so existing consumers see no
+behaviour change. The cached filtered view is keyed by the
+version string itself, so changing the version triggers
+exactly one fresh allocation; repeated calls with the same
+version hit the cache.
+
+### Acceptance
+
+- The `#[tool(since = "1.0", until = "2.0")]` and
+  `#[tool(since = "2.0")]` attributes on two methods in the
+  same impl block compile cleanly.
+- `set_current_version("1.5")` exposes only the 1.0 method;
+  `set_current_version("2.0")` exposes only the 2.0 method.
+- An empty interval (`since == until`) is a compile error
+  anchored at the offending method's span.
+- A CalVer string under `version_policy = "semver"` is a
+  compile error recommending the user drop the policy.
+- `tokitai/tests/schema_evolution_test.rs` covers the cases
+  above, including additive changes (new optional field) and
+  the backwards-compatible default (no current version ->
+  every method is served).
+
+---
+
 The following APIs are stable across the v0.5.x series:
 
 ### Stable APIs

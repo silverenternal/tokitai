@@ -74,4 +74,10 @@ pub struct ToolMethodInfo {
     /// `None` — every existing tool that does not opt in
     /// continues to behave exactly as it did before T-019.
     pub result_truncate_bytes: Option<usize>,
+    /// T-020: lower bound (inclusive) of the schema-evolution
+    /// interval. Mirrors `#[tool(since = "...")]`.
+    pub since: Option<String>,
+    /// T-020: upper bound (exclusive) of the schema-evolution
+    /// interval. Mirrors `#[tool(until = "...")]`.
+    pub until: Option<String>,
 }
