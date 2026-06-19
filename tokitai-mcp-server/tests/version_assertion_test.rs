@@ -91,7 +91,37 @@ fn required_prefix_mismatch_is_rejected() {
     assert!(!version_matches_prefix("0.5.1", Some("1")));
 }
 
-/// Sanity: the manifest's resolved `tokitai-core` version, as
+/// Verify that the workspace root resolution (used by `build.rs`
+/// to locate `Cargo.lock`) actually works from the test crate's
+/// own `CARGO_MANIFEST_DIR`.  If the workspace layout changes
+/// (e.g. a crate moves under `crates/foo/`), this test breaks
+/// before the build script silently produces an unresolved
+/// manifest.
+#[test]
+fn workspace_root_contains_cargo_lock_with_tokitai_core() {
+    let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut found = false;
+    let mut dir = Some(manifest_dir);
+    while let Some(d) = dir {
+        let toml = d.join("Cargo.toml");
+        if let Ok(content) = std::fs::read_to_string(&toml) {
+            if content.lines().any(|l| l.trim() == "[workspace]") {
+                let lock = d.join("Cargo.lock");
+                let lock_content =
+                    std::fs::read_to_string(&lock).expect("Cargo.lock at workspace root");
+                assert!(
+                    lock_content.contains("\"tokitai-core\""),
+                    "Cargo.lock at {:?} must contain a [[package]] entry for tokitai-core",
+                    lock
+                );
+                found = true;
+                break;
+            }
+        }
+        dir = d.parent();
+    }
+    assert!(found, "workspace root not found from {:?}", manifest_dir);
+}
 /// baked into the test binary by `build.rs`, satisfies its own
 /// `0.5` prefix. If a future contributor bumps the workspace
 /// version without updating the build script's resolution
