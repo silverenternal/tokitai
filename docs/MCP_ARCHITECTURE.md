@@ -920,7 +920,11 @@ to a hard error. The warning can be silenced per-method with
 The default-build (no `TOKITAI_QUIET=1`) is intentionally noisy:
 the warning is the only mechanism that surfaces the missing
 manifest to the user, and silently opting everyone in would
-defeat the T-023 design.
+defeat the T-023 design.  Note that `tokitai-macros/build.rs`,
+`tokitai/build.rs`, and `tokitai-mcp-server/build.rs` all set
+`TOKITAI_QUIET=1` by default (to keep test and CI output clean),
+so W023 is **silent in first-party crate builds** — user crates
+that do not set `TOKITAI_QUIET` see the warning.
 
 ### No new dependencies
 

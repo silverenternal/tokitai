@@ -49,6 +49,19 @@ use types::tool_method::ToolMethodInfo;
 /// 可通过环境变量 `TOKITAI_SHOW_WARNINGS=1` 启用警告
 /// 或通过 `TOKITAI_QUIET=1` 禁用警告
 fn should_show_warnings() -> bool {
+    // Test override (runtime env var, not compile-time
+    // option_env!): when TOKITAI_TEST_FORCE_WARNINGS is set,
+    // warnings are emitted regardless of TOKITAI_QUIET.
+    // This lets the trybuild W023 fixture capture the warning
+    // line alongside the E0599 error in its .stderr snapshot.
+    // Run with:
+    //   TOKITAI_TEST_FORCE_WARNINGS=1 TRYBUILD=overwrite \
+    //     cargo test -p tokitai-macros --test ui_tests \
+    //       test_w023_missing_requires
+    if std::env::var("TOKITAI_TEST_FORCE_WARNINGS").is_ok() {
+        return true;
+    }
+
     // 检查是否显式启用了警告
     if option_env!("TOKITAI_SHOW_WARNINGS").is_some() {
         return true;

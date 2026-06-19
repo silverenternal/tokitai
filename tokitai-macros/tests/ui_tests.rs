@@ -214,3 +214,16 @@ fn test_capabilities_requires_basic_compiles() {
     let t = trybuild::TestCases::new();
     t.pass("tests/ui/capabilities_requires_basic.rs");
 }
+
+/// W023 is a warning (not an error) in the current release.
+/// Compilation succeeds when the method is `pub` (the macro
+/// recognises it as a tool method) and generates the per-method
+/// CAPABILITIES const as an empty slice.  To capture the W023
+/// line in the `.stderr` snapshot, run with:
+///   TOKITAI_TEST_FORCE_WARNINGS=1 TRYBUILD=overwrite \
+///     cargo test -p tokitai-macros --test ui_tests test_w023_missing_requires
+#[test]
+fn test_w023_missing_requires() {
+    let t = trybuild::TestCases::new();
+    t.pass("tests/ui/w023_missing_requires.rs");
+}
