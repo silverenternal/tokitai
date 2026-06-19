@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "tool_name": "greet",
+  "description": "Compose a friendly greeting for a named person with an optional title.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "name": { "type": "string", "minLength": 1, "maxLength": 256 },
+      "title": { "type": "string", "maxLength": 64 }
+    },
+    "required": ["name"],
+    "additionalProperties": false
+  },
+  "output_schema": {
+    "type": "string"
+  }
+}

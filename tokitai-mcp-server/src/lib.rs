@@ -102,6 +102,20 @@
 pub mod server;
 pub mod stdio;
 
+// T-021: typed MCP handle layer. Compiled unconditionally (it has no
+// dependency on rmcp or any MCP SDK), but the typed dispatch path is
+// wired in only when the consumer enables the `mcp-typed` feature.
+// With the feature off, this module is exposed but unused; with the
+// feature on, the `call_tool` dispatch path validates the caller's
+// arguments against the fixture's `inputSchema` BEFORE the handler
+// runs. See `docs/MCP_ARCHITECTURE.md` § "Typed handle layer (T-021)".
+pub mod typed;
+
+pub use typed::{
+    load_typed_fixtures, validate_against_schema, validate_tool_args, JsonPointer, TypedDispatcher,
+    TypedToolSpec,
+};
+
 // Re-export commonly used types
 pub use server::{
     McpServer, McpServerBuilder, McpServerConfig, MultiToolProvider, ServerError, ToolCallerDyn,

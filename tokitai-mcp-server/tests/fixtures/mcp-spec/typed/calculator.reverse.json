@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "tool_name": "reverse",
+  "description": "Reverse the UTF-8 byte sequence of the input string.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "text": { "type": "string", "minLength": 1, "maxLength": 4096 }
+    },
+    "required": ["text"],
+    "additionalProperties": false
+  },
+  "output_schema": {
+    "type": "string"
+  }
+}

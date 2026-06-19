@@ -35,3 +35,14 @@ path = "examples/mcp_stdio_server.rs"
 
 [features]
 default = []
+# T-021: opt-in typed MCP handle layer. When enabled, every tool listed
+# in the `tools/list` response is wrapped by a runtime JSON-Schema
+# validator. Malformed calls (wrong type, missing field, extra field,
+# out-of-range number, etc.) are refused with `ToolError::ValidationError`
+# BEFORE the call reaches the handler. This is the defense-in-depth
+# against the CVE-2025-59377 class of MCP vulnerabilities
+# (shell-injection sinks in handler implementations).
+#
+# Without this feature the JSON-passthrough path from T-005 is used;
+# no behavior change, no extra validation.
+mcp-typed = []

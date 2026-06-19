@@ -628,3 +628,169 @@ to the same machine code with or without the feature.
 The Tokitai feature is unique in the "runtime cost (off)" cell:
 because the spans are spliced in at compile time, a build with
 the feature off literally does not contain the calls.
+
+## Typed handle layer (T-021)
+
+The typed MCP handle layer is the project's defense-in-depth against
+the CVE-2025-59377 class of MCP vulnerabilities — tools whose
+handlers accept an unvalidated JSON string and concatenate it into a
+shell command (`subprocess.run(..., shell=True)`), `eval`, or any
+other string sink. The architectural flaw is not in MCP itself: the
+JSON schema is advertised in `tools/list`, but the handler never
+enforces it. The schema validation happens AFTER the sink, which
+defeats the point of having a schema at all.
+
+T-021 inverts that ordering. Before the call reaches the handler,
+the typed layer validates every argument against the tool's
+`inputSchema` (read from the fixture in
+`tests/fixtures/mcp-spec/typed/*.json`). If validation fails, the
+handler is never invoked; the caller receives
+`ToolError::ValidationError` with a JSON Pointer (RFC 6901) to the
+offending field in the error message. No shell. No `eval`. No
+subprocess.
+
+### Threat model
+
+The typed layer catches:
+
+| Class                              | Example                                              |
+|------------------------------------|------------------------------------------------------|
+| Wrong JSON type for a property     | `a: "ten"` where the schema says `integer`           |
+| Missing required property          | `{ "a": 1 }` where `b` is required                   |
+| Extra property under `additionalProperties: false` | `{ "a": 1, "b": 2, "injected": "; rm -rf /" }` |
+| Numeric out-of-range               | `user_id: 0` where `minimum: 1`                      |
+| String length out-of-range         | 100-char `title` where `maxLength: 64`               |
+| Wrong root type                    | `arguments: [1,2,3]` where schema says `object`      |
+
+It does **not** catch:
+
+- Semantic validation (a value the schema accepts but the business
+  logic rejects).
+- Side-channel validation (handler-internal state).
+- Authorization (handled above this layer).
+
+### Feature gate
+
+The typed layer is enabled by the **`mcp-typed`** feature in
+`tokitai-mcp-server`'s `Cargo.toml`. It is **off by default**:
+
+```toml
+# tokitai-mcp-server/Cargo.toml
+[features]
+default = []
+mcp-typed = []   # opt-in: typed handle layer
+```
+
+```bash
+# Default build (T-005 JSON-passthrough path; behavior unchanged):
+cargo build -p tokitai-mcp-server
+
+# Opt in to the typed layer:
+cargo build -p tokitai-mcp-server --features mcp-typed
+```
+
+With the feature off, the typed module is compiled but unused; the
+wire-level transport behaves identically to the T-005 path. With
+the feature on, every `tools/call` validates the caller's arguments
+against the fixture's `inputSchema` before the handler runs.
+
+### Architecture
+
+```
++----------------+   tools/call    +----------------------+   validated    +---------------+
+|  AI client     | -------------> |  typed layer (T-021) | -------------> |   handler     |
+|  (LLM-driven)  |   (JSON args)  |  (validates against  |   (typed args) |   (your code) |
+|                | <------------- |   fixture's schema)  | <------------ |               |
++----------------+   ValidationError   +----------------------+   ToolError   +---------------+
+                                    refused before
+                                    handler runs
+```
+
+### CVE-2025-59377 → T-021 mapping
+
+| CVE-2025-59377 vulnerability              | T-021 mitigation                                  |
+|-------------------------------------------|---------------------------------------------------|
+| `subprocess.run(..., shell=True)` sink    | Typed layer refuses malformed calls before the    |
+|                                           | handler is constructed. No subprocess is spawned. |
+| Validation, if any, runs AFTER the sink   | Validation runs BEFORE the handler is called.     |
+| Type confusion (`str` for `int`) is a     | Type confusion is caught at the typed boundary.  |
+| silent success                            | The handler never sees the malformed input.       |
+| Shell-metacharacter injection via `kubectl` | Argument shape mismatch is rejected at the JSON   |
+| argument                                  | Pointer `/spec.command`.                          |
+
+### Public API
+
+```rust
+use tokitai_mcp_server::typed::{
+    JsonPointer, TypedDispatcher, TypedToolSpec,
+    load_typed_fixtures, validate_against_schema, validate_tool_args,
+};
+
+// Direct schema validation:
+let schema = serde_json::json!({
+    "type": "object",
+    "properties": { "a": { "type": "integer" } },
+    "required": ["a"],
+    "additionalProperties": false,
+});
+validate_against_schema(&schema, &serde_json::json!({"a": "ten"}))?;
+// Err(ToolError::ValidationError { message: "at `/a`: expected integer, got string" })
+
+// Dispatcher that loads every fixture in tests/fixtures/mcp-spec/typed/:
+let dispatcher = TypedDispatcher::from_fixtures();
+
+let mut calls = 0;
+let result = dispatcher.dispatch(
+    "add",
+    &serde_json::json!({"a": 2, "b": 3}),
+    |args| {
+        calls += 1;
+        // handler receives the JSON Value; deserialize as you like
+        Ok(serde_json::json!({
+            "a": args["a"].as_i64().unwrap(),
+            "b": args["b"].as_i64().unwrap(),
+        }))
+    },
+);
+assert!(result.is_ok());
+assert_eq!(calls, 1);
+```
+
+When validation fails the handler is **not** invoked (a handler
+counter stays at zero); the caller receives a
+`ToolError::ValidationError` with a JSON Pointer to the offending
+field.
+
+### No `rmcp` dependency
+
+The hard rule from `todo.json v2.0` is reaffirmed here: the typed
+layer does not add `rmcp` or any MCP SDK to `Cargo.toml`. The
+validator is implemented on top of `serde_json::Value` and the
+JSON-Schema subset that the project's fixtures actually use (the
+six rows in the threat-model table above). Adding a JSON-Schema
+dependency would violate the project's "no second MCP SDK"
+principle and is deliberately avoided.
+
+```bash
+# Verify the hard rule:
+grep -i rmcp tokitai-mcp-server/Cargo.toml
+# (no output)
+```
+
+### Test surface
+
+`tokitai-mcp-server/tests/mcp_typed_layer_test.rs` covers:
+
+- 5 positive cases (one per fixture tool).
+- 7 negative cases (wrong type, missing field, extra property,
+  out-of-range, overlong string, non-object root, unknown tool).
+- 4 fuzz cases (100 random input shapes per fixture tool;
+  malformed inputs are refused; handler invocation count matches
+  the number of valid inputs).
+- 3 validator-only checks (array element pointer, boolean/null,
+  nested-object pointer).
+
+Tests run identically with `--features mcp-typed` and
+`--no-default-features`; the feature gate is verified separately
+in CI by `cargo build --no-default-features` and
+`cargo build --features mcp-typed`.
