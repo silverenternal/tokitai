@@ -2750,17 +2750,6 @@ pub type CapabilityManifest = alloc::vec::Vec<(
     alloc::vec::Vec<alloc::string::String>,
 )>;
 
-/// T-023: returns `true` when `declared` is covered by some entry
-/// in `allowlist`. The allowlist supports one wildcard form: a
-/// trailing `*` (e.g. `db:read:*`) is treated as a prefix match
-/// (so `db:read:*` covers `db:read:sales`, `db:read:any_resource`,
-/// and any other `db:read:<X>`). Exact entries (no `*`) must
-/// match the declared capability verbatim. The matcher is
-/// case-sensitive: capability tokens are typically
-/// lowercase-with-colons in the documented category set, and
-/// allowing case folding would weaken the allowlist contract
-/// without a clear use case.
-///
 /// T-023: trait the `#[tool]` macro auto-implements for any
 /// `impl` block it processes. Exposes the aggregated
 /// `CAPABILITIES` slice (per-method name + per-method required
@@ -3045,13 +3034,31 @@ pub const fn assert_compatible_with(expected: &str) {
                           // from the textual form of `expected` (1, 2, or 3
                           // numeric components).
             if eary >= 1 && cmaj != emaj {
-                panic!("tokitai-core version mismatch: major drift. See https://docs.rs/tokitai-core for the migration guide.");
+                panic!(concat!(
+                    "tokitai-core version mismatch: major drift. ",
+                    "compiled CORE_VERSION=",
+                    env!("CARGO_PKG_VERSION"),
+                    " differs from the caller's `expected` argument on the major component. ",
+                    "See https://docs.rs/tokitai-core for the migration guide."
+                ));
             }
             if eary >= 2 && cmin != emin {
-                panic!("tokitai-core version mismatch: minor drift. See https://docs.rs/tokitai-core for the migration guide.");
+                panic!(concat!(
+                    "tokitai-core version mismatch: minor drift. ",
+                    "compiled CORE_VERSION=",
+                    env!("CARGO_PKG_VERSION"),
+                    " differs from the caller's `expected` argument on the minor component. ",
+                    "See https://docs.rs/tokitai-core for the migration guide."
+                ));
             }
             if eary >= 3 && cpat != epat {
-                panic!("tokitai-core version mismatch: patch drift. See https://docs.rs/tokitai-core for the migration guide.");
+                panic!(concat!(
+                    "tokitai-core version mismatch: patch drift. ",
+                    "compiled CORE_VERSION=",
+                    env!("CARGO_PKG_VERSION"),
+                    " differs from the caller's `expected` argument on the patch component. ",
+                    "See https://docs.rs/tokitai-core for the migration guide."
+                ));
             }
         }
         _ => {
@@ -3059,8 +3066,71 @@ pub const fn assert_compatible_with(expected: &str) {
             // a typo; a malformed core is an internal
             // inconsistency. Either way, fail loud rather than
             // silently passing.
-            panic!("tokitai-core version mismatch: invalid SemVer literal. See https://docs.rs/tokitai-core for the migration guide.");
+            panic!(concat!(
+                "tokitai-core version mismatch: invalid SemVer literal. ",
+                "compiled CORE_VERSION=",
+                env!("CARGO_PKG_VERSION"),
+                " (one or both sides failed to parse). ",
+                "See https://docs.rs/tokitai-core for the migration guide."
+            ));
         }
+    }
+}
+
+/// T-028: non-const runtime companion to [`assert_compatible_with`].
+///
+/// Same check as the `const fn`, but the panic message uses
+/// `format!()` so it can include *both* the `expected` argument and
+/// the actual `CORE_VERSION` verbatim. Use this from runtime call
+/// sites (typically `fn main` of a downstream binary) when you want
+/// the on-panic message to read like
+/// `tokitai-core version mismatch: expected="0.7", actual="0.8.1" (major drift)`
+/// rather than the static-category message the `const fn` panic
+/// emits.
+///
+/// For the compile-time const-eval use case (`const _: () =
+/// assert_compatible_with("...");`) the `const fn` is still the
+/// right entry point - `const_format_args!` is not stable, so the
+/// `const fn` panic message cannot interpolate runtime strings.
+pub fn assert_compatible_with_runtime(expected: &str) {
+    // Re-parse both sides so the drift classification matches.
+    let expected_str = expected
+        .strip_prefix('v')
+        .or_else(|| expected.strip_prefix('V'))
+        .unwrap_or(expected);
+    let core_str_stripped = CORE_VERSION
+        .strip_prefix('v')
+        .or_else(|| CORE_VERSION.strip_prefix('V'))
+        .unwrap_or(CORE_VERSION);
+    let expected_parts = parse_semver_const(expected_str);
+    let core_parts = parse_semver_const(core_str_stripped);
+    match (expected_parts, core_parts) {
+        (Some(ep), Some(cp)) => {
+            let (emaj, emin, epat, eary) = ep;
+            let (cmaj, cmin, cpat, _) = cp;
+            if eary >= 1 && cmaj != emaj {
+                panic!(
+                    "tokitai-core version mismatch: expected={}, actual={} (major drift). See https://docs.rs/tokitai-core for the migration guide.",
+                    expected, CORE_VERSION
+                );
+            }
+            if eary >= 2 && cmin != emin {
+                panic!(
+                    "tokitai-core version mismatch: expected={}, actual={} (minor drift). See https://docs.rs/tokitai-core for the migration guide.",
+                    expected, CORE_VERSION
+                );
+            }
+            if eary >= 3 && cpat != epat {
+                panic!(
+                    "tokitai-core version mismatch: expected={}, actual={} (patch drift). See https://docs.rs/tokitai-core for the migration guide.",
+                    expected, CORE_VERSION
+                );
+            }
+        }
+        _ => panic!(
+            "tokitai-core version mismatch: expected={}, actual={} (invalid SemVer literal on one or both sides). See https://docs.rs/tokitai-core for the migration guide.",
+            expected, CORE_VERSION
+        ),
     }
 }
 

@@ -126,6 +126,13 @@ pub use typed::{
 // T-024: re-export the runtime cross-crate version entry point.
 // Downstream binaries wire `tokitai_mcp_server::serve()` into their
 // `fn main()` to gate startup on the version check.
+///
+/// `run_version_check` is a documented alias for [`serve`] - the
+/// name is more descriptive at the call site (e.g. a build script
+/// or a `tokio::main` that wires several guards). It re-exports
+/// the same function pointer; calling either name is equivalent.
+/// Prefer `serve()` in new code for symmetry with the rest of
+/// the crate's entry-point naming.
 pub use serve::serve as run_version_check;
 
 // Re-export commonly used types

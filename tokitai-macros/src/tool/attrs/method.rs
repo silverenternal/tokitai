@@ -342,7 +342,7 @@ impl Parse for MethodToolAttrs {
         let mut param_order: Option<Vec<String>> = None;
         let mut hidden_params = Vec::new();
         let mut example_output = None;
-        let mut category: Option<String> = None;
+        // T-028: category fall-through removed (see E0033).
         let mut alias = Vec::new();
         let mut allow = Vec::new();
         let mut cache: Option<String> = None;
@@ -660,9 +660,13 @@ impl Parse for MethodToolAttrs {
                     example_output = Some(value.value());
                 }
                 "category" => {
+                    // T-028: refuse the silent alias with E0033.
                     input.parse::<token::Eq>()?;
                     let value: LitStr = input.parse()?;
-                    category = Some(value.value());
+                    return Err(syn::Error::new_spanned(
+                        value,
+                        "E0033: `category = \"...\"` is a silent alias for                          `tags = [...]` and has been removed. Either delete                          the line or rewrite it as an explicit `tags = [...]`                          entry. See https://docs.rs/tokitai/latest/tokitai/errors.html#E0033",
+                    ));
                 }
                 "alias" => {
                     input.parse::<token::Eq>()?;
@@ -909,9 +913,7 @@ impl Parse for MethodToolAttrs {
             }
         }
 
-        if let Some(cat) = category {
-            tags.push(cat);
-        }
+        // T-028: silent `category = "..."` -> `tags.push` removed.
 
         Ok(MethodToolAttrs {
             name,

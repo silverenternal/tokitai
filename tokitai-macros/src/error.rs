@@ -148,6 +148,15 @@ pub enum ErrorCode {
     /// is `#[tool(allow_insecure_desc)]` (rare; security-test only).
     /// The diagnostic body names every matched category.
     E0032,
+    /// T-028: the user wrote `category = "..."` on a method-level
+    /// `#[tool(...)]` attribute. The parser used to accept the
+    /// keyword silently and only push the value onto the
+    /// method's `tags` slice - a footgun that produced an
+    /// unexpected schema entry with no diagnostic. The macro now
+    /// refuses to compile so the operator is forced to either
+    /// remove the (no-op) `category` key or rewrite it as an
+    /// explicit `tags = [...]` entry.
+    E0033,
     /// An internal consistency check failed; this is a bug in the
     /// macro, not a user error.
     E0099,
@@ -188,6 +197,7 @@ impl ErrorCode {
             ErrorCode::E0030 => "E0030",
             ErrorCode::E0031 => "E0031",
             ErrorCode::E0032 => "E0032",
+            ErrorCode::E0033 => "E0033",
             ErrorCode::E0099 => "E0099",
         }
     }

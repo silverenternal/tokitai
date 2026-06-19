@@ -554,6 +554,17 @@ fn generate_for_impl(mut impl_item: ItemImpl, attrs: ToolAttributes) -> TokenStr
     // const, and the trait auto-impl would fail to resolve
     // `Self::CAPABILITIES`.)
     let impl_type_early = impl_item.self_ty.clone();
+    // T-028: hoist the env-var probes out of the per-method loop.
+    // `should_show_warnings()` is based on compile-time env vars
+    // (via `option_env!`); its value cannot change between
+    // methods in the same impl block, so probing it once per
+    // impl block (instead of once per method) saves a function
+    // call and a `static` lookup for every method in the block.
+    // `profiling_enabled()` is hoisted at the call sites that
+    // are gated by it (the profile timing emission and the
+    // budget walker); the per-method `should_show_warnings`
+    // calls were the only ones in the hot loop.
+    let show_warnings = should_show_warnings();
     // T-012: pick the active schema dialect from the impl-level
     // attribute. Unknown names are reported by `validate_impl`
     // as `E0030` before we get here, so by the time this runs
@@ -924,7 +935,7 @@ fn generate_for_impl(mut impl_item: ItemImpl, attrs: ToolAttributes) -> TokenStr
     }
 
     for tool in &tool_methods {
-        if should_show_warnings()
+        if show_warnings
             && tool.deprecated
             && tool.replaced_by.is_none()
             && !tool
@@ -943,7 +954,7 @@ fn generate_for_impl(mut impl_item: ItemImpl, attrs: ToolAttributes) -> TokenStr
                 && param.default.is_none()
                 && param.example.is_none()
                 && !tool.allow.contains(&"option_no_default".to_string())
-                && should_show_warnings()
+                && show_warnings
             {
                 let display_name = &param.schema_name;
                 eprintln!(
@@ -958,7 +969,7 @@ fn generate_for_impl(mut impl_item: ItemImpl, attrs: ToolAttributes) -> TokenStr
         }
 
         // 检查 context=async 与非异步方法的冲突
-        if should_show_warnings()
+        if show_warnings
             && tool.context.as_deref() == Some("async")
             && !tool.is_async
             && !tool.allow.contains(&"context_async_mismatch".to_string())
@@ -982,7 +993,7 @@ fn generate_for_impl(mut impl_item: ItemImpl, attrs: ToolAttributes) -> TokenStr
         // existing per-method `allow = [...]` list pattern
         // (T-018 short-desc opt-out, T-022 insecure-desc
         // opt-out).
-        if should_show_warnings()
+        if show_warnings
             && tool.requires.is_empty()
             && !tool.allow.contains(&"missing_capabilities".to_string())
         {

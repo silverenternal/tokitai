@@ -107,6 +107,42 @@ fn main() {
     // exactly so operators learn one env-var convention.
     if let Ok(value) = std::env::var("TOKITAI_DESC_BLOCKLIST") {
         if !value.is_empty() {
+            // T-028: sanity-check the forwarded value before it
+            // reaches the macro's compile-time env. The matcher
+            // downstream splits the value on `,` and treats
+            // each piece as a UTF-8 substring, so a binary
+            // payload would either panic the macro at expansion
+            // time or silently widen the matcher past the
+            // operator's intent. We refuse:
+            // 1. Non-UTF-8 values - the env var is documented as
+            //    a list of phrases; binary bytes are a misuse.
+            // 2. Values over a reasonable size budget
+            //    (16 KiB) - a normal comma-separated phrase list
+            //    is well under that.
+            // 3. Phrases longer than 256 bytes - a single
+            //    phrase should be a short keyword.
+            //
+            // The check is a cargo:warning= (not a hard error)
+            // so a misconfigured build can still compile - the
+            // operator sees the warning and can fix the env var.
+            if !value.is_ascii() {
+                println!(
+                    "cargo:warning=TOKITAI_DESC_BLOCKLIST contains non-ASCII bytes;                      forwarded verbatim, but the macro matcher will treat the value as                      opaque substrings. Set a UTF-8 comma-separated phrase list instead."
+                );
+            }
+            if value.len() > 16 * 1024 {
+                println!(
+                    "cargo:warning=TOKITAI_DESC_BLOCKLIST is {} bytes; the documented                      guidance is a small phrase list (under a few hundred bytes).                      Forwarded verbatim, but the build will pay the matcher cost on every                      `#[tool]` description.",
+                    value.len()
+                );
+            }
+            let max_phrase = value.split(',').map(str::len).max().unwrap_or(0);
+            if max_phrase > 256 {
+                println!(
+                    "cargo:warning=TOKITAI_DESC_BLOCKLIST contains a phrase {} bytes long;                      phrases longer than 256 bytes are almost certainly a misuse.                      Forwarded verbatim.",
+                    max_phrase
+                );
+            }
             println!("cargo:rustc-env=TOKITAI_DESC_BLOCKLIST={}", value);
         }
     }
