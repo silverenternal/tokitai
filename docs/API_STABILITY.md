@@ -226,10 +226,9 @@ tokitai-mcp-server --require-tokitai=0.5
 # Documented emergency override. Logged at warn! level.
 tokitai-mcp-server --require-tokitai=0.5 --allow-tokitai-mismatch
 
-# Canary / staging override at build time. The manifest is
-# rewritten to the override value; runtime sees the override
-# instead of the resolved version.
-TOKITAI_VERSION_OVERRIDE=0.5.2 cargo build -p tokitai-mcp-server
+# NOTE: TOKITAI_VERSION_OVERRIDE was removed in M-0.9.1 as a
+# security-hardening measure. Canary / staging deploys must
+# use a release branch or patch Cargo.toml directly instead.
 ```
 
 ### Acceptance
