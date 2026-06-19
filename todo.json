@@ -2,11 +2,11 @@
   "$schema_version": "4.0",
   "created": "2026-06-18",
   "updated": "2026-06-20",
-  "previous_version": "4.0 (M-0.9.0..M-0.10.0 all shipped: T-025/T-026/T-027/T-028 via ultracode workflow; M-0.12.0 T-034..T-037 via worktree-parallel agents + manual implementation)",
-  "scope": "Tokitai v0.10.x: code-review deferred findings batch (post M-0.9.1 hotfix ship at HEAD 31d34ea)",
+  "previous_version": "4.0 (M-0.9.0..M-0.10.0 all shipped: T-025/T-026/T-027/T-028 via ultracode workflow; M-0.12.0 T-034..T-037 shipped via worktree-parallel + manual; M-0.13.0 T-038..T-042 planned from tokitai-llm code review)",
+  "scope": "M-0.12.0 shipped (T-034..T-037 compile-time LLM integration). M-0.13.0 scoped to tokitai-llm code review findings: bug fixes (Box::leak, double-optional ProviderArgs, anthropic concatenation), LLM prompt deduplication, provider safety hardening, and test coverage expansion for zero-test modules.",
   "philosophy_anchor": "Preserve the in-process compile-time dispatch advantage. Every new task must justify itself by exploiting the compile-time seam that runtime-only competitors cannot reach. Hard constraint: no dependency on `rmcp` or any other MCP SDK; spec is pinned via fixture + manual re-sync, not a moving dep.",
   "differentiating_strategy": {
-    "thesis": "Tokitai is the only Rust tool-calling stack where schema, dispatch, security policy, and observability are produced by a proc-macro over a typed surface. M-0.9.0 added three compile-time defenses (adversarial description lint, capability manifest, cross-crate version assertion). M-0.9.1 remediated 8 code-review findings discovered by a 4-lens adversarial-verification review. v4.0 addresses the remaining deferred items (18 low/medium findings) as a consolidation pass.",
+    "thesis": "Tokitai is the only Rust tool-calling stack where schema, dispatch, security policy, and observability are produced by a proc-macro over a typed surface. M-0.9.0 added three compile-time defenses (adversarial description lint, capability manifest, cross-crate version assertion). M-0.9.1 remediated 8 code-review findings discovered by a 4-lens adversarial-verification review. v4.0 addresses the remaining deferred items (18 low/medium findings) as a consolidation pass. M-0.12.0 added compile-time LLM integration (tokitai-llm crate). M-0.13.0 remediates code-review findings from the LLM crate: 4 bug fixes, prompt deduplication, provider hardening, test expansion.",
     "pillars_shipped": [
       {"id": "DS-1", "title": "Schema dialect correctness at compile time", "task": "T-012", "commit": "fa39478"},
       {"id": "DS-2", "title": "Tool versioning as a type-system concern", "task": "T-013 + T-020", "commit": "006c911 + 7e4752a"},
@@ -210,6 +210,112 @@
       ],
       "depends_on": [],
       "open_questions": []
+    },
+    {
+      "id": "T-038",
+      "title": "Critical tokitai-llm bug fixes: Box::leak, double-optional ProviderArgs, anthropic concatenation, Ollama system discard",
+      "addresses": [],
+      "pillars": [],
+      "priority": "P1",
+      "effort_estimate": "S",
+      "north_star": "tokitai-llm has no silent-correctness bugs. Every subcommand handles its arguments consistently, and every provider preserves message fidelity.",
+      "rationale": "Four bugs found in the M-0.12.0 code review. (1) `verify/mod.rs:115` uses `Box::leak` to convert LLM-returned String to `&'static str` — leaks one allocation per finding; fix: change `Finding::code` to `String`. (2) `cli/mod.rs:175` wraps `ExamplesArgs.provider` in `Option<ProviderArgs>` when `VerifyArgs` uses a flat `ProviderArgs` — the double-optionality means passing `--provider openai --model gpt-4o` does NOT trigger the LLM pass in `examples::run` (silent degradation to v0.1 stub). (3) `provider/anthropic.rs:146` concatenates multi-block text replies with no separator — `[\"Hello\", \" world\"]` becomes `\"Helloworld\"` with no space. (4) `provider/ollama.rs:65` silently discards the system prompt — should at minimum `warn!` the user.",
+      "acceptance_criteria": [
+        "`verify/mod.rs:Finding::code` is `String` (not `&'static str`). No `Box::leak` in the crate.",
+        "`ExamplesArgs.provider` is `ProviderArgs` (not `Option<ProviderArgs>`). All four subcommands use the same type for their provider args (flat `ProviderArgs`).",
+        "`llm_examples` in `examples/mod.rs` triggers LLM pass when `--provider openai --model gpt-4o` is passed (regression test added).",
+        "`provider/anthropic.rs` inserts a space between concatenated `Text` blocks (or joins with newline). Test case: `[\"Hello\", \" world\"]` → `\"Hello world\"`.",
+        "`provider/ollama.rs:complete_with_tools` logs `warn!` when `system` is `Some` but the provider discards it.",
+        "All four provider URLs are precomputed in `new()` instead of reformatted per-request (`format!(\"{base}/v1/...\")` on every call).",
+        "All existing tests pass. No regression in any other crate."
+      ],
+      "depends_on": [],
+      "open_questions": []
+    },
+    {
+      "id": "T-039",
+      "title": "LLM prompt/code deduplication: extract shared crate::llm module in tokitai-llm",
+      "addresses": [],
+      "pillars": [],
+      "priority": "P2",
+      "effort_estimate": "S",
+      "north_star": "The three LLM modules (verify, infer-capabilities, examples) share a common `crate::llm` abstraction for building prompts, formatting tool summaries, stripping markdown fences, and pretty-printing schemas. No code is duplicated across modules.",
+      "rationale": "Code review found four code patterns repeated identically across `verify/mod.rs`, `examples/mod.rs`, and `infer_capabilities/mod.rs`: (a) markdown code-fence stripping (3 copies, 6 lines each), (b) LLM system prompts (3 copies, ~15 lines each with identical \"Do not add markdown fences\" footer), (c) tool-summary formatter (3 copies, `format!(\"Tool: ...\\nDescription: ...\\nSchema: ...\")`), (d) schema-pretty-print helper (3 copies, `match t.input_schema_value() { Ok(v) => serde_json::to_string_pretty(&v)..., Err(_) => t.input_schema.clone() }`).",
+      "acceptance_criteria": [
+        "New `tokitai-llm/src/llm/mod.rs` module (or `src/llm.rs`) with `pub fn strip_markdown_fences(s: &str) -> &str`, `pub fn format_tool_summary(t: &ToolDefinition) -> String`, and `pub fn schema_pretty(t: &ToolDefinition) -> String`.",
+        "All four patterns above are removed from `verify/mod.rs`, `examples/mod.rs`, and `infer_capabilities/mod.rs` and replaced with calls to `crate::llm::*`.",
+        "The system prompt for each subcommand is a dedicated `pub const` exported from `llm/mod.rs` (e.g. `VERIFY_SYSTEM_PROMPT`, `EXAMPLES_SYSTEM_PROMPT`, `INFER_CAPABILITIES_SYSTEM_PROMPT`).",
+        "No semantic changes — the prompts are byte-for-byte identical after the move.",
+        "All existing tests pass unchanged."
+      ],
+      "depends_on": [],
+      "open_questions": []
+    },
+    {
+      "id": "T-040",
+      "title": "tokitai-llm provider safety hardening: max_tokens, unwrap cleanup, poisoned mutex, dead code",
+      "addresses": [],
+      "pillars": [],
+      "priority": "P2",
+      "effort_estimate": "S",
+      "north_star": "All providers handle errors gracefully, have no panic paths, and have no dead code. Configuration surfaces (max_tokens, timeouts) are exposed through the CLI.",
+      "rationale": "Code review found several safety issues. (1) `anthropic.rs:83` hardcodes `max_tokens: 1024` — should be configurable via CLI or a default const. (2) `cache/mod.rs:124` uses `.expect(\"CacheKey is always serialisable\")` — should use `?` or `expect` with proper context. (3) `cache/mod.rs:154,164` uses `lock().ok()?` silently swallowing poisoned-mutex errors — should log or use `lock().unwrap_or_else(|e| ...)`. (4) `openai.rs:181` uses `unwrap_or(Value::Null)` on malformed tool-call arguments — should warn. (5) `infer/mod.rs:173-181` `dispatch_as_tool_message` is dead code (never called from `run`). (6) `infer/mod.rs:102` `build_provider` is `pub` but should be `pub(crate)` — internal helper leaked to public API. (7) Four sites use `unwrap_or(\"default\")` on a value guaranteed `Some` by `build_provider`'s own validation. (8) `infer_capabilities/mod.rs:64` documents JSON Lines output but produces pretty-printed JSON. (9) `ollama.rs:116` clones tool envelopes per request — should precompute. (10) `openai.rs`, `anthropic.rs`, `ollama.rs` all reformat URLs per-request instead of precomputing in `new()`.",
+      "acceptance_criteria": [
+        "`anthropic.rs` `max_tokens` is configurable via CLI (`--max-tokens`) with a reasonable default (1024 documented, 4096 as default).",
+        "`cache/mod.rs:124` `.expect` is removed — error handled gracefully (logged at `warn!`, cache miss treated as no-cache).",
+        "`cache/mod.rs:154,164` poisoned mutex is logged at `warn!` level before recovering.",
+        "`openai.rs:181` malformed tool-call arguments log a `warn!` message before returning `Value::Null`.",
+        "`infer/mod.rs:173-181` dead `dispatch_as_tool_message` removed or feature-gated with `#[cfg(feature = \"dispatch\")]`.",
+        "`infer/mod.rs:build_provider` is `pub(crate)` — other modules access it via `crate::infer::build_provider` (already works).",
+        "Four `unwrap_or(\"default\")` calls are replaced with direct field access (no default needed after validation).",
+        "`infer_capabilities/mod.rs:64` output is JSON Lines (one JSON object per line), not pretty-printed.",
+        "`ollama.rs:116` precomputes tool envelopes at provider construction time.",
+        "All three providers precompute request URL in `new()` instead of `format!` per request.",
+        "All existing tests pass."
+      ],
+      "depends_on": [],
+      "open_questions": []
+    },
+    {
+      "id": "T-041",
+      "title": "tokitai-llm test coverage: zero-test modules, LLM-response parsing, cache round-trips",
+      "addresses": [],
+      "pillars": [],
+      "priority": "P2",
+      "effort_estimate": "M",
+      "north_star": "Every module in tokitai-llm has unit test coverage for its non-HTTP-I/O paths. The critical LLM-response parsing path is exercised with realistic fixture data. Zero-test modules (infer/mod.rs, provider/ollama.rs) have at least basic coverage.",
+      "rationale": "Code review found 13 tests total, with critical gaps: `infer/mod.rs` has zero tests (including `complete_with_cache`, the most important function in the crate); `ollama.rs` has zero tests; `anthropic.rs` has 1 test; the LLM-response JSON parsing path in all three modules is untested (the existing \"parsing\" tests only test `serde_json::from_str::<Value>`); cache round-trip for `tool_calls` and `usage` is untested. Adding test coverage with realistic fixture data will prevent regressions.",
+      "acceptance_criteria": [
+        "`infer/mod.rs`: unit tests for `build_provider` branch coverage (3 provider types), `complete_with_cache` hit/miss/error paths (using a mock or manually constructing the cache), `AnyProvider` dispatch.",
+        "`provider/ollama.rs`: unit tests for all 3 `ChatMessage` renderings (User, Assistant with tool_calls, Tool), `OllamaResponse::into_completion` with text response, tool-call response, empty response.",
+        "`provider/anthropic.rs`: unit tests for multi-block text accumulation (regression test for separator bug), `ToolUse` mapping, `Other` block ignored.",
+        "`verify/mod.rs`: realistic LLM response fixture tests (markdown-fenced JSON, no-fence JSON, malformed JSON, empty findings, multiple findings). `escape_json_pointer` round-trip test. `walk` recursion test with deeply-nested schema.",
+        "`examples/mod.rs`: `baked_examples` shape assertion (`[{\"input\": {...}}]`), `name_contains` filter test, `apply_examples` with multiple tools and partial matches.",
+        "`cache/mod.rs`: `CachedResponse <-> CompletionResponse` round-trip with `tool_calls` and `usage` populated. Cache-key sensitivity to `system` prompt, `tools` slice, and message order.",
+        "Total test count ≥ 35 (current 13 + 22 new). All existing tests pass."
+      ],
+      "depends_on": ["T-038", "T-039"],
+      "open_questions": []
+    },
+    {
+      "id": "T-042",
+      "title": "Build integration: TOKITAI_LLM env forwarding in build.rs, full pipeline end-to-end test",
+      "addresses": [],
+      "pillars": [],
+      "priority": "P3",
+      "effort_estimate": "S",
+      "north_star": "The `TOKITAI_LLM_VERIFY_REPORT` env var flows from operator → build.rs → `option_env!` in the macro without manual steps. An end-to-end shell script exercises the full pipeline: write a `#[tool]` impl → run `tokitai-llm verify --report-path` → set env var → rebuild → verify cargo:warning= lines appear.",
+      "rationale": "Code review found the LLM pipeline has no automatic integration. `build.rs` does not forward `TOKITAI_LLM_VERIFY_REPORT` (even though the `DEFAULT_VERIFY_REPORT_NAME` constant exists for this purpose). The `#[tool(llm_cache_key = true)]` attribute documented in the llm module is not wired through (always passes `false`). There is no end-to-end test or example that exercises the full pipeline from `#[tool]` → verify report → macro consumes report.",
+      "acceptance_criteria": [
+        "`tokitai-macros/build.rs` forwards `TOKITAI_LLM_VERIFY_REPORT` to the macro (via `cargo:rustc-env=TOKITAI_LLM_VERIFY_REPORT=...` pattern or direct `option_env!` — at minimum document the existing `option_env!` path in `CLAUDE.md`).",
+        "`tokitai-macros/build.rs` references `DEFAULT_VERIFY_REPORT_NAME` from `tokitai-macros/src/tool/llm/mod.rs` (remove `#[allow(dead_code)]`).",
+        "New end-to-end script or `cargo test` integration test in `tokitai-macros/tests/` that: writes a tmp `#[tool]` source, compiles it, runs `tokitai-llm verify` against the generated binary (or schema), writes the report, sets `TOKITAI_LLM_VERIFY_REPORT`, rebuilds, and asserts `cargo:warning=` appeared.",
+        "Wire `#[tool(llm_cache_key = true)]` attribute through `_attrs` in `generate_for_impl` so it actually triggers the cache-key const emission (remove the hardcoded `false`).",
+        "`infer` subcommand gains `--schema <json>` arg so the tool-calling loop can actually be exercised from CLI (currently always `Vec::new()`).",
+        "All existing tests pass."
+      ],
+      "depends_on": [],
+      "open_questions": []
     }
   ],
   "new_milestones": [
@@ -224,6 +330,20 @@
         "T-028: duplicate docs deduplicated, undocumented alias addressed, env-var probes lazy, assert_compatible_with messages name both versions, env-var forwarding validates input.",
         "cargo fmt / clippy / test (all-features + no-default-features) / doc (`-D warnings`) all green. No new top-level dependencies. Cargo.lock delta is empty.",
         "No rmcp. `grep -i rmcp` against all four Cargo.toml files returns zero matches."
+      ]
+    },
+    {
+      "id": "M-0.13.0",
+      "label": "tokitai-llm code quality + test coverage (5 bug fixes, prompt dedup, provider hardening, test expansion, build integration)",
+      "tasks": ["T-038", "T-039", "T-040", "T-041", "T-042"],
+      "exit_criteria": [
+        "T-038: Box::leak replaced, ExamplesArgs.provider is flat ProviderArgs, anthropic text-separator bug fixed, Ollama system discard warns, URLs precomputed in new().",
+        "T-039: Shared crate::llm module extracts all 4 duplicated patterns (fence-stripping, prompts, tool-summary, schema-pretty). No duplicate code across verify/examples/infer_capabilities.",
+        "T-040: max_tokens configurable, cache panic/mutex paths hardened, openai malformed-arg warns, build_provider pub(crate), dead dispatch removed, unwrap_or defaults removed, output format consistent, tool envelopes precomputed.",
+        "T-041: infer/mod.rs has unit tests, ollama.rs has unit tests, anthropic.rs expanded, realistic JSON fixtures for LLM-response parsing in all 3 modules, baked_examples shape pinned, cache round-trip with tool_calls. Total test count ≥ 35.",
+        "T-042: build.rs forwards TOKITAI_LLM_VERIFY_REPORT, DEFAULT_VERIFY_REPORT_NAME is referenced (not dead code), llm_cache_key attribute wired, infer gains --schema, e2e pipeline test exists.",
+        "cargo fmt / clippy / test (all-features + no-default-features) / doc (`-D warnings`) all green. No new top-level dependencies.",
+        "No rmcp. `grep -i rmcp` against all Cargo.toml files returns zero matches."
       ]
     }
   ],
