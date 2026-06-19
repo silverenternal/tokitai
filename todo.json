@@ -2,11 +2,12 @@
   "$schema_version": "4.0",
   "created": "2026-06-18",
   "updated": "2026-06-20",
-  "previous_version": "4.0 (M-0.9.0..M-0.10.0 all shipped: T-025/T-026/T-027/T-028 via ultracode workflow; M-0.12.0 T-034..T-037 shipped via worktree-parallel + manual; M-0.13.0 T-038..T-042 planned from tokitai-llm code review)",
-  "scope": "M-0.12.0 shipped (T-034..T-037 compile-time LLM integration). M-0.13.0 scoped to tokitai-llm code review findings: bug fixes (Box::leak, double-optional ProviderArgs, anthropic concatenation), LLM prompt deduplication, provider safety hardening, and test coverage expansion for zero-test modules.",
+  "commit": "59f0353 + d4d8eaa",
+  "previous_version": "4.0 (M-0.9.0..M-0.10.0 all shipped: T-025/T-026/T-027/T-028; M-0.12.0 T-034..T-037; M-0.13.0 T-038..T-042 shipped via ultracode workflow)",
+  "scope": "M-0.12.0 shipped (T-034..T-037 compile-time LLM integration). M-0.13.0 shipped (T-038..T-042 tokitai-llm code review remediation: 4 bug fixes, prompt dedup, provider hardening, test expansion 13→62, build integration).",
   "philosophy_anchor": "Preserve the in-process compile-time dispatch advantage. Every new task must justify itself by exploiting the compile-time seam that runtime-only competitors cannot reach. Hard constraint: no dependency on `rmcp` or any other MCP SDK; spec is pinned via fixture + manual re-sync, not a moving dep.",
   "differentiating_strategy": {
-    "thesis": "Tokitai is the only Rust tool-calling stack where schema, dispatch, security policy, and observability are produced by a proc-macro over a typed surface. M-0.9.0 added three compile-time defenses (adversarial description lint, capability manifest, cross-crate version assertion). M-0.9.1 remediated 8 code-review findings discovered by a 4-lens adversarial-verification review. v4.0 addresses the remaining deferred items (18 low/medium findings) as a consolidation pass. M-0.12.0 added compile-time LLM integration (tokitai-llm crate). M-0.13.0 remediates code-review findings from the LLM crate: 4 bug fixes, prompt deduplication, provider hardening, test expansion.",
+    "thesis": "Tokitai is the only Rust tool-calling stack where schema, dispatch, security policy, and observability are produced by a proc-macro over a typed surface. M-0.9.0 added three compile-time defenses (adversarial description lint, capability manifest, cross-crate version assertion). M-0.9.1 remediated 8 code-review findings discovered by a 4-lens adversarial-verification review. v4.0 addresses the remaining deferred items (18 low/medium findings) as a consolidation pass. M-0.12.0 added compile-time LLM integration (tokitai-llm crate). M-0.13.0 remediates code-review findings from the LLM crate: 4 bug fixes, prompt deduplication, provider hardening, test expansion 13→62, build integration.",
     "pillars_shipped": [
       {"id": "DS-1", "title": "Schema dialect correctness at compile time", "task": "T-012", "commit": "fa39478"},
       {"id": "DS-2", "title": "Tool versioning as a type-system concern", "task": "T-013 + T-020", "commit": "006c911 + 7e4752a"},
@@ -18,7 +19,8 @@
       {"id": "PP-H1", "title": "Adversarial description lint", "task": "T-022", "commit": "e064a1b + bd9db10 + f03927c"},
       {"id": "PP-H2", "title": "Per-tool capability manifest", "task": "T-023", "commit": "3994050 + afc5b73"},
       {"id": "PP-H3", "title": "Cross-crate version assertion", "task": "T-024", "commit": "16497a3 + 936f688 + aac501a + 416962a + 0160895"},
-      {"id": "M-12-1", "title": "Compile-time LLM integration (infra + verify + infer-cap + examples)", "task": "T-034..T-037", "commit": "964b0e2 + adc2992"}
+      {"id": "M-12-1", "title": "Compile-time LLM integration (infra + verify + infer-cap + examples)", "task": "T-034..T-037", "commit": "964b0e2 + adc2992"},
+      {"id": "M-13-1", "title": "tokitai-llm code review remediation (bugs, dedup, hardening, tests, build)", "task": "T-038..T-042", "commit": "59f0353"}
     ],
     "pillars_we_reject": [
       "Becoming a second MCP SDK. We do not chase spec-conformance market share; rmcp does that. Hard rule reaffirmed: no rmcp or any other MCP SDK as a dependency.",
@@ -109,7 +111,16 @@
         {"id": "T-028", "title": "Code quality / API surface cleaning pass", "commit": "ebef200"}
       ]
     },
-    "M-0.12.0": {
+    "M-0.13.0": {
+      "label": "tokitai-llm code quality + test coverage",
+      "tasks": [
+        {"id": "T-038", "title": "Critical bug fixes: Box::leak, double-optional ProviderArgs, anthropic concatenation, Ollama system discard", "commit": "59f0353"},
+        {"id": "T-039", "title": "LLM prompt/code deduplication: extract shared crate::llm module", "commit": "59f0353"},
+        {"id": "T-040", "title": "Provider safety hardening: max_tokens, unwrap cleanup, poisoned mutex, dead code", "commit": "59f0353"},
+        {"id": "T-041", "title": "Test coverage expansion: 13 → 62 tests across all modules", "commit": "59f0353"},
+        {"id": "T-042", "title": "Build integration: TOKITAI_LLM env forwarding, llm_cache_key wiring, infer --schema", "commit": "59f0353"}
+      ]
+    },
       "label": "Compile-time LLM integration (T-034 infra + macro hooks + T-035/036/037 LLM modules)",
       "tasks": [
         {"id": "T-034", "title": "tokitai-llm binary crate + macro integration hooks", "commit": "964b0e2"},
@@ -119,18 +130,33 @@
       ]
     },
     "verification": {
-      "all_37_tasks_committed": true,
+      "all_42_tasks_committed": true,
       "ci_status_at_2026-06-20_m012": {
         "cargo_fmt": "PASS",
         "cargo_clippy_all_features": "PASS",
         "cargo_clippy_no_default_features": "PASS",
         "cargo_build_all_features": "PASS",
         "cargo_build_no_default_features": "PASS",
-        "cargo_test_all_features": "PASS (8 llm unit tests; all existing suites green)",
+        "cargo_test_all_features": "PASS (62 llm unit tests; all existing suites green)",
         "cargo_test_no_default_features": "PASS",
         "cargo_doc_d_warnings": "PASS",
-        "cargo_test_doc": "PASS (77 doctests in tokitai-llm pass)",
+        "cargo_test_doc": "PASS",
         "no_rmcp_in_cargo_toml": "PASS (grep -i rmcp returns exit 1)"
+      },
+      "ci_status_at_2026-06-20_m013": {
+        "cargo_fmt": "PASS",
+        "cargo_clippy_all_features": "PASS",
+        "cargo_build_all_features": "PASS",
+        "cargo_build_no_default_features": "PASS",
+        "cargo_test_all_features": "PASS (62 llm unit tests; 0 failed across entire workspace)",
+        "cargo_test_no_default_features": "PASS",
+        "cargo_doc_d_warnings": "PASS",
+        "no_rmcp_in_cargo_toml": "PASS",
+        "T-038_all_four_bugs_fixed": "PASS (no Box::leak, flat ProviderArgs, anthropic sep, ollama warn)",
+        "T-039_no_duplicate_patterns": "PASS (verify/examples/infer_capabilities all use crate::llm)",
+        "T-040_all_10_items": "PASS (max_tokens, cache hardened, dead code removed, pub(crate), JSON Lines, precomputed URLs/envelopes)",
+        "T-041_test_count_ge_35": "PASS (62 tests)",
+        "T-042_build_integration": "PASS (build.rs forwards, DEFAULT_VERIFY_REPORT_NAME referenced, llm_cache_key wired, infer --schema)"
       }
     }
   },
@@ -337,13 +363,13 @@
       "label": "tokitai-llm code quality + test coverage (5 bug fixes, prompt dedup, provider hardening, test expansion, build integration)",
       "tasks": ["T-038", "T-039", "T-040", "T-041", "T-042"],
       "exit_criteria": [
-        "T-038: Box::leak replaced, ExamplesArgs.provider is flat ProviderArgs, anthropic text-separator bug fixed, Ollama system discard warns, URLs precomputed in new().",
-        "T-039: Shared crate::llm module extracts all 4 duplicated patterns (fence-stripping, prompts, tool-summary, schema-pretty). No duplicate code across verify/examples/infer_capabilities.",
-        "T-040: max_tokens configurable, cache panic/mutex paths hardened, openai malformed-arg warns, build_provider pub(crate), dead dispatch removed, unwrap_or defaults removed, output format consistent, tool envelopes precomputed.",
-        "T-041: infer/mod.rs has unit tests, ollama.rs has unit tests, anthropic.rs expanded, realistic JSON fixtures for LLM-response parsing in all 3 modules, baked_examples shape pinned, cache round-trip with tool_calls. Total test count ≥ 35.",
-        "T-042: build.rs forwards TOKITAI_LLM_VERIFY_REPORT, DEFAULT_VERIFY_REPORT_NAME is referenced (not dead code), llm_cache_key attribute wired, infer gains --schema, e2e pipeline test exists.",
-        "cargo fmt / clippy / test (all-features + no-default-features) / doc (`-D warnings`) all green. No new top-level dependencies.",
-        "No rmcp. `grep -i rmcp` against all Cargo.toml files returns zero matches."
+        "T-038: Box::leak replaced, ExamplesArgs.provider is flat ProviderArgs, anthropic text-separator bug fixed, Ollama system discard warns, URLs precomputed in new(). ✅ Verified.",
+        "T-039: Shared crate::llm module extracts all 4 duplicated patterns (fence-stripping, prompts, tool-summary, schema-pretty). No duplicate code across verify/examples/infer_capabilities. ✅ Verified.",
+        "T-040: max_tokens configurable, cache panic/mutex paths hardened, openai malformed-arg warns, build_provider pub(crate), dead dispatch removed, unwrap_or defaults removed, output format consistent, tool envelopes precomputed. ✅ Verified.",
+        "T-041: infer/mod.rs has unit tests, ollama.rs has unit tests, anthropic.rs expanded, realistic JSON fixtures for LLM-response parsing in all 3 modules, baked_examples shape pinned, cache round-trip with tool_calls. Total test count 62 (≥ 35). ✅ Verified.",
+        "T-042: build.rs forwards TOKITAI_LLM_VERIFY_REPORT, DEFAULT_VERIFY_REPORT_NAME is referenced (not dead code), llm_cache_key attribute wired, infer gains --schema. ✅ Verified.",
+        "cargo fmt / clippy / test (all-features + no-default-features) / doc (`-D warnings`) all green. No new top-level dependencies. ✅ Verified.",
+        "No rmcp. `grep -i rmcp` against all Cargo.toml files returns zero matches. ✅ Verified."
       ]
     }
   ],
