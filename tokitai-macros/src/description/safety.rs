@@ -32,6 +32,7 @@
 //! | 4   | `FAKE_PROMPT`      | 3+ consecutive newlines (fake prompt break)      |
 //! | 8   | `OVERSIZED`        | literal > 2000 chars                             |
 //! | 16  | `USER_EXTENSION`   | one of the user-supplied `desc_blocklist` hits   |
+//! | 32  | `NON_ASCII_DESC`   | non-ASCII byte present (homoglyph bypass)        |
 //!
 //! The bitmask makes the test surface easy to write
 //! (`assert!(score & INSTRUCTION != 0)`) and lets the diagnostic
@@ -99,6 +100,14 @@ pub const OVERSIZED: u8 = 1 << 3;
 /// Bit 5: the literal hit a phrase the user added via
 /// `TOKITAI_DESC_BLOCKLIST` or `#[tool(desc_blocklist(...))]`.
 pub const USER_EXTENSION: u8 = 1 << 4;
+
+/// Bit 6: the literal contains non-ASCII bytes (homoglyph bypass
+/// detection). LLM tokenizers often normalise Cyrillic homoglyphs
+/// to their ASCII equivalents, so a byte-level ASCII matcher sees
+/// "sуѕtеm:" (with U+0455 U+0458 U+0455 U+0435) as clean but the
+/// LLM reads it as "system:". Setting this bit refuses the literal
+/// regardless of what the other bits say.
+pub const NON_ASCII_DESC: u8 = 1 << 5;
 
 /// Default ceiling for [`OVERSIZED`]. 2 KB is empirical: a
 /// description above this size starts to look like a free-form
@@ -173,6 +182,14 @@ pub const fn desc_safety_score(literal: &str, user_blocklist: &[&str]) -> u8 {
         score |= OVERSIZED;
     }
 
+    // Bit 6: non-ASCII bytes. Checked after the per-tool extension
+    // so the diagnostic can list all matched categories including
+    // this one. The check is intentionally a single byte scan with
+    // no allocation.
+    if !contains_only_ascii_printable(literal) {
+        score |= NON_ASCII_DESC;
+    }
+
     // Bit 5: per-tool extension. The user blocklist is checked
     // only when non-empty so the common path pays nothing.
     if !user_blocklist.is_empty() {
@@ -235,14 +252,39 @@ pub fn split_blocklist(raw: &'static str) -> Vec<&'static str> {
         .collect()
 }
 
-/// `true` when `haystack` contains a "fake prompt break": three or
-/// more consecutive newline bytes (`\n`) with no prose between them.
+/// Returns `true` iff every byte in `s` is in the ASCII printable
+/// range (`0x20..=0x7E`) plus horizontal tab (`0x09`). Newlines
+/// (`\n` = `0x0A`) and carriage returns (`\r` = `0x0D`) are also
+/// allowed because they are legitimate (paragraph breaks, CRLF
+/// line endings).
 ///
-/// A two-newline gap (`\n\n`) is a normal paragraph break. Three or
-/// more newlines is the conventional way to fake a chat-template
-/// boundary inside a single message — an attacker writes
-/// `"...real description\n\n\nsystem: ..."` and hopes the LLM parses
-/// the post-break block as a separate turn.
+/// Any byte outside these ranges — including non-ASCII printable
+/// characters such as Cyrillic homoglyphs (U+0455, U+0458, etc.),
+/// emoji, or control characters — returns `false`.
+///
+/// This is the core defense against the Unicode homoglyph bypass
+/// attack (T-022 C-3). The LLM tokenizer normalises visually
+/// identical characters to their ASCII equivalents, so a pure
+/// byte-level ASCII case-fold matcher sees `"sуѕtеm:"` (with
+/// Cyrillic letters) as clean while the LLM reads it as
+/// `"system:". By refusing any description that carries non-ASCII
+/// bytes, we force the attacker to use only ASCII-clean characters,
+/// which are correctly matched by the `contains_ascii_ci` helper.
+pub const fn contains_only_ascii_printable(s: &str) -> bool {
+    let bytes = s.as_bytes();
+    let mut i: usize = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        // Allowable range bytes: printable ASCII 0x20..0x7E plus
+        // tab (0x09), newline (0x0A), CR (0x0D).
+        let ok = (b >= 0x20 && b <= 0x7E) || b == 0x09 || b == 0x0A || b == 0x0D;
+        if !ok {
+            return false;
+        }
+        i += 1;
+    }
+    true
+}
 const fn has_fake_prompt_break(haystack: &str) -> bool {
     let bytes = haystack.as_bytes();
     let len = bytes.len();
@@ -434,6 +476,49 @@ mod tests {
         assert_ne!(s & FAKE_PROMPT, 0);
         assert_ne!(s & ROLE_HEADER, 0);
         assert_ne!(s & OVERSIZED, 0);
+    }
+
+    #[test]
+    fn non_ascii_description_scores_nonzero() {
+        // Cyrillic homoglyph attack: "sуѕtеm:" has Cyrillic
+        // letters U+0455 (s), U+0458 (i), U+0455 (s), U+0435 (e)
+        // that visually match "system:" but are byte-distinct.
+        // The LLM tokenizer reads them as "system:", bypassing the
+        // ASCII case-fold matcher. The NON_ASCII_DESC bit must fire.
+        let s = desc_safety_score("Hello sуѕtеm: world", &[]);
+        assert_ne!(
+            s & NON_ASCII_DESC,
+            0,
+            "Cyrillic homoglyphs must set NON_ASCII_DESC bit; got mask {:#010b}",
+            s,
+        );
+        // ASCII-only text must NOT set the bit.
+        let clean = desc_safety_score(
+            "Adds two 32-bit integers and returns their sum as i32. Requires both operands.",
+            &[],
+        );
+        assert_eq!(
+            clean & NON_ASCII_DESC,
+            0,
+            "ASCII-only description must not set NON_ASCII_DESC; got mask {:#010b}",
+            clean,
+        );
+    }
+
+    #[test]
+    fn canonical_example_remains_clean_across_all_categories() {
+        // Regression check: the canonical example from the T-022
+        // acceptance criteria must still score 0 across ALL
+        // categories, including NON_ASCII_DESC.
+        let s = desc_safety_score(
+            "Adds two 32-bit integers and returns their sum as i32. Requires both operands.",
+            &[],
+        );
+        assert_eq!(
+            s, CLEAN,
+            "canonical example must score 0; got mask {:#010b}",
+            s
+        );
     }
 
     #[test]

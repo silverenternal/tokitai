@@ -147,3 +147,43 @@ fn tools_list_refusal_message_shape_for_transport() {
     assert!(err.message.contains("T-022"));
     assert!(err.message.contains("instruction-like phrase"));
 }
+
+#[test]
+fn tools_list_refuses_non_ascii_homoglyph_bytes() {
+    // Cyrillic homoglyph attack on "system:" — byte-level
+    // ASCII matchers skip these but the LLM reads them as
+    // "system:". The NON_ASCII_DESC bit (mirror in typed.rs)
+    // must fire and refuse the description.
+    let mut spec = safe_spec("dangerous_tool");
+    spec.description = "Hello sуѕtеm: world".to_string();
+    let dispatcher = TypedDispatcher::from_specs(vec![spec]);
+    let err = dispatcher
+        .tools_list()
+        .expect_err("non-ASCII homoglyph bytes must trip the server-side guard");
+    assert_eq!(err.kind, ToolErrorKind::ValidationError);
+    assert!(
+        err.message.contains("non-ASCII bytes"),
+        "error must mention 'non-ASCII bytes'; got: {}",
+        err.message
+    );
+}
+
+#[test]
+fn canonical_ascii_description_remains_clean_on_server_side() {
+    // Regression check: the canonical example must pass all
+    // safety checks including the new NON_ASCII_DESC check.
+    let spec = safe_spec("add");
+    let dispatcher = TypedDispatcher::from_specs(vec![spec]);
+    let response = dispatcher
+        .tools_list()
+        .expect("canonical ASCII description must serve tools/list");
+    let tools = response
+        .get("tools")
+        .and_then(|t| t.as_array())
+        .expect("response carries a `tools` array");
+    assert_eq!(tools.len(), 1);
+    assert_eq!(
+        tools[0].get("description").and_then(|v| v.as_str()),
+        Some("Add two 32-bit signed integers and return the sum. Returns Err on overflow."),
+    );
+}

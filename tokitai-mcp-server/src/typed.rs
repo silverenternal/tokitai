@@ -889,6 +889,28 @@ const ROLE_HEADERS: &[&str] = &["system:", "assistant:", "user:"];
 /// Same 2000-char ceiling used by the macro-side matcher.
 const OVERSIZED_THRESHOLD: usize = 2000;
 
+/// Returns `true` iff every byte in `s` is in the ASCII printable
+/// range (`0x20..=0x7E`) plus tab (`0x09`), newline (`0x0A`), and
+/// carriage return (`0x0D`). Mirrors
+/// `tokitai-macros/src/description/safety.rs::contains_only_ascii_printable`.
+///
+/// Any non-ASCII byte — including Cyrillic homoglyphs, emoji, or
+/// control characters — returns `false`. This is the core defense
+/// against the T-022 C-3 Unicode homoglyph bypass attack.
+fn contains_only_ascii_printable(s: &str) -> bool {
+    let bytes = s.as_bytes();
+    let mut i: usize = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        let ok = (0x20..=0x7E).contains(&b) || b == 0x09 || b == 0x0A || b == 0x0D;
+        if !ok {
+            return false;
+        }
+        i += 1;
+    }
+    true
+}
+
 /// Returned-value convention for [`scan_description_safety`].
 /// `None` means "clean"; `Some(_)` carries the matched category
 /// names in the order they were detected (so the diagnostic can
@@ -917,6 +939,9 @@ fn scan_description_safety(description: &str) -> Option<Vec<&'static str>> {
     }
     if description.len() > OVERSIZED_THRESHOLD {
         categories.push("oversized narrative");
+    }
+    if !contains_only_ascii_printable(description) {
+        categories.push("non-ASCII bytes (homoglyph bypass)");
     }
 
     if categories.is_empty() {
