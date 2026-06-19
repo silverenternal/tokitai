@@ -667,14 +667,14 @@ that needs a known-bad literal.
 ```rust
 #[tool(
     desc = "Sends the email. (urgent handling required)",
-    desc_blocklist(["urgent handling"]),  // org policy forbids
+    desc_blocklist = ["urgent handling"],  // org policy forbids
                                           // "urgent handling" on
                                           // email-sending tools
 )]
 pub fn send_email(&self, to: String, body: String) -> bool { ... }
 ```
 
-The `desc_blocklist("phrase1", "phrase2", ...)` attribute adds
+The `desc_blocklist = ["phrase1", "phrase2", ...]` attribute adds
 case-insensitive substrings to the matcher for this method
 only. The bitmask path is the same as the in-source default
 set, so the diagnostic is identical.
