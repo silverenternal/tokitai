@@ -101,6 +101,13 @@
 
 pub mod server;
 pub mod stdio;
+// T-024: runtime cross-crate version assertion. `serve()` is the
+// top-level CLI entry point that reads `--require-tokitai=<prefix>`
+// and `--allow-tokitai-mismatch` from `std::env::args`, then
+// enforces the rule against a build-script-emitted manifest
+// (`OUT_DIR/tokitai_manifest.rs`). See `serve.rs` for the CLI
+// contract and the documented hard-refusal / soft-warn split.
+pub mod serve;
 
 // T-021: typed MCP handle layer. Compiled unconditionally (it has no
 // dependency on rmcp or any MCP SDK), but the typed dispatch path is
@@ -115,6 +122,11 @@ pub use typed::{
     load_typed_fixtures, validate_against_schema, validate_tool_args, JsonPointer, TypedDispatcher,
     TypedToolSpec,
 };
+
+// T-024: re-export the runtime cross-crate version entry point.
+// Downstream binaries wire `tokitai_mcp_server::serve()` into their
+// `fn main()` to gate startup on the version check.
+pub use serve::serve as run_version_check;
 
 // Re-export commonly used types
 pub use server::{

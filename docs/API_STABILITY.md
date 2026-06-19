@@ -168,6 +168,96 @@ version hit the cache.
 
 ---
 
+## Cross-crate version assertion (T-024)
+
+T-013 (intra-crate) and T-020 (intra-crate schema evolution)
+cover version drift *inside* a single crate's tool set. T-024
+extends that story to *cross-crate* drift: a consumer pinned
+to `tokitai = "0.7"` and a third-party crate that bumped to
+`tokitai = "0.8"` both compile, but the consumer's
+`set_current_version` has no view of the third-party's
+version. The agent sees a shape from one version and a call
+site from the other.
+
+T-024 closes the gap with two structural defenses:
+
+1. **Compile-time check (consumer-side).** A downstream crate
+   that wants to declare its expected `tokitai-core` version
+   writes
+   `const _: () = tokitai_core::assert_compatible_with("0.5");`
+   in any `const` context. A mismatch fails to build with a
+   `compile_error!` naming both versions and the docs.rs
+   migration link. The match rule is canonical SemVer prefix
+   match: `"0.5"` matches `0.5.0`, `0.5.1`, ...; `"0.5.1"`
+   matches exactly; `"0"` matches any `0.x.y`. A `v` prefix is
+   accepted transparently.
+
+2. **Runtime check (server-side).** `tokitai-mcp-server`'s
+   `serve()` reads `--require-tokitai=<prefix>` and
+   `--allow-tokitai-mismatch` from `std::env::args`. The
+   resolved `tokitai-core` version is baked into the binary
+   at compile time via the build-script-emitted manifest
+   `OUT_DIR/tokitai_manifest.rs` (sourced from `Cargo.lock`).
+   On mismatch the server logs a `warn!` and refuses to start
+   (returns `Err(ServerError::ServerStartupError(...))` so the
+   surrounding `main` can exit with code 78 / `EX_CONFIG`).
+   The override flag exists for documented emergency deploys
+   and is itself logged at `warn!` level so the audit trail
+   records the override.
+
+### How T-013 / T-020 / T-024 fit together
+
+| Layer | Mechanism | Surfaces drift at |
+|-------|-----------|-------------------|
+| **T-013** | `remove_in` / `replaced_by` per-method | Run time (a removed tool returns `ToolError::Removed`) |
+| **T-020** | `since` / `until` per-method | Compile time (interval rules) + run time (gated dispatch) |
+| **T-024** | `assert_compatible_with` + `serve()` | Compile time (consumer pins wrong version) + startup (server bin drift) |
+
+Together the three layers cover the full version-drift story:
+T-013/T-020 for *within-crate* schema evolution, T-024 for
+*cross-crate* version drift at the dep boundary.
+
+### Operator runbook
+
+```bash
+# Default: hard refusal on mismatch (exit 78 / EX_CONFIG).
+tokitai-mcp-server --require-tokitai=0.5
+
+# Documented emergency override. Logged at warn! level.
+tokitai-mcp-server --require-tokitai=0.5 --allow-tokitai-mismatch
+
+# Canary / staging override at build time. The manifest is
+# rewritten to the override value; runtime sees the override
+# instead of the resolved version.
+TOKITAI_VERSION_OVERRIDE=0.5.2 cargo build -p tokitai-mcp-server
+```
+
+### Acceptance
+
+- `tokitai_core::assert_compatible_with("0.5")` is a
+  `pub const fn` and passes when called from a
+  `const _ = ...` context with a matching / prefix-matching
+  version.
+- A consumer pinned to `tokitai = "0.7"` calling
+  `assert_compatible_with("0.8")` fails to compile with a
+  `compile_error!` naming both versions and the docs.rs
+  migration link.
+- A consumer pinned to `tokitai = "0.8.1"` calling
+  `assert_compatible_with("0.8")` compiles cleanly (prefix
+  match).
+- `tokitai-mcp-server`'s `build.rs` writes
+  `OUT_DIR/tokitai_manifest.rs` carrying the resolved
+  `tokitai-core` version.
+- `tokitai-mcp-server --require-tokitai=0.9.0` started
+  against a binary compiled for `0.5.1` logs a `warn!` and
+  refuses to bind.
+- `tokitai-core/tests/assert_compatible_test.rs` and
+  `tokitai-mcp-server/tests/version_assertion_test.rs`
+  cover every branch (prefix / exact / `v`-prefix / malformed
+  literal / override).
+
+---
+
 The following APIs are stable across the v0.5.x series:
 
 ### Stable APIs

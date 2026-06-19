@@ -11,6 +11,12 @@ description = "MCP server scaffolding for Tokitai - Build AI-callable tool serve
 keywords = ["mcp", "ai", "llm", "tool", "server"]
 categories = ["development-tools", "asynchronous"]
 rust-version = "1.80"
+# T-024: build script emits `OUT_DIR/tokitai_manifest.rs` carrying
+# the resolved `tokitai-core` version the server was compiled
+# against. The runtime `serve()` entry point reads this constant
+# to enforce `--require-tokitai=<prefix>` at startup. See
+# `build.rs` for the manifest format.
+build = "build.rs"
 
 [dependencies]
 tokitai = { path = "../tokitai", version = "0.5.1", features = ["mcp", "http-server"] }

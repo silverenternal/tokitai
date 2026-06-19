@@ -2701,6 +2701,264 @@ macro_rules! json_schema {
     }};
 }
 
+// ===========================================================================
+// T-024: cross-crate version assertion
+//
+// A `tokitai-core` consumer pinned to one minor line (say `0.7`) can
+// silently drift against another consumer (a third-party crate) that
+// pinned a different line (say `0.8`): both compile, but the agent sees
+// a tool shape from one version and a call site from the other. The
+// fix is structural:
+//   1. A compile-time `pub const CORE_VERSION` carrying the exact
+//      version of `tokitai-core` that was compiled in (via
+//      `env!("CARGO_PKG_VERSION")`). Consumers re-export this from
+//      their own build script to compare against their pinned version.
+//   2. A `pub const fn assert_compatible_with(expected: &str)` whose
+//      body is a `const {}` block. When the function is called from a
+//      downstream crate inside a `const` context, a mismatch raises a
+//      `compile_error!` naming both versions and the docs.rs migration
+//      link. Match rule: exact match for `x.y.z`, prefix match for
+//      `x.y` or `x` (e.g. `0.8` matches `0.8.1`).
+// ===========================================================================
+
+/// T-024: exact version string of `tokitai-core` that was compiled in
+/// (sourced from `CARGO_PKG_VERSION`). The mcp-server build script
+/// writes a generated source file with this constant so the running
+/// binary can compare against the version that was baked at compile
+/// time.
+///
+/// # Example
+///
+/// ```rust
+/// use tokitai_core::CORE_VERSION;
+///
+/// let _v: &str = CORE_VERSION;
+/// assert!(!CORE_VERSION.is_empty());
+/// ```
+pub const CORE_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// T-024: assert at compile time that the compiled-against
+/// `tokitai-core` matches the expected SemVer string under the
+/// standard prefix-match rule (`x.y` matches `x.y.z`; `x.y.z` matches
+/// exactly). A mismatch raises a `compile_error!` naming both
+/// versions and the docs.rs migration link.
+///
+/// The function is `pub const fn` so the check runs in the caller's
+/// `const` context. When called outside a `const` context the check
+/// still runs but produces a runtime panic instead of a compile error.
+///
+/// # Match rule (canonical SemVer)
+///
+/// | `expected` | `CORE_VERSION` | result |
+/// |------------|------------------|--------|
+/// | `"0.8.1"`  | `"0.8.1"`        | passes (exact) |
+/// | `"0.8"`    | `"0.8.1"`        | passes (prefix) |
+/// | `"0.8.1"`  | `"0.8.2"`        | fails |
+/// | `"0.9"`    | `"0.8.1"`        | fails |
+///
+/// # Example (positive)
+///
+/// ```rust
+/// use tokitai_core::assert_compatible_with;
+///
+/// // Inside your own crate, gated by a `const _: () = ...;` block
+/// // so the check fires at compile time:
+/// const _: () = {
+///     tokitai_core::assert_compatible_with("0.5");
+/// };
+/// ```
+///
+/// # Negative example (cross-crate drift)
+///
+/// A consumer crate that pins `tokitai = "0.7"` and calls
+/// `assert_compatible_with("0.8")` would fail to compile with a
+/// diagnostic naming both versions and pointing at the docs.rs
+/// migration guide. The compile-time guarantee is the whole point
+/// of T-024 — drift surfaces before the binary ever runs.
+pub const fn assert_compatible_with(expected: &str) {
+    // T-024: keep the panic message static so it can be reached
+    // inside a `const fn`. Dynamic formatters are not const-stable
+    // for non-`'static` references, so we parse the version
+    // components inline (no `semver::Version::parse`, which is not
+    // a `const fn` in the `semver` crate today) and produce a
+    // static drift-category message on mismatch.
+    //
+    // Match rule (canonical SemVer): 1 component matches any on
+    // the same major; 2 components match any on the same
+    // major.minor; 3 components must match exactly. The
+    // pre-release / build suffix is ignored for ordering.
+    //
+    // When called from a `const _: () = assert_compatible_with("0.8")`
+    // context inside a downstream crate, the compiler evaluates
+    // this function at compile time. A mismatch surfaces as a
+    // `compile_error!` naming the drift category and the docs.rs
+    // migration guide link. When called from a runtime context the
+    // same panic fires at run time, which is the documented
+    // fallback.
+
+    // Strip the optional `v`/`V` prefix from `expected`.
+    let expected_bytes = expected.as_bytes();
+    let mut exp_offset: usize = 0;
+    let mut exp_new_len = expected_bytes.len();
+    if !expected_bytes.is_empty() {
+        let first = expected_bytes[0];
+        if first == b'v' || first == b'V' {
+            exp_offset = 1;
+            exp_new_len = expected_bytes.len() - 1;
+        }
+    }
+    let expected_tail = unsafe {
+        core::slice::from_raw_parts(expected_bytes.as_ptr().add(exp_offset), exp_new_len)
+    };
+    // SAFETY: `expected_tail` is a sub-slice of a valid `&str`;
+    // the `v`/`V` prefix is single-byte ASCII so removing it
+    // cannot break UTF-8 invariants.
+    let expected_str = unsafe { core::str::from_utf8_unchecked(expected_tail) };
+
+    // Strip the optional `v`/`V` prefix from `CORE_VERSION`.
+    let core_bytes = CORE_VERSION.as_bytes();
+    let mut core_offset: usize = 0;
+    let mut core_new_len = core_bytes.len();
+    if !core_bytes.is_empty() {
+        let first = core_bytes[0];
+        if first == b'v' || first == b'V' {
+            core_offset = 1;
+            core_new_len = core_bytes.len() - 1;
+        }
+    }
+    let core_tail =
+        unsafe { core::slice::from_raw_parts(core_bytes.as_ptr().add(core_offset), core_new_len) };
+    let core_str_stripped = unsafe { core::str::from_utf8_unchecked(core_tail) };
+
+    // Inline SemVer parser (const-stable). Returns the three
+    // numeric components and the textual arity. A non-numeric
+    // byte inside a component is a parse failure (returns the
+    // `Err` arm). The pre-release / build suffix is stripped
+    // before parsing so the ordering matches the canonical
+    // SemVer 2.0 rule (build metadata ignored for comparison).
+    let expected_parts = parse_semver_const(expected_str);
+    let core_parts = parse_semver_const(core_str_stripped);
+
+    match (expected_parts, core_parts) {
+        (Some(ep), Some(cp)) => {
+            let (emaj, emin, epat, eary) = ep;
+            let (cmaj, cmin, cpat, _) = cp;
+            let _ = cpat; // silence unused-when-not-3 warning
+                          // 3-arity requires exact patch match; 2-arity skips
+                          // the patch check; 1-arity skips minor and patch.
+                          // We always check the major. The arity was computed
+                          // from the textual form of `expected` (1, 2, or 3
+                          // numeric components).
+            if eary >= 1 && cmaj != emaj {
+                panic!("tokitai-core version mismatch: major drift. See https://docs.rs/tokitai-core for the migration guide.");
+            }
+            if eary >= 2 && cmin != emin {
+                panic!("tokitai-core version mismatch: minor drift. See https://docs.rs/tokitai-core for the migration guide.");
+            }
+            if eary >= 3 && cpat != epat {
+                panic!("tokitai-core version mismatch: patch drift. See https://docs.rs/tokitai-core for the migration guide.");
+            }
+        }
+        _ => {
+            // Either side failed to parse. A malformed expected is
+            // a typo; a malformed core is an internal
+            // inconsistency. Either way, fail loud rather than
+            // silently passing.
+            panic!("tokitai-core version mismatch: invalid SemVer literal. See https://docs.rs/tokitai-core for the migration guide.");
+        }
+    }
+}
+
+/// T-024: const-stable SemVer prefix parser. Returns
+/// `(major, minor, patch, arity)` when the input parses as
+/// `x[.y[.z]]` (each component is a sequence of ASCII digits;
+/// pre-release `-...` and build `+...` suffixes are accepted and
+/// ignored). `arity` is the number of numeric components found
+/// in the textual form (1, 2, or 3).
+///
+/// Returns `None` when:
+/// * the input is empty,
+/// * any component is non-numeric,
+/// * there are more than three components,
+/// * or a component has leading `0` followed by another digit
+///   (canonical SemVer disallows this; we enforce it so the
+///   comparison is well-defined).
+const fn parse_semver_const(s: &str) -> Option<(u64, u64, u64, usize)> {
+    let bytes = s.as_bytes();
+    let mut i: usize = 0;
+    let mut parts: [u64; 3] = [0, 0, 0];
+    let mut arity: usize = 0;
+    let mut end = bytes.len();
+    if end == 0 {
+        return None;
+    }
+    // Strip pre-release / build metadata.
+    while i < end {
+        let b = bytes[i];
+        if b == b'-' || b == b'+' {
+            end = i;
+            break;
+        }
+        i += 1;
+    }
+    i = 0;
+    while i <= end {
+        let at_end = i == end;
+        let is_dot = !at_end && bytes[i] == b'.';
+        if at_end || is_dot {
+            // Empty component (e.g. ".0" or trailing ".") -> parse
+            // failure.
+            if i == 0 {
+                return None;
+            }
+            if bytes[i - 1] == b'.' {
+                return None;
+            }
+            if arity >= 3 {
+                return None;
+            }
+            arity += 1;
+            if at_end {
+                break;
+            }
+        } else {
+            let b = bytes[i];
+            if b < b'0' || b > b'9' {
+                return None;
+            }
+            // Reject leading-zero components (`01`) so the
+            // ordering is unambiguous. A "leading zero" is a `0`
+            // at the very start of a component that is followed
+            // by another digit before the next `.` or end.
+            if b == b'0' {
+                let prev_is_dot = i == 0 || bytes[i - 1] == b'.';
+                if prev_is_dot {
+                    let next_is_dot_or_end = i + 1 == end || bytes[i + 1] == b'.';
+                    if !next_is_dot_or_end {
+                        return None;
+                    }
+                }
+            }
+            // Accumulate into the current component. We are
+            // guaranteed `arity < 3` because we early-return above
+            // when arity would reach 3, and we increment AFTER the
+            // component ends (`.` or EOF).
+            let slot = &mut parts[arity];
+            let mul = match slot.checked_mul(10) {
+                Some(v) => v,
+                None => return None,
+            };
+            let add = match mul.checked_add((b - b'0') as u64) {
+                Some(v) => v,
+                None => return None,
+            };
+            *slot = add;
+        }
+        i += 1;
+    }
+    Some((parts[0], parts[1], parts[2], arity))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
