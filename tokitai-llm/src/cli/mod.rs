@@ -90,6 +90,14 @@ pub struct ProviderArgs {
     /// `OLLAMA_API_KEY` depending on `--provider`).
     #[arg(long, env = "TOKITAI_LLM_API_KEY")]
     pub api_key: Option<String>,
+
+    /// Maximum tokens to request. Anthropic requires this field
+    /// on every Messages request; OpenAI and Ollama treat it as
+    /// an upper bound on completion length. Defaults to the
+    /// provider-specific [`crate::provider::anthropic::DEFAULT_MAX_TOKENS`]
+    /// for Anthropic and is ignored by OpenAI / Ollama.
+    #[arg(long, env = "TOKITAI_LLM_MAX_TOKENS")]
+    pub max_tokens: Option<u64>,
 }
 
 /// `tokitai-llm verify` arguments.

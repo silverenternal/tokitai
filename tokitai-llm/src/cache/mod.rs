@@ -121,7 +121,18 @@ pub fn cache_key(
         messages: messages.to_vec(),
         tools: tools_json,
     };
-    let bytes = serde_json::to_vec(&key).expect("CacheKey is always serialisable");
+    // `CacheKey` only contains primitives, strings, `Vec<Value>`,
+    // and `Vec<ChatMessage>` — every variant serialises by
+    // contract. If serialisation ever does fail we degrade to an
+    // empty key rather than panicking the whole LLM loop; a cache
+    // miss is harmless, a panic in a CLI is not.
+    let bytes = match serde_json::to_vec(&key) {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::warn!("cache_key serialisation failed: {e}");
+            return String::new();
+        }
+    };
     let mut hasher = Hasher::new();
     hasher.update(&bytes);
     let digest = hasher.finalize();
@@ -143,6 +154,22 @@ pub struct InMemoryCache {
     inner: std::sync::Mutex<std::collections::HashMap<String, Vec<u8>>>,
 }
 
+/// Acquire the cache mutex. Recovers from poisoning (a panic
+/// while holding the lock) by returning the inner map after
+/// logging; the alternative — silently returning `None` — would
+/// mask the panic and leave stale entries invisible to readers.
+fn lock_cache(
+    m: &std::sync::Mutex<std::collections::HashMap<String, Vec<u8>>>,
+) -> std::sync::MutexGuard<'_, std::collections::HashMap<String, Vec<u8>>> {
+    match m.lock() {
+        Ok(g) => g,
+        Err(p) => {
+            tracing::warn!("cache mutex poisoned: {p}");
+            p.into_inner()
+        }
+    }
+}
+
 impl InMemoryCache {
     /// Build an empty in-memory cache.
     pub fn new() -> Self {
@@ -151,7 +178,7 @@ impl InMemoryCache {
 
     /// Look up a cached response by key. Returns `None` on miss.
     pub fn get(&self, key: &str) -> Option<CachedResponse> {
-        let guard = self.inner.lock().ok()?;
+        let guard = lock_cache(&self.inner);
         let bytes = guard.get(key)?;
         serde_json::from_slice(bytes).ok()
     }
@@ -161,14 +188,13 @@ impl InMemoryCache {
         let Ok(bytes) = serde_json::to_vec(value) else {
             return;
         };
-        if let Ok(mut guard) = self.inner.lock() {
-            guard.insert(key, bytes);
-        }
+        let mut guard = lock_cache(&self.inner);
+        guard.insert(key, bytes);
     }
 
     /// Number of entries currently in the cache.
     pub fn len(&self) -> usize {
-        self.inner.lock().map(|g| g.len()).unwrap_or(0)
+        lock_cache(&self.inner).len()
     }
 
     /// True when the cache holds no entries.
@@ -244,5 +270,122 @@ mod tests {
         cache.put("k".into(), &resp);
         let got = cache.get("k").unwrap();
         assert_eq!(got.content, "42");
+    }
+
+    #[test]
+    fn cache_key_differs_with_system() {
+        let tools = vec![ToolDefinition::new(
+            "add",
+            "add two numbers",
+            r#"{"type":"object"}"#,
+        )];
+        let messages = vec![ChatMessage::User {
+            content: "hi".into(),
+        }];
+        let k_none = cache_key("gpt-4o", None, &messages, &tools);
+        let k_some = cache_key("gpt-4o", Some("be concise"), &messages, &tools);
+        assert_ne!(k_none, k_some);
+    }
+
+    #[test]
+    fn cache_key_differs_with_tools() {
+        let messages = vec![ChatMessage::User {
+            content: "hi".into(),
+        }];
+        let t1 = vec![ToolDefinition::new("add", "add", r#"{"type":"object"}"#)];
+        let t2 = vec![ToolDefinition::new("mul", "mul", r#"{"type":"object"}"#)];
+        let k1 = cache_key("gpt-4o", None, &messages, &t1);
+        let k2 = cache_key("gpt-4o", None, &messages, &t2);
+        assert_ne!(k1, k2);
+    }
+
+    #[test]
+    fn cache_round_trip_with_tool_calls() {
+        let cache = InMemoryCache::new();
+        let resp = CachedResponse {
+            content: String::new(),
+            tool_calls: vec![CachedToolCall {
+                id: "call_1".into(),
+                name: "echo".into(),
+                arguments: serde_json::json!({"x": 1}),
+            }],
+            usage: None,
+        };
+        cache.put("k".into(), &resp);
+        let got = cache.get("k").expect("cache hit");
+        assert_eq!(got.tool_calls.len(), 1);
+        assert_eq!(got.tool_calls[0].id, "call_1");
+        assert_eq!(got.tool_calls[0].name, "echo");
+        assert_eq!(got.tool_calls[0].arguments, serde_json::json!({"x": 1}));
+    }
+
+    #[test]
+    fn cache_round_trip_with_usage() {
+        let cache = InMemoryCache::new();
+        let resp = CachedResponse {
+            content: "ok".into(),
+            tool_calls: vec![],
+            usage: Some(CachedUsage {
+                prompt_tokens: 10,
+                completion_tokens: 5,
+                total_tokens: 15,
+            }),
+        };
+        cache.put("k".into(), &resp);
+        let got = cache.get("k").expect("cache hit");
+        let usage = got.usage.expect("usage preserved");
+        assert_eq!(usage.prompt_tokens, 10);
+        assert_eq!(usage.completion_tokens, 5);
+        assert_eq!(usage.total_tokens, 15);
+    }
+
+    #[test]
+    fn cache_overwrite() {
+        let cache = InMemoryCache::new();
+        let resp1 = CachedResponse {
+            content: "first".into(),
+            tool_calls: vec![],
+            usage: None,
+        };
+        let resp2 = CachedResponse {
+            content: "second".into(),
+            tool_calls: vec![],
+            usage: None,
+        };
+        cache.put("k".into(), &resp1);
+        cache.put("k".into(), &resp2);
+        let got = cache.get("k").expect("cache hit");
+        assert_eq!(got.content, "second");
+    }
+
+    #[test]
+    fn cache_conversion_to_completion_response_preserves_fields() {
+        let cr = CachedResponse {
+            content: "hi".into(),
+            tool_calls: vec![CachedToolCall {
+                id: "c".into(),
+                name: "echo".into(),
+                arguments: serde_json::json!({}),
+            }],
+            usage: Some(CachedUsage {
+                prompt_tokens: 1,
+                completion_tokens: 2,
+                total_tokens: 3,
+            }),
+        };
+        let resp: crate::provider::CompletionResponse = (&cr).into();
+        assert_eq!(resp.content, "hi");
+        assert_eq!(resp.tool_calls.len(), 1);
+        assert_eq!(resp.tool_calls[0].name, "echo");
+        let u = resp.usage.expect("usage");
+        assert_eq!(u.total_tokens, 3);
+    }
+
+    #[test]
+    fn cache_miss_returns_none() {
+        let cache = InMemoryCache::new();
+        assert!(cache.get("nope").is_none());
+        assert!(cache.is_empty());
+        assert_eq!(cache.len(), 0);
     }
 }

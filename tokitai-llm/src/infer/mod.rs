@@ -18,7 +18,7 @@ use crate::cli::{InferArgs, ProviderArgs, ProviderKind};
 use crate::provider::anthropic::AnthropicProvider;
 use crate::provider::ollama::OllamaProvider;
 use crate::provider::openai::OpenAiProvider;
-use crate::provider::{ChatMessage, CompletionResponse, Provider, ProviderToolCall};
+use crate::provider::{ChatMessage, CompletionResponse, Provider};
 use crate::Result;
 use tokitai_core::ToolDefinition;
 
@@ -74,11 +74,20 @@ pub async fn run(args: InferArgs) -> Result<()> {
     }];
     let cache = InMemoryCache::new();
 
+    // `build_provider` already validated that `model` is set
+    // (it returns `Err` otherwise), so unwrapping here is safe
+    // and removes the silent `"default"` fallback.
+    let model = args
+        .provider
+        .model
+        .as_deref()
+        .expect("model validated by build_provider");
+
     let response = complete_with_cache(
         &provider,
         &cache,
         args.no_cache,
-        args.provider.model.as_deref().unwrap_or("default"),
+        model,
         args.system.as_deref(),
         &messages,
         &tools,
@@ -99,7 +108,7 @@ pub async fn run(args: InferArgs) -> Result<()> {
 /// Build the concrete `Provider` implementation from CLI args.
 /// Each branch constructs the config struct that pairs with the
 /// provider and wraps it in the matching struct.
-pub fn build_provider(args: &ProviderArgs) -> Result<AnyProvider> {
+pub(crate) fn build_provider(args: &ProviderArgs) -> Result<AnyProvider> {
     let model = args
         .model
         .clone()
@@ -121,6 +130,7 @@ pub fn build_provider(args: &ProviderArgs) -> Result<AnyProvider> {
                 args.base_url.clone(),
                 model,
                 args.api_key.clone(),
+                args.max_tokens,
             );
             Ok(AnyProvider::Anthropic(AnthropicProvider::new(cfg)))
         }
@@ -162,20 +172,338 @@ pub async fn complete_with_cache(
     Ok(response)
 }
 
-/// Dispatch a single tool call against a `tokitai_core::ToolProvider`
-/// and convert the result into a `ChatMessage::Tool` ready to be
-/// fed back to the model.
-///
-/// This is the public seam that the v0.2 `infer` loop will call
-/// for every `ProviderToolCall` returned by the model. The v0.1
-/// stub is intentionally a free function so the dispatcher can
-/// be tested without a full `Provider` in scope.
-pub fn dispatch_as_tool_message(call: &ProviderToolCall) -> ChatMessage {
-    // v0.1: no provider is wired in yet, so we emit a placeholder
-    // string. The v0.2 loop will pass the `ToolProvider` and
-    // serialise the call result here.
-    ChatMessage::Tool {
-        tool_call_id: call.id.clone(),
-        content: format!("(dispatch not yet wired) {}", call.name),
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cache::{cache_key, InMemoryCache};
+    use crate::cli::ProviderKind;
+    use crate::provider::ProviderToolCall;
+    use async_trait::async_trait;
+    use serde_json::json;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+
+    struct MockProvider {
+        name: &'static str,
+        content: String,
+        called: Arc<AtomicBool>,
+    }
+
+    #[async_trait]
+    impl Provider for MockProvider {
+        fn name(&self) -> &'static str {
+            self.name
+        }
+        async fn complete_with_tools(
+            &self,
+            _system: Option<&str>,
+            _messages: &[ChatMessage],
+            _tools: &[ToolDefinition],
+        ) -> anyhow::Result<CompletionResponse> {
+            self.called.store(true, Ordering::SeqCst);
+            Ok(CompletionResponse {
+                content: self.content.clone(),
+                tool_calls: vec![],
+                usage: None,
+            })
+        }
+    }
+
+    #[test]
+    fn build_provider_openai() {
+        let args = ProviderArgs {
+            provider: Some(ProviderKind::Openai),
+            base_url: Some("https://api.example.com".into()),
+            model: Some("gpt-4o".into()),
+            api_key: Some("k".into()),
+            max_tokens: None,
+        };
+        let p = build_provider(&args).expect("build_provider openai");
+        assert!(matches!(p, AnyProvider::Openai(_)));
+    }
+
+    #[test]
+    fn build_provider_anthropic() {
+        let args = ProviderArgs {
+            provider: Some(ProviderKind::Anthropic),
+            base_url: Some("https://api.example.com".into()),
+            model: Some("claude-3-5-sonnet-latest".into()),
+            api_key: Some("k".into()),
+            max_tokens: Some(1024),
+        };
+        let p = build_provider(&args).expect("build_provider anthropic");
+        assert!(matches!(p, AnyProvider::Anthropic(_)));
+    }
+
+    #[test]
+    fn build_provider_ollama() {
+        let args = ProviderArgs {
+            provider: Some(ProviderKind::Ollama),
+            base_url: Some("http://localhost:11434".into()),
+            model: Some("llama3.1".into()),
+            api_key: None,
+            max_tokens: None,
+        };
+        let p = build_provider(&args).expect("build_provider ollama");
+        assert!(matches!(p, AnyProvider::Ollama(_)));
+    }
+
+    #[test]
+    fn build_provider_errors_without_model() {
+        let args = ProviderArgs {
+            provider: Some(ProviderKind::Openai),
+            base_url: None,
+            model: None,
+            api_key: None,
+            max_tokens: None,
+        };
+        assert!(build_provider(&args).is_err());
+    }
+
+    #[test]
+    fn build_provider_errors_without_kind() {
+        let args = ProviderArgs {
+            provider: None,
+            base_url: None,
+            model: Some("gpt-4o".into()),
+            api_key: None,
+            max_tokens: None,
+        };
+        assert!(build_provider(&args).is_err());
+    }
+
+    #[test]
+    fn any_provider_name_dispatches_correctly() {
+        let openai = AnyProvider::Openai(OpenAiProvider::new(
+            crate::provider::openai::OpenAiConfig::from_args(
+                None,
+                "gpt-4o".into(),
+                Some("k".into()),
+            ),
+        ));
+        let anthropic = AnyProvider::Anthropic(AnthropicProvider::new(
+            crate::provider::anthropic::AnthropicConfig::from_args(
+                None,
+                "claude-3-5-sonnet-latest".into(),
+                Some("k".into()),
+                None,
+            ),
+        ));
+        let ollama = AnyProvider::Ollama(OllamaProvider::new(
+            crate::provider::ollama::OllamaConfig::from_args(None, "llama3.1".into()),
+        ));
+        assert_eq!(openai.name(), "openai");
+        assert_eq!(anthropic.name(), "anthropic");
+        assert_eq!(ollama.name(), "ollama");
+    }
+
+    #[tokio::test]
+    async fn complete_with_cache_hit_skips_provider() {
+        let cache = InMemoryCache::new();
+        let called = Arc::new(AtomicBool::new(false));
+        let provider = MockProvider {
+            name: "mock",
+            content: "live".into(),
+            called: Arc::clone(&called),
+        };
+
+        let messages = vec![ChatMessage::User {
+            content: "hello".into(),
+        }];
+        let tools: Vec<ToolDefinition> = vec![];
+        let key = cache_key("mock-model", None, &messages, &tools);
+        cache.put(
+            key,
+            &crate::cache::CachedResponse {
+                content: "cached".into(),
+                tool_calls: vec![],
+                usage: None,
+            },
+        );
+
+        let resp = complete_with_cache(
+            &provider,
+            &cache,
+            false,
+            "mock-model",
+            None,
+            &messages,
+            &tools,
+        )
+        .await
+        .expect("complete_with_cache should succeed");
+        assert_eq!(resp.content, "cached");
+        assert!(
+            !called.load(Ordering::SeqCst),
+            "provider should not be called when cache hit"
+        );
+    }
+
+    #[tokio::test]
+    async fn complete_with_cache_miss_calls_provider_and_fills_cache() {
+        let cache = InMemoryCache::new();
+        let called = Arc::new(AtomicBool::new(false));
+        let provider = MockProvider {
+            name: "mock",
+            content: "live".into(),
+            called: Arc::clone(&called),
+        };
+
+        let messages = vec![ChatMessage::User {
+            content: "hello".into(),
+        }];
+        let tools: Vec<ToolDefinition> = vec![];
+
+        let resp = complete_with_cache(
+            &provider,
+            &cache,
+            false,
+            "mock-model",
+            None,
+            &messages,
+            &tools,
+        )
+        .await
+        .expect("complete_with_cache should succeed");
+        assert_eq!(resp.content, "live");
+        assert!(
+            called.load(Ordering::SeqCst),
+            "provider must be called on miss"
+        );
+
+        let key = cache_key("mock-model", None, &messages, &tools);
+        let cached = cache.get(&key).expect("cache populated after miss");
+        assert_eq!(cached.content, "live");
+    }
+
+    #[tokio::test]
+    async fn complete_with_cache_no_cache_bypasses_cache() {
+        let cache = InMemoryCache::new();
+        let called = Arc::new(AtomicBool::new(false));
+        let provider = MockProvider {
+            name: "mock",
+            content: "live".into(),
+            called: Arc::clone(&called),
+        };
+
+        let messages = vec![ChatMessage::User {
+            content: "hello".into(),
+        }];
+        let tools: Vec<ToolDefinition> = vec![];
+        let key = cache_key("mock-model", None, &messages, &tools);
+        cache.put(
+            key.clone(),
+            &crate::cache::CachedResponse {
+                content: "cached".into(),
+                tool_calls: vec![],
+                usage: None,
+            },
+        );
+
+        let resp = complete_with_cache(
+            &provider,
+            &cache,
+            true,
+            "mock-model",
+            None,
+            &messages,
+            &tools,
+        )
+        .await
+        .expect("complete_with_cache should succeed");
+        assert_eq!(resp.content, "live");
+        assert!(
+            called.load(Ordering::SeqCst),
+            "provider must be called when no_cache=true"
+        );
+        let cached = cache.get(&key).expect("entry still present");
+        assert_eq!(cached.content, "cached");
+    }
+
+    #[tokio::test]
+    async fn complete_with_cache_propagates_tool_calls() {
+        let cache = InMemoryCache::new();
+        let called = Arc::new(AtomicBool::new(false));
+        let provider = MockProviderToolCalls {
+            called: Arc::clone(&called),
+        };
+        let messages = vec![ChatMessage::User {
+            content: "hi".into(),
+        }];
+        let tools: Vec<ToolDefinition> = vec![];
+        let resp = complete_with_cache(
+            &provider,
+            &cache,
+            false,
+            "mock-model",
+            None,
+            &messages,
+            &tools,
+        )
+        .await
+        .expect("complete_with_cache should succeed");
+        assert_eq!(resp.content, "");
+        assert_eq!(resp.tool_calls.len(), 1);
+        assert_eq!(resp.tool_calls[0].name, "echo");
+        assert_eq!(resp.tool_calls[0].arguments, json!({"x": 1}));
+
+        called.store(false, Ordering::SeqCst);
+        let resp2 = complete_with_cache(
+            &provider,
+            &cache,
+            false,
+            "mock-model",
+            None,
+            &messages,
+            &tools,
+        )
+        .await
+        .expect("complete_with_cache should succeed");
+        assert_eq!(resp2.tool_calls.len(), 1);
+        assert_eq!(resp2.tool_calls[0].name, "echo");
+        assert!(
+            !called.load(Ordering::SeqCst),
+            "second call must come from cache"
+        );
+    }
+
+    struct MockProviderToolCalls {
+        called: Arc<AtomicBool>,
+    }
+
+    #[async_trait]
+    impl Provider for MockProviderToolCalls {
+        fn name(&self) -> &'static str {
+            "mock"
+        }
+        async fn complete_with_tools(
+            &self,
+            _system: Option<&str>,
+            _messages: &[ChatMessage],
+            _tools: &[ToolDefinition],
+        ) -> anyhow::Result<CompletionResponse> {
+            self.called.store(true, Ordering::SeqCst);
+            Ok(CompletionResponse {
+                content: String::new(),
+                tool_calls: vec![ProviderToolCall {
+                    id: "call_1".into(),
+                    name: "echo".into(),
+                    arguments: json!({"x": 1}),
+                }],
+                usage: None,
+            })
+        }
+    }
+
+    #[test]
+    fn provider_trait_dyn_compatible_via_box() {
+        let p: Box<dyn Provider> = Box::new(OpenAiProvider::new(
+            crate::provider::openai::OpenAiConfig::from_args(
+                None,
+                "gpt-4o".into(),
+                Some("k".into()),
+            ),
+        ));
+        assert_eq!(p.name(), "openai");
     }
 }

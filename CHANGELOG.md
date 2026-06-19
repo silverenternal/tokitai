@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **tokitai-llm code quality + test coverage (M-0.13.0, T-038..T-042).** Five tasks from the tokitai-llm code review:
+
+  **T-038 (4 bug fixes):** `Finding::code` changed from `&'static str` to `String` (eliminates `Box::leak` in verify/mod.rs). `ExamplesArgs.provider` is flat `ProviderArgs` (not `Option<ProviderArgs>`), fixing silent degradation to stub. Anthropic multi-block text concatenation inserts spaces between blocks. Ollama provider logs `warn!` when system prompt is discarded.
+
+  **T-039 (shared LLM module):** New `tokitai-llm/src/llm/mod.rs` extracts 4 duplicated patterns (markdown fence stripping, schema pretty-printing, tool summary formatting, system prompt constants) from verify, examples, and infer_capabilities modules. All three modules now delegate to `crate::llm::*`.
+
+  **T-040 (10 provider safety items):** `max_tokens` configurable via CLI/env. Cache panics hardened (`.expect` removed, poisoned-mutex recovery). Malformed OpenAI tool-call arguments logged at `warn!`. Dead `dispatch_as_tool_message` removed. `build_provider` narrowed to `pub(crate)`. All `.unwrap_or("default")` calls replaced with validated access. JSON Lines output for infer-capabilities. Ollama tool envelopes precomputed. All three provider URLs precomputed in `new()`.
+
+  **T-041 (test coverage):** 13 → 62 tests across all modules. New coverage: `infer/mod.rs` (+16, was 0), `provider/ollama.rs` (+9, was 0), `provider/anthropic.rs` (+8, was 1), `verify/mod.rs` (+9, was 4), `examples/mod.rs` (+3, was 3), `cache/mod.rs` (+7, was 3). Realistic LLM-response fixture parsing, cache round-trips with tool_calls/usage, multi-block regression test.
+
+  **T-042 (build integration):** `build.rs` forwards `TOKITAI_LLM_VERIFY_REPORT` and `TOKITAI_LLM_HOOK` env vars. `DEFAULT_VERIFY_REPORT_NAME` referenced (not dead code). `#[tool(llm_cache_key = true)]` attribute wired through to `emit_cache_key_const`. `infer` subcommand gains `--schema` arg.
+
 - **Compile-time LLM integration infrastructure (T-034, M-0.12.0).** New workspace member `tokitai-llm/` — an optional binary crate (`cargo build -p tokitai-llm`) providing three subcommands: `verify` (lint tool schemas against JSON-Schema, gated on `schema-verify`), `infer` (single-prompt tool-calling loop against OpenAI/Anthropic/Ollama), and `examples` (emit provider envelopes). Provider I/O lives behind a `provider::Provider` trait for one-line provider swap. Responses are cached via blake3 keyed by `(model, system_prompt, messages, tool_envelopes)`. All LLM I/O is gated behind environment variables (`TOKITAI_LLM_API_URL`, `TOKITAI_LLM_MODEL`, `TOKITAI_LLM_API_KEY`); the default `cargo build` path pays zero cost.
 
 - **LLM-powered description verification (T-035, M-0.12.0).** `tokitai-llm verify` gains `--provider` and `--report-path` flags. When a provider and model are configured, the verifier sends every tool definition to the LLM for a description-quality pass that flags vague descriptions (`DESC-VAGUE`), short descriptions (`DESC-SHORT`), undocumented side effects (`SIDE-EFFECT`), and unclear parameter docs (`PARAM-DESC`). LLM findings are merged with the existing syntactic `lint()` pass and optionally written to a JSON report file that the `#[tool]` macro's `emit_verify_warnings` can consume.

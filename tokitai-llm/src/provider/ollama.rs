@@ -42,15 +42,38 @@ impl OllamaConfig {
 pub struct OllamaProvider {
     config: OllamaConfig,
     client: Client,
+    /// Pre-computed chat-completions URL. Computed once in `new()`
+    /// so `complete_with_tools` does not pay the `format!` cost
+    /// on every call.
+    api_url: String,
+    /// Pre-rendered tool envelopes. `complete_with_tools` clones
+    /// this vector when building the request body, so a populated
+    /// cache keeps the hot path allocation-free. Callers should
+    /// refresh the cache via [`Self::set_tools_cache`] whenever
+    /// the active tool set changes (e.g. before each chat turn).
+    tools_cache: Vec<Value>,
 }
 
 impl OllamaProvider {
     /// Build a new Ollama provider.
     pub fn new(config: OllamaConfig) -> Self {
+        let api_url = format!("{}/api/chat", config.base_url);
         Self {
             config,
             client: Client::new(),
+            api_url,
+            tools_cache: Vec::new(),
         }
+    }
+
+    /// Replace the cached tool envelopes with pre-rendered
+    /// `OpenAI` envelopes. Call once per tool-set change to keep
+    /// `complete_with_tools` off the per-call render path.
+    pub fn set_tools_cache(&mut self, tools: &[ToolDefinition]) {
+        self.tools_cache = tools
+            .iter()
+            .map(|t| t.to_openai_function()["function"].clone())
+            .collect();
     }
 }
 
@@ -71,50 +94,19 @@ impl Provider for OllamaProvider {
         // provider-agnostic `system` argument is intentionally
         // ignored here. Use the `OllamaMessage::System` variant
         // if you need it on the wire.
-        let wire_messages: Vec<Value> = messages
-            .iter()
-            .map(|m| match m {
-                ChatMessage::User { content } => {
-                    json!({"role": "user", "content": content})
-                }
-                ChatMessage::Assistant {
-                    content,
-                    tool_calls,
-                } => {
-                    let tcs: Vec<Value> = tool_calls
-                        .iter()
-                        .map(|tc| {
-                            json!({
-                                "function": {
-                                    "name": tc.name,
-                                    "arguments": tc.arguments,
-                                }
-                            })
-                        })
-                        .collect();
-                    json!({
-                        "role": "assistant",
-                        "content": content,
-                        "tool_calls": tcs,
-                    })
-                }
-                ChatMessage::Tool {
-                    tool_call_id,
-                    content,
-                } => {
-                    json!({
-                        "role": "tool",
-                        "tool_call_id": tool_call_id,
-                        "content": content,
-                    })
-                }
-            })
-            .collect();
+        let wire_messages: Vec<Value> = messages.iter().map(ollama_message).collect();
 
-        let wire_tools: Vec<Value> = tools
-            .iter()
-            .map(|t| t.to_openai_function()["function"].clone())
-            .collect();
+        // Prefer the pre-rendered cache when it matches the active
+        // tool slice (length-equality is the cheap approximation);
+        // fall back to rendering on demand otherwise.
+        let wire_tools: Vec<Value> = if self.tools_cache.len() == tools.len() && !tools.is_empty() {
+            self.tools_cache.clone()
+        } else {
+            tools
+                .iter()
+                .map(|t| t.to_openai_function()["function"].clone())
+                .collect()
+        };
 
         let body = json!({
             "model": self.config.model,
@@ -123,10 +115,9 @@ impl Provider for OllamaProvider {
             "stream": false,
         });
 
-        let url = format!("{}/api/chat", self.config.base_url);
         let resp = self
             .client
-            .post(&url)
+            .post(&self.api_url)
             .header("Content-Type", "application/json")
             .json(&body)
             .send()
@@ -203,5 +194,166 @@ impl OllamaResponse {
             tool_calls,
             usage,
         }
+    }
+}
+
+fn ollama_message(m: &ChatMessage) -> Value {
+    match m {
+        ChatMessage::User { content } => json!({"role": "user", "content": content}),
+        ChatMessage::Assistant {
+            content,
+            tool_calls,
+        } => {
+            let tcs: Vec<Value> = tool_calls
+                .iter()
+                .map(|tc| {
+                    json!({
+                        "function": {
+                            "name": tc.name,
+                            "arguments": tc.arguments,
+                        }
+                    })
+                })
+                .collect();
+            json!({
+                "role": "assistant",
+                "content": content,
+                "tool_calls": tcs,
+            })
+        }
+        ChatMessage::Tool {
+            tool_call_id,
+            content,
+        } => {
+            json!({
+                "role": "tool",
+                "tool_call_id": tool_call_id,
+                "content": content,
+            })
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::provider::ProviderToolCall;
+    use serde_json::json;
+
+    #[test]
+    fn ollama_message_user() {
+        let m = ChatMessage::User {
+            content: "hi".into(),
+        };
+        let v = ollama_message(&m);
+        assert_eq!(v["role"], "user");
+        assert_eq!(v["content"], "hi");
+    }
+
+    #[test]
+    fn ollama_message_assistant_with_tool_calls() {
+        let m = ChatMessage::Assistant {
+            content: Some("thinking...".into()),
+            tool_calls: vec![ProviderToolCall {
+                id: "c1".into(),
+                name: "echo".into(),
+                arguments: json!({"x": 1}),
+            }],
+        };
+        let v = ollama_message(&m);
+        assert_eq!(v["role"], "assistant");
+        assert_eq!(v["content"], "thinking...");
+        assert_eq!(v["tool_calls"][0]["function"]["name"], "echo");
+        assert_eq!(v["tool_calls"][0]["function"]["arguments"]["x"], 1);
+    }
+
+    #[test]
+    fn ollama_message_tool() {
+        let m = ChatMessage::Tool {
+            tool_call_id: "call_42".into(),
+            content: "result".into(),
+        };
+        let v = ollama_message(&m);
+        assert_eq!(v["role"], "tool");
+        assert_eq!(v["tool_call_id"], "call_42");
+        assert_eq!(v["content"], "result");
+    }
+
+    #[test]
+    fn ollama_response_into_completion_text_only() {
+        let resp = OllamaResponse {
+            message: Some(OllamaAssistant {
+                content: "hello world".into(),
+                tool_calls: vec![],
+            }),
+            prompt_eval_count: Some(5),
+            eval_count: Some(3),
+        };
+        let c = resp.into_completion();
+        assert_eq!(c.content, "hello world");
+        assert!(c.tool_calls.is_empty());
+        let usage = c.usage.expect("usage should be present");
+        assert_eq!(usage.prompt_tokens, 5);
+        assert_eq!(usage.completion_tokens, 3);
+        assert_eq!(usage.total_tokens, 8);
+    }
+
+    #[test]
+    fn ollama_response_into_completion_tool_calls() {
+        let resp = OllamaResponse {
+            message: Some(OllamaAssistant {
+                content: String::new(),
+                tool_calls: vec![
+                    OllamaToolCall {
+                        function: OllamaToolCallFn {
+                            name: "echo".into(),
+                            arguments: json!({"k": "v"}),
+                        },
+                    },
+                    OllamaToolCall {
+                        function: OllamaToolCallFn {
+                            name: "other".into(),
+                            arguments: json!({}),
+                        },
+                    },
+                ],
+            }),
+            prompt_eval_count: None,
+            eval_count: None,
+        };
+        let c = resp.into_completion();
+        assert_eq!(c.tool_calls.len(), 2);
+        assert_eq!(c.tool_calls[0].name, "echo");
+        assert_eq!(c.tool_calls[0].id, "ollama_call_0");
+        assert_eq!(c.tool_calls[0].arguments, json!({"k": "v"}));
+        assert_eq!(c.tool_calls[1].name, "other");
+        assert_eq!(c.tool_calls[1].id, "ollama_call_1");
+        assert!(c.usage.is_none());
+    }
+
+    #[test]
+    fn ollama_response_into_completion_empty_message() {
+        let resp = OllamaResponse {
+            message: None,
+            prompt_eval_count: None,
+            eval_count: None,
+        };
+        let c = resp.into_completion();
+        assert_eq!(c.content, "");
+        assert!(c.tool_calls.is_empty());
+        assert!(c.usage.is_none());
+    }
+
+    #[test]
+    fn ollama_config_from_args_strips_trailing_slash() {
+        let cfg = OllamaConfig::from_args(Some("http://localhost:11434/".into()), "m".into());
+        assert_eq!(cfg.base_url, "http://localhost:11434");
+        assert_eq!(cfg.model, "m");
+    }
+
+    #[test]
+    fn ollama_provider_name() {
+        let p = OllamaProvider::new(OllamaConfig::from_args(None, "m".into()));
+        assert_eq!(p.name(), "ollama");
     }
 }

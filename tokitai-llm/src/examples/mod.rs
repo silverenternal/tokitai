@@ -45,7 +45,11 @@ pub async fn run(args: ExamplesArgs) -> Result<()> {
         if let (Some(_kind), Some(_model)) = (&pa.provider, &pa.model) {
             let provider = build_provider(pa)?;
             let cache = InMemoryCache::new();
-            let model = pa.model.as_deref().unwrap_or("default");
+            // `build_provider` returned `Ok`, so `model` is set.
+            let model = pa
+                .model
+                .as_deref()
+                .expect("model validated by build_provider");
             match llm_examples(&tools, &provider, &cache, model).await {
                 Ok(examples_map) => apply_examples(tools, &examples_map),
                 Err(e) => {
@@ -215,5 +219,58 @@ mod tests {
         let json = r#"{"input":{"city":"Tokyo","population":14000000}}"#;
         let parsed: serde_json::Value = serde_json::from_str(json).unwrap();
         assert_eq!(parsed["input"]["city"], "Tokyo");
+    }
+
+    #[test]
+    fn apply_examples_multiple_tools() {
+        let tools = vec![
+            ToolDefinition::new("add", "Add two numbers", r#"{"type":"object"}"#),
+            ToolDefinition::new("sub", "Subtract", r#"{"type":"object"}"#),
+            ToolDefinition::new("mul", "Multiply", r#"{"type":"object"}"#),
+        ];
+        // Only "add" and "mul" get matched; "sub" is unmatched.
+        let examples = vec![
+            ("add".to_string(), json!({"a": 1, "b": 2})),
+            ("mul".to_string(), json!({"a": 3, "b": 4})),
+        ];
+
+        let enriched = apply_examples(tools, &examples);
+        assert_eq!(enriched.len(), 3);
+        assert!(enriched[0].baked_examples.is_some());
+        assert!(
+            enriched[1].baked_examples.is_none(),
+            "sub should be skipped"
+        );
+        assert!(enriched[2].baked_examples.is_some());
+    }
+
+    #[test]
+    fn apply_examples_baked_shape() {
+        let t = ToolDefinition::new("add", "Add two numbers", r#"{"type":"object"}"#);
+        let examples = vec![("add".to_string(), json!({"a": 1, "b": 2}))];
+
+        let enriched = apply_examples(vec![t], &examples);
+        let baked = enriched[0]
+            .baked_examples
+            .as_ref()
+            .expect("baked_examples populated");
+        // The shape is the canonical `[{...}]` array with a single
+        // `{"input": {...}}` object inside it.
+        assert!(baked.is_array(), "baked_examples must be a JSON array");
+        let arr = baked.as_array().unwrap();
+        assert_eq!(arr.len(), 1);
+        assert!(arr[0].get("input").is_some());
+        assert_eq!(arr[0]["input"]["a"], 1);
+        assert_eq!(arr[0]["input"]["b"], 2);
+    }
+
+    #[test]
+    fn apply_examples_no_matches_keeps_tools_unmodified() {
+        let t = ToolDefinition::new("add", "Add two numbers", r#"{"type":"object"}"#);
+        let examples: Vec<(String, serde_json::Value)> = vec![];
+
+        let enriched = apply_examples(vec![t], &examples);
+        assert_eq!(enriched.len(), 1);
+        assert!(enriched[0].baked_examples.is_none());
     }
 }

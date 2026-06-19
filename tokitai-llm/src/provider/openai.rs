@@ -57,14 +57,20 @@ impl OpenAiConfig {
 pub struct OpenAiProvider {
     config: OpenAiConfig,
     client: Client,
+    /// Pre-computed chat-completions URL. Computed once in `new()`
+    /// so `complete_with_tools` does not pay the `format!` cost
+    /// on every call.
+    api_url: String,
 }
 
 impl OpenAiProvider {
     /// Build a new OpenAI provider.
     pub fn new(config: OpenAiConfig) -> Self {
+        let api_url = format!("{}/v1/chat/completions", config.base_url);
         Self {
             config,
             client: Client::new(),
+            api_url,
         }
     }
 }
@@ -102,10 +108,9 @@ impl Provider for OpenAiProvider {
         // 3. POST. The bearer token is optional; a missing key
         //    is forwarded as an empty header (some local
         //    proxies accept that).
-        let url = format!("{}/v1/chat/completions", self.config.base_url);
         let mut req = self
             .client
-            .post(&url)
+            .post(&self.api_url)
             .header("Content-Type", "application/json");
         if !self.config.api_key.is_empty() {
             req = req.bearer_auth(&self.config.api_key);
@@ -175,10 +180,28 @@ impl OpenAiResponse {
                 .message
                 .tool_calls
                 .into_iter()
-                .map(|tc| ProviderToolCall {
-                    id: tc.id,
-                    name: tc.function.name,
-                    arguments: serde_json::from_str(&tc.function.arguments).unwrap_or(Value::Null),
+                .map(|tc| {
+                    let arguments = match serde_json::from_str(&tc.function.arguments) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            // Surface malformed JSON rather than
+                            // silently substituting `Value::Null`:
+                            // the dispatcher would otherwise see an
+                            // empty argument bag and call the tool
+                            // with the wrong shape.
+                            tracing::warn!(
+                                "failed to parse tool call arguments for {}: {}",
+                                tc.function.name,
+                                e
+                            );
+                            Value::Null
+                        }
+                    };
+                    ProviderToolCall {
+                        id: tc.id,
+                        name: tc.function.name,
+                        arguments,
+                    }
                 })
                 .collect();
         }

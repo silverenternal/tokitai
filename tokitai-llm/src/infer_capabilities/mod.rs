@@ -57,12 +57,22 @@ pub async fn run(args: InferCapabilitiesArgs) -> Result<()> {
 
     let provider = build_provider(&args.provider)?;
     let cache = InMemoryCache::new();
-    let model = args.provider.model.as_deref().unwrap_or("default");
+    // `build_provider` returned `Ok` above, so `model` is set.
+    let model = args
+        .provider
+        .model
+        .as_deref()
+        .expect("model validated by build_provider");
 
     let suggestions = llm_infer_capabilities(&tools, &provider, &cache, model).await?;
 
-    let json = serde_json::to_string_pretty(&suggestions)?;
-    println!("{json}");
+    // JSON Lines output (one suggestion per line). The doc comment
+    // at the top of this file promises `jq`-pipeable NDJSON; pretty
+    // printing the whole array would break that contract.
+    for s in &suggestions {
+        let line = serde_json::to_string(s)?;
+        println!("{line}");
+    }
 
     Ok(())
 }

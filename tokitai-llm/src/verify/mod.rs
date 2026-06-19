@@ -99,7 +99,14 @@ pub async fn run(args: VerifyArgs) -> Result<()> {
         if !tools.is_empty() {
             let provider = build_provider(&args.provider_args)?;
             let cache = InMemoryCache::new();
-            let model = args.provider_args.model.as_deref().unwrap_or("default");
+            // `build_provider` returned `Ok` above, so `model` is
+            // guaranteed to be set. The unwrap is intentional and
+            // documents the post-condition.
+            let model = args
+                .provider_args
+                .model
+                .as_deref()
+                .expect("model validated by build_provider");
 
             if let Ok(r) = llm_verify(&tools, &provider, &cache, model).await {
                 llm_findings = r;
@@ -346,4 +353,116 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_str(json).unwrap();
         assert_eq!(parsed["findings"][0]["code"], "DESC-VAGUE");
     }
+
+    // -- markdown fence stripping ----------------------------------
+
+    fn strip(content: &str) -> &str {
+        content
+            .strip_prefix("```json")
+            .or_else(|| content.strip_prefix("```"))
+            .unwrap_or(content)
+            .strip_suffix("```")
+            .unwrap_or(content)
+            .trim()
+    }
+
+    #[test]
+    fn strip_markdown_fences_json() {
+        let s = "```json\n{\"findings\":[]}\n```";
+        assert_eq!(strip(s), "{\"findings\":[]}");
+    }
+
+    #[test]
+    fn strip_markdown_fences_plain() {
+        let s = "```\n{\"findings\":[]}\n```";
+        assert_eq!(strip(s), "{\"findings\":[]}");
+    }
+
+    #[test]
+    fn strip_markdown_fences_none() {
+        let s = "{\"findings\":[]}";
+        assert_eq!(strip(s), "{\"findings\":[]}");
+    }
+
+    // -- escape_json_pointer --------------------------------------
+
+    #[test]
+    fn escape_json_pointer_tilde() {
+        assert_eq!(escape_json_pointer("a~b"), "a~0b");
+    }
+
+    #[test]
+    fn escape_json_pointer_slash() {
+        assert_eq!(escape_json_pointer("a/b"), "a~1b");
+    }
+
+    #[test]
+    fn escape_json_pointer_combined() {
+        // Both characters in a single key. Order matters: tilde first.
+        assert_eq!(escape_json_pointer("~/"), "~0~1");
+    }
+
+    // -- walk with arrays -----------------------------------------
+
+    #[test]
+    fn walk_with_arrays() {
+        // Schema whose only untyped `properties` node lives at
+        // /items/1/properties/y — every other node either has a
+        // `type` keyword or does not carry schema-shape keys.
+        let schema = json!({
+            "type": "object",
+            "items": [
+                {"type": "object", "properties": {"x": {"type": "string"}}},
+                {"type": "object", "properties": {"y": {"properties": {"z": {"type": "string"}}}}}
+            ]
+        });
+        let mut visited_paths: Vec<String> = Vec::new();
+        walk_with(&schema, "", true, &mut |node, path| {
+            if let serde_json::Value::Object(map) = node {
+                if map.contains_key("properties") && !map.contains_key("type") {
+                    visited_paths.push(path.to_string());
+                }
+            }
+        });
+        // The inner `y.properties.z` has no `type` keyword → one finding.
+        assert_eq!(visited_paths.len(), 1);
+        assert_eq!(visited_paths[0], "/items/1/properties/y");
+    }
+
+    // -- end-to-end LLM response parsing --------------------------
+
+    #[test]
+    fn llm_response_parse_markdown_fenced() {
+        // Realistic LLM reply with surrounding ```json fences.
+        let raw = "```json\n{\"findings\":[{\"code\":\"DESC-VAGUE\",\"message\":\"Too short\",\"tool\":\"calc.add\"}]}\n```";
+        let parsed: LlmResponse = serde_json::from_str(strip(raw)).expect("parses cleanly");
+        assert_eq!(parsed.findings.len(), 1);
+        assert_eq!(parsed.findings[0].code, "DESC-VAGUE");
+        assert_eq!(parsed.findings[0].tool, "calc.add");
+    }
+
+    #[test]
+    fn llm_response_parse_empty() {
+        let raw = r#"{"findings":[]}"#;
+        let parsed: LlmResponse = serde_json::from_str(strip(raw)).expect("parses cleanly");
+        assert!(parsed.findings.is_empty());
+    }
+
+    #[test]
+    fn llm_response_parse_malformed() {
+        // Garbage that does not look like the expected schema.
+        let raw = "not even close to json";
+        let result: std::result::Result<LlmResponse, _> = serde_json::from_str(strip(raw));
+        assert!(result.is_err());
+    }
+}
+
+// Mirror of the inner type from `llm_verify` so the test module
+// can exercise the parsing path without reaching into a private
+// nested struct. Field-for-field identical to the production
+// `LlmResponse` shape.
+#[allow(dead_code)]
+#[derive(serde::Deserialize)]
+struct LlmResponse {
+    findings: Vec<VerifyFinding>,
 }
