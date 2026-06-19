@@ -172,3 +172,23 @@ fn test_result_truncate_zero_is_compile_error() {
     let t = trybuild::TestCases::new();
     t.compile_fail("tests/ui/result_truncate_zero.rs");
 }
+
+// ---------------------------------------------------------------------------
+// T-022: adversarial description lint. The fixture pins a `desc = "..."`
+// literal that trips the safety matcher; the trybuild snapshot captures
+// the diagnostic so a future rustc version's wording change is visible
+// to the maintainer. The companion positive fixture
+// (`desc_safety_clean.rs`) confirms the canonical clean description
+// still compiles.
+// ---------------------------------------------------------------------------
+#[test]
+fn test_desc_safety_injection_is_compile_error() {
+    let t = trybuild::TestCases::new();
+    t.compile_fail("tests/ui/desc_safety_injection.rs");
+}
+
+#[test]
+fn test_desc_safety_clean_compiles() {
+    let t = trybuild::TestCases::new();
+    t.pass("tests/ui/desc_safety_clean.rs");
+}

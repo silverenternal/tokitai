@@ -92,4 +92,22 @@ fn main() {
     if std::env::var("TOKITAI_TRACE").is_err() && std::env::var("CARGO_FEATURE_TRACE").is_ok() {
         println!("cargo:rustc-env=TOKITAI_TRACE=1");
     }
+
+    // T-022: forward the per-build adversarial-description
+    // blocklist. The macro reads `option_env!("TOKITAI_DESC_BLOCKLIST")`
+    // and matches every comma-separated phrase as a case-
+    // insensitive substring. The default build (no env var)
+    // skips the matcher entirely, so the only cost is one
+    // `option_env!` probe at macro-expansion time per
+    // `#[tool]` impl block. Setting
+    // `TOKITAI_DESC_BLOCKLIST="ignore previous,system:,_test_"`
+    // lets a security team extend the org-wide bad-pattern set
+    // without rebuilding the macro crate. The plumbing mirrors
+    // T-015's `TOKITAI_TRACE` and T-014's `TOKITAI_PROFILE_BUDGET`
+    // exactly so operators learn one env-var convention.
+    if let Ok(value) = std::env::var("TOKITAI_DESC_BLOCKLIST") {
+        if !value.is_empty() {
+            println!("cargo:rustc-env=TOKITAI_DESC_BLOCKLIST={}", value);
+        }
+    }
 }

@@ -68,6 +68,16 @@ pub struct ToolMethodInfo {
     /// T-018: per-method opt-out flag. When `true`, the lint is
     /// bypassed for this method regardless of score.
     pub allow_short_desc: bool,
+    /// T-022: per-method opt-out flag from the adversarial-
+    /// description safety lint. When `true`, this method's
+    /// `desc = "..."` literal bypasses the bad-pattern matcher.
+    pub allow_insecure_desc: bool,
+    /// T-022: per-method extension of the bad-pattern set.
+    /// Each entry is a case-insensitive substring; a hit raises
+    /// the safety lint for this method only. The macro folds the
+    /// per-build env-var entries into the same matcher at lint
+    /// time.
+    pub desc_blocklist: Vec<String>,
     /// T-019: per-method byte budget for the serialized result.
     /// When `Some(n)`, the macro compiles a runtime guard into
     /// the `__call_*` wrapper. The guard is a no-op when

@@ -232,6 +232,8 @@ pub fn extract_tool_info(fn_item: &ImplItemFn) -> Option<ToolMethodInfo> {
             desc_span: None,
             min_desc_score: None,
             allow_short_desc: false,
+            allow_insecure_desc: false,
+            desc_blocklist: Vec::new(),
             result_truncate_bytes: None,
             since: None,
             until: None,
@@ -267,6 +269,8 @@ pub fn extract_tool_info(fn_item: &ImplItemFn) -> Option<ToolMethodInfo> {
     let mut desc_span: Option<proc_macro2::Span> = None;
     let mut min_desc_score: Option<u8> = None;
     let mut allow_short_desc = false;
+    let mut allow_insecure_desc = false;
+    let mut desc_blocklist: Vec<String> = Vec::new();
     let mut result_truncate_bytes: Option<usize> = None;
 
     for attr in &fn_item.attrs {
@@ -303,6 +307,8 @@ pub fn extract_tool_info(fn_item: &ImplItemFn) -> Option<ToolMethodInfo> {
                 baked_examples = args.baked_examples;
                 min_desc_score = args.min_desc_score;
                 allow_short_desc = args.allow_short_desc;
+                allow_insecure_desc = args.allow_insecure_desc;
+                desc_blocklist = args.desc_blocklist;
                 result_truncate_bytes = args.result_truncate_bytes;
                 // T-018: capture the desc literal's span from the
                 // raw token tree. We do this AFTER the structured
@@ -381,6 +387,8 @@ pub fn extract_tool_info(fn_item: &ImplItemFn) -> Option<ToolMethodInfo> {
         desc_span,
         min_desc_score,
         allow_short_desc,
+        allow_insecure_desc,
+        desc_blocklist,
         result_truncate_bytes,
         since,
         until,

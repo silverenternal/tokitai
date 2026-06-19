@@ -647,6 +647,71 @@ fn generate_for_impl(mut impl_item: ItemImpl, attrs: ToolAttributes) -> TokenStr
         };
     }
 
+    // T-022: adversarial description lint. Runs alongside the
+    // T-018 quality lint on every `desc = "..."` literal. The
+    // matcher checks for instruction-like phrases (e.g. "ignore
+    // previous"), fake-prompt breaks (3+ consecutive newlines),
+    // role-header substrings (`system:`, `assistant:`, `user:`),
+    // oversized narratives (> 2000 chars), and any per-build
+    // extensions from `TOKITAI_DESC_BLOCKLIST` + per-method
+    // extensions from `#[tool(desc_blocklist(...))]`. A match
+    // is a hard compile error (E0032); the diagnostic body
+    // names every matched category so the user can fix the
+    // literal in one pass.
+    //
+    // The lint runs AFTER the T-018 quality lint so a literal
+    // that fails quality first sees the quality diagnostic;
+    // the T-022 diagnostic is only emitted when the literal
+    // passes quality but still trips a safety rule. Both lints
+    // are anchored at the literal's span, so editors jump to
+    // the same source location regardless of which lint fires.
+    let impl_allow_insecure = attrs.allow_insecure_desc;
+    // The build-script-forwarded env var is a `&'static str`;
+    // the per-build list is parsed once and merged with each
+    // method's per-tool extension. The split runs at expansion
+    // time (proc-macro context, not const-eval) so a tiny one-
+    // shot allocation is fine. When the env var is unset the
+    // parser returns `Vec::new()` and the merge is a no-op.
+    let build_blocklist: Vec<&'static str> = crate::description::safety::split_blocklist(
+        crate::description::safety::parse_blocklist_env(),
+    );
+    let mut safety_lint_tokens = TokenStream2::new();
+    for tool in &tool_methods {
+        if tool.desc_span.is_none() {
+            // Same rule as T-018: only fire on explicit literals.
+            continue;
+        }
+        let effective_allow = impl_allow_insecure || tool.allow_insecure_desc;
+        // Fold the per-build list and the per-method list into
+        // one `Vec<&str>` so the matcher does not need to know
+        // about the two sources. Empty blocks (no env var, no
+        // `desc_blocklist`) collapse to `&[]` and the matcher
+        // skips its `user_blocklist` walk entirely.
+        let mut user_blocklist: Vec<&str> = Vec::new();
+        for entry in &build_blocklist {
+            user_blocklist.push(*entry);
+        }
+        for entry in &tool.desc_blocklist {
+            user_blocklist.push(entry.as_str());
+        }
+        let span = tool.desc_span.unwrap();
+        let lint = crate::description::lint_description_safety(
+            span,
+            &tool.description,
+            &user_blocklist,
+            effective_allow,
+        );
+        if let Some(err) = lint.error {
+            safety_lint_tokens.extend(err.to_compile_error());
+        }
+    }
+    if !safety_lint_tokens.is_empty() {
+        return quote! {
+            #impl_item
+            #safety_lint_tokens
+        };
+    }
+
     // T-019: reject `#[tool(result_truncate_bytes = 0)]` at
     // compile time. The parser accepts the literal and stores
     // `Some(0)`; the rejection has to live here because the

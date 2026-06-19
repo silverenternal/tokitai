@@ -139,6 +139,15 @@ pub enum ErrorCode {
     /// threshold with `#[tool(min_desc_score = N)]` or opt out
     /// with `#[tool(allow_short_desc)]`.
     E0031,
+    /// T-022: the `desc = "..."` literal on a `#[tool(...)]`
+    /// attribute matched the adversarial-description bad-pattern
+    /// set (instruction-like phrase, fake-prompt break, role
+    /// header, oversized narrative, or a user-supplied
+    /// `desc_blocklist` entry). The macro refuses to compile so
+    /// the LLM-side never sees an injection payload. The opt-out
+    /// is `#[tool(allow_insecure_desc)]` (rare; security-test only).
+    /// The diagnostic body names every matched category.
+    E0032,
     /// An internal consistency check failed; this is a bug in the
     /// macro, not a user error.
     E0099,
@@ -178,6 +187,7 @@ impl ErrorCode {
             ErrorCode::E0028 => "E0028",
             ErrorCode::E0030 => "E0030",
             ErrorCode::E0031 => "E0031",
+            ErrorCode::E0032 => "E0032",
             ErrorCode::E0099 => "E0099",
         }
     }

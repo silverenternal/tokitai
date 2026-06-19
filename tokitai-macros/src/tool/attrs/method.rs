@@ -48,6 +48,12 @@ pub struct ToolAttributes {
     /// impl block bypasses the score lint. Used for one-word
     /// verbs and other intentionally terse descriptions.
     pub allow_short_desc: bool,
+    /// T-022: when `true`, every `desc = "..."` literal on this
+    /// impl block bypasses the adversarial-description safety
+    /// lint. Used for audited security-test fixtures that need
+    /// to ship a known-bad literal; production code paths should
+    /// leave this off.
+    pub allow_insecure_desc: bool,
     /// T-020: when `Some("semver")`, the macro parses every
     /// `since = "..."` / `until = "..."` literal as SemVer and
     /// refuses to compile when a literal fails to parse or
@@ -64,6 +70,7 @@ impl Parse for ToolAttributes {
         let mut dialect = None;
         let mut min_desc_score: Option<u8> = None;
         let mut allow_short_desc = false;
+        let mut allow_insecure_desc = false;
         let mut version_policy: Option<String> = None;
 
         // 支持空输入（impl 块级别的 #[tool] 不需要参数）
@@ -74,6 +81,7 @@ impl Parse for ToolAttributes {
                 dialect,
                 min_desc_score,
                 allow_short_desc,
+                allow_insecure_desc,
                 version_policy,
             });
         }
@@ -81,10 +89,18 @@ impl Parse for ToolAttributes {
         while !input.is_empty() {
             let key: Ident = input.parse()?;
 
-            // T-018: `allow_short_desc` is a bare flag (no `= "..."`).
+            // T-018 / T-022: `allow_short_desc` and
+            // `allow_insecure_desc` are bare flags (no `= "..."`).
             // The other keys are key=value pairs.
             if key == "allow_short_desc" {
                 allow_short_desc = true;
+                if input.peek(token::Comma) {
+                    input.parse::<token::Comma>()?;
+                }
+                continue;
+            }
+            if key == "allow_insecure_desc" {
+                allow_insecure_desc = true;
                 if input.peek(token::Comma) {
                     input.parse::<token::Comma>()?;
                 }
@@ -140,6 +156,7 @@ impl Parse for ToolAttributes {
             dialect,
             min_desc_score,
             allow_short_desc,
+            allow_insecure_desc,
             version_policy,
         })
     }
@@ -196,6 +213,19 @@ pub struct MethodToolAttrs {
     /// bypasses the score lint. Used for one-word verbs and
     /// other intentionally terse descriptions.
     pub allow_short_desc: bool,
+    /// T-022: when `true`, this method's `desc = "..."` literal
+    /// bypasses the adversarial-description safety lint. Used
+    /// for audited security-test fixtures that need to ship a
+    /// known-bad literal; production code paths should leave
+    /// this off.
+    pub allow_insecure_desc: bool,
+    /// T-022: per-method extension of the bad-pattern set. Each
+    /// entry is a case-insensitive substring; a hit raises the
+    /// safety lint for this method only. Useful when an org has
+    /// a per-tool policy (e.g. "never describe a `send_email`
+    /// tool as `urgent`") that the in-source default does not
+    /// cover.
+    pub desc_blocklist: Vec<String>,
     /// T-019: per-method byte budget for the serialized result.
     /// When set, the macro compiles a runtime guard into the
     /// `__call_*` wrapper that truncates the result or returns
@@ -258,6 +288,8 @@ impl Parse for MethodToolAttrs {
                         baked_examples: Vec::new(),
                         min_desc_score: None,
                         allow_short_desc: false,
+                        allow_insecure_desc: false,
+                        desc_blocklist: Vec::new(),
                         result_truncate_bytes: None,
                     });
                 }
@@ -293,6 +325,8 @@ impl Parse for MethodToolAttrs {
         let mut baked_examples: Vec<BakedExample> = Vec::new();
         let mut min_desc_score: Option<u8> = None;
         let mut allow_short_desc = false;
+        let mut allow_insecure_desc = false;
+        let mut desc_blocklist: Vec<String> = Vec::new();
         let mut result_truncate_bytes: Option<usize> = None;
 
         while !input.is_empty() {
@@ -615,6 +649,31 @@ impl Parse for MethodToolAttrs {
                         let _ = input.parse::<token::Comma>();
                     }
                 }
+                // T-022: per-method opt-out from the adversarial
+                // description lint. Bare flag, no `=` form.
+                "allow_insecure_desc" => {
+                    allow_insecure_desc = true;
+                    if input.peek(token::Comma) {
+                        let _ = input.parse::<token::Comma>();
+                    }
+                }
+                // T-022: per-method extension of the bad-pattern
+                // set. Each entry is a case-insensitive substring;
+                // a hit raises the safety lint for this method
+                // only. The shape mirrors `alias = [...]` /
+                // `tags = [...]` for symmetry.
+                "desc_blocklist" => {
+                    input.parse::<token::Eq>()?;
+                    let content;
+                    syn::bracketed!(content in input);
+                    while !content.is_empty() {
+                        let phrase: LitStr = content.parse()?;
+                        desc_blocklist.push(phrase.value());
+                        if content.peek(token::Comma) {
+                            content.parse::<token::Comma>()?;
+                        }
+                    }
+                }
                 // T-019: per-method byte budget for the
                 // serialized result. Accepts an integer literal
                 // (the canonical form) or a string literal
@@ -816,6 +875,8 @@ impl Parse for MethodToolAttrs {
             baked_examples,
             min_desc_score,
             allow_short_desc,
+            allow_insecure_desc,
+            desc_blocklist,
             result_truncate_bytes,
         })
     }
