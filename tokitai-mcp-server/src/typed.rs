@@ -159,13 +159,87 @@ fn err_at(path: &[String], msg: impl Into<String>) -> ToolError {
     ToolError::new(ToolErrorKind::ValidationError, message)
 }
 
+/// JSON-Schema keywords the validator understands. Any other keyword
+/// in a node's schema is a hard error (`pattern`, `oneOf`, `anyOf`,
+/// `allOf`, `enum`, `const`, `format`, `$ref`, ... are NOT silently
+/// ignored — a future fixture that introduces one will fail loudly at
+/// validator time, not at runtime via a missed check).
+const SUPPORTED_KEYWORDS: &[&str] = &[
+    "type",
+    "properties",
+    "required",
+    "additionalProperties",
+    "items",
+    "minimum",
+    "maximum",
+    "minLength",
+    "maxLength",
+    // `description` is informational only — the validator does not
+    // enforce it, but it is a legitimate JSON-Schema authoring
+    // keyword and rejecting it would break fixtures that include a
+    // human-readable summary.
+    "description",
+    // `x-tokitai-no-constraints` is the T-021 opt-in marker that
+    // gates the fail-open escape hatch. It is a project-internal
+    // extension keyword, not part of standard JSON-Schema, so it is
+    // namespaced with `x-` per JSON-Schema's convention for custom
+    // keywords.
+    "x-tokitai-no-constraints",
+];
+
+/// Recursively assert that `schema` only carries keywords the validator
+/// understands. Returns `Err(ValidationError)` on the first unhandled
+/// keyword. This is the fail-closed part of T-021's defense against
+/// silent acceptance of unconstrained input.
+fn assert_supported_keywords(schema: &Value, path: &[String]) -> Result<(), ToolError> {
+    let Some(obj) = schema.as_object() else {
+        return Ok(());
+    };
+    for key in obj.keys() {
+        if !SUPPORTED_KEYWORDS.contains(&key.as_str()) {
+            return Err(err_at(
+                path,
+                format!(
+                    "schema declares unsupported keyword `{}`; validator can only enforce {}",
+                    key,
+                    SUPPORTED_KEYWORDS.join(", "),
+                ),
+            ));
+        }
+    }
+    // Recurse into nested schemas so the same check applies to
+    // `properties` and `items` sub-schemas.
+    if let Some(props) = obj.get("properties").and_then(|v| v.as_object()) {
+        for (name, child) in props {
+            let mut child_path = path.to_vec();
+            child_path.push(name.clone());
+            assert_supported_keywords(child, &child_path)?;
+        }
+    }
+    if let Some(items) = obj.get("items") {
+        // Array item schemas inherit the parent's path segment "items".
+        let mut items_path = path.to_vec();
+        items_path.push("items".to_string());
+        assert_supported_keywords(items, &items_path)?;
+    }
+    Ok(())
+}
+
 fn validate_node(schema: &Value, value: &Value, path: &mut Vec<String>) -> Result<(), ToolError> {
-    // If schema has no `type`, accept anything.
+    // T-021 fail-closed: refuse any unhandled keyword BEFORE attempting
+    // type dispatch. A future fixture that introduces `pattern` /
+    // `oneOf` / `enum` / `format` / `$ref` etc. must fail loudly at
+    // validator time, not silently accept everything.
+    assert_supported_keywords(schema, path)?;
+
+    // If schema has no `type`, fail-closed by default: refuse the call.
+    // The validator only relaxes this constraint when the schema is
+    // truly empty (`{}`) AND carries the explicit opt-in marker
+    // `x-tokitai-no-constraints: true`. Any other shape (no `type`
+    // but with `properties` / `required`) is treated as `type: object`
+    // for backward compatibility with legacy fixtures.
     let schema_type = schema.get("type").and_then(|v| v.as_str());
 
-    // Some fixtures use `{"$schema": "...", "type": "object", ...}`.
-    // We honor `type` when present; otherwise we walk `properties` if
-    // there are any.
     match schema_type {
         Some("object") => validate_object(schema, value, path),
         Some("integer") => validate_integer(schema, value, path),
@@ -182,11 +256,30 @@ fn validate_node(schema: &Value, value: &Value, path: &mut Vec<String>) -> Resul
             ))
         }
         None => {
-            // No `type`. If we have `properties`, treat as object; else accept.
-            if schema.get("properties").is_some() || schema.get("required").is_some() {
+            // No `type`. Two cases are accepted:
+            //   1. The schema has `properties` or `required` (treat as
+            //      object — matches a common JSON-Schema shorthand).
+            //   2. The schema is the explicit opt-in marker shape
+            //      `{"x-tokitai-no-constraints": true}` (or empty `{}`).
+            // Anything else fails closed.
+            let has_structural =
+                schema.get("properties").is_some() || schema.get("required").is_some();
+            let opt_in = schema
+                .get("x-tokitai-no-constraints")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let is_empty = schema.as_object().map(|o| o.is_empty()).unwrap_or(false);
+            if has_structural {
                 validate_object(schema, value, path)
-            } else {
+            } else if opt_in || is_empty {
                 Ok(())
+            } else {
+                Err(err_at(
+                    path,
+                    "schema has no `type` and no `properties`/`required`; \
+                     validator fails closed (set `type` explicitly, or add \
+                     `\"x-tokitai-no-constraints\": true` to opt in to unconstrained input)",
+                ))
             }
         }
     }
@@ -197,11 +290,52 @@ fn validate_object(schema: &Value, value: &Value, path: &mut Vec<String>) -> Res
         .as_object()
         .ok_or_else(|| err_at(path, format!("expected object, got {}", json_kind(value))))?;
 
-    if let Some(required) = schema.get("required").and_then(|v| v.as_array()) {
-        for req in required {
-            let Some(req_name) = req.as_str() else {
-                continue;
-            };
+    // T-021 fail-closed: every object schema must declare
+    // `additionalProperties` explicitly. JSON-Schema's default is
+    // permissive (any extra key passes), which is exactly the
+    // fail-open behavior we are removing. Refuse the schema (and
+    // therefore the call) if the field is missing, present but not a
+    // boolean, or set to a non-boolean truthy/falsy value (numbers,
+    // objects, arrays are all rejected — `additionalProperties: {}`
+    // is a legitimate JSON-Schema shorthand for a sub-schema, but
+    // T-021's vocabulary does not support nested sub-schemas, so
+    // accept only the strict boolean form).
+    match schema.get("additionalProperties") {
+        None => {
+            return Err(err_at(
+                path,
+                "object schema must declare `additionalProperties: true | false` \
+                 (T-021 fails closed to prevent silent acceptance of unexpected keys)",
+            ));
+        }
+        Some(v) => {
+            if !v.is_boolean() {
+                return Err(err_at(
+                    path,
+                    format!(
+                        "object schema `additionalProperties` must be a boolean, got {}",
+                        json_kind(v),
+                    ),
+                ));
+            }
+        }
+    }
+
+    if let Some(required) = schema.get("required") {
+        let req_arr = required
+            .as_array()
+            .ok_or_else(|| err_at(path, "`required` must be an array of property names"))?;
+        for (i, req) in req_arr.iter().enumerate() {
+            // T-021 fail-closed: a non-string `required` entry is a
+            // schema-author bug, not a free pass. Surface it as
+            // ValidationError pointing at the malformed entry's index
+            // so the fixture author can fix the schema.
+            let req_name = req.as_str().ok_or_else(|| {
+                err_at(
+                    path,
+                    format!("`required[{}]` must be a string, got {}", i, json_kind(req)),
+                )
+            })?;
             if !obj.contains_key(req_name) {
                 return Err(err_at(
                     path,
@@ -245,20 +379,65 @@ fn validate_object(schema: &Value, value: &Value, path: &mut Vec<String>) -> Res
 }
 
 fn validate_integer(schema: &Value, value: &Value, path: &[String]) -> Result<(), ToolError> {
+    // T-021: integer bounds are compared with i64 arithmetic, not
+    // float. `as f64` would lose precision for |n| > 2^53 and silently
+    // accept values that overflow the schema's stated range (e.g. a
+    // schema with `maximum: 9007199254740993` would be unenforceable
+    // because f64 rounds 9007199254740993 to 9007199254740992). Parse
+    // minimum/maximum as i64 and reject fractional bounds outright.
     let n = value
         .as_i64()
         .ok_or_else(|| err_at(path, format!("expected integer, got {}", json_kind(value))))?;
-    check_numeric_bounds(schema, n as f64, path)
+    if let Some(min_raw) = schema.get("minimum") {
+        let min = integer_bound(min_raw, "minimum", path)?;
+        if n < min {
+            return Err(err_at(
+                path,
+                format!("value {} is below minimum {}", n, min),
+            ));
+        }
+    }
+    if let Some(max_raw) = schema.get("maximum") {
+        let max = integer_bound(max_raw, "maximum", path)?;
+        if n > max {
+            return Err(err_at(
+                path,
+                format!("value {} is above maximum {}", n, max),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Parse a JSON value as an i64 bound. Rejects fractional values and
+/// any value that does not fit in i64. This is the integer-bound half
+/// of T-021's defense against silent loss of precision.
+fn integer_bound(raw: &Value, name: &str, path: &[String]) -> Result<i64, ToolError> {
+    let n = raw.as_i64().ok_or_else(|| {
+        err_at(
+            path,
+            format!(
+                "integer `{}` must be an integer literal with no fractional part, got {}",
+                name,
+                json_kind(raw),
+            ),
+        )
+    })?;
+    Ok(n)
 }
 
 fn validate_number(schema: &Value, value: &Value, path: &[String]) -> Result<(), ToolError> {
+    // Number type (float) keeps f64 comparison: the precision floor
+    // is inherent to the type. `minimum` / `maximum` are read as f64
+    // because a fractional bound is the legitimate case for `number`
+    // (e.g. `minimum: 0.5` for a probability).
     let n = value
         .as_f64()
         .ok_or_else(|| err_at(path, format!("expected number, got {}", json_kind(value))))?;
-    check_numeric_bounds(schema, n, path)
+    check_float_bounds(schema, n, path)
 }
 
-fn check_numeric_bounds(schema: &Value, n: f64, path: &[String]) -> Result<(), ToolError> {
+fn check_float_bounds(schema: &Value, n: f64, path: &[String]) -> Result<(), ToolError> {
     if let Some(min) = schema.get("minimum").and_then(|v| v.as_f64()) {
         if n < min {
             return Err(err_at(

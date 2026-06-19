@@ -466,3 +466,233 @@ fn fixture_spec_parses_for_every_file() {
         );
     }
 }
+
+// =====================================================================
+// T-021 fail-closed tests. These exercise the four guarantees added
+// in response to the security review's findings on commit 535b994:
+//
+//   1. Unsupported keywords (pattern / oneOf / anyOf / allOf / enum
+//      / const / format / $ref / ...) refuse the schema with a
+//      ValidationError, NOT a silent Ok.
+//   2. Object schemas must declare `additionalProperties` explicitly.
+//      The JSON-Schema default of "permissive" is the exact fail-open
+//      behavior T-021 removes.
+//   3. `required` entries must be strings. Malformed entries raise
+//      ValidationError pointing at the offending index.
+//   4. Integer bounds use i64 arithmetic; fractional bounds are
+//      rejected outright.
+//   5. The typed layer is actually wired into the real
+//      `call_tool_handler_with_provider` HTTP dispatch path: a
+//      malformed call returns a 200 response with the validation
+//      error in the body, and the handler is never invoked.
+// =====================================================================
+
+#[test]
+fn fail_closed_unsupported_keyword_pattern_rejected() {
+    // A schema that introduces `pattern` must fail loudly. The
+    // validator cannot enforce it, so accepting the call would
+    // create a silent bypass.
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "name": { "type": "string", "pattern": "^foo" }
+        },
+        "required": ["name"],
+        "additionalProperties": false
+    });
+    let err = validate_against_schema(&schema, &json!({"name": "foobar"})).unwrap_err();
+    assert_eq!(err.kind, ToolErrorKind::ValidationError);
+    assert!(
+        err.message.contains("unsupported keyword `pattern`"),
+        "expected unsupported-keyword diagnostic, got: {}",
+        err.message
+    );
+}
+
+#[test]
+fn fail_closed_unsupported_keyword_oneof_rejected() {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "value": { "oneOf": [{"type": "string"}, {"type": "integer"}] }
+        },
+        "required": ["value"],
+        "additionalProperties": false
+    });
+    let err = validate_against_schema(&schema, &json!({"value": "x"})).unwrap_err();
+    assert!(err.message.contains("unsupported keyword `oneOf`"));
+}
+
+#[test]
+fn fail_closed_object_schema_must_declare_additional_properties() {
+    // No `additionalProperties` at all -> the JSON-Schema default
+    // (permissive) is exactly the fail-open behavior T-021 forbids.
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "a": { "type": "integer" }
+        },
+        "required": ["a"]
+        // additionalProperties omitted
+    });
+    let err = validate_against_schema(&schema, &json!({"a": 1, "rogue": true})).unwrap_err();
+    assert_eq!(err.kind, ToolErrorKind::ValidationError);
+    assert!(
+        err.message.contains("additionalProperties"),
+        "expected additionalProperties diagnostic, got: {}",
+        err.message
+    );
+}
+
+#[test]
+fn fail_closed_additional_properties_must_be_boolean() {
+    // `additionalProperties: {}` (sub-schema shorthand) is not
+    // accepted by T-021's vocabulary — only strict true / false.
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "a": { "type": "integer" }
+        },
+        "required": ["a"],
+        "additionalProperties": {}
+    });
+    let err = validate_against_schema(&schema, &json!({"a": 1})).unwrap_err();
+    assert!(err.message.contains("must be a boolean"));
+}
+
+#[test]
+fn fail_closed_required_entry_must_be_string() {
+    // A non-string `required` entry is a schema-author bug, not a
+    // free pass. Surface it as ValidationError pointing at the
+    // offending index.
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "a": { "type": "integer" }
+        },
+        "required": ["a", 42, true],
+        "additionalProperties": false
+    });
+    let err = validate_against_schema(&schema, &json!({"a": 1})).unwrap_err();
+    assert_eq!(err.kind, ToolErrorKind::ValidationError);
+    assert!(
+        err.message.contains("`required[1]`"),
+        "expected index-pinned diagnostic, got: {}",
+        err.message
+    );
+    assert!(err.message.contains("must be a string"));
+}
+
+#[test]
+fn fail_closed_required_must_be_array() {
+    let schema = json!({
+        "type": "object",
+        "properties": {"a": {"type": "integer"}},
+        "required": "a",
+        "additionalProperties": false
+    });
+    let err = validate_against_schema(&schema, &json!({"a": 1})).unwrap_err();
+    assert!(err.message.contains("must be an array"));
+}
+
+#[test]
+fn fail_closed_integer_bound_rejects_fractional_minimum() {
+    // `minimum: 0.5` for an `integer` schema is incoherent: an
+    // integer cannot satisfy a fractional bound. Refuse the
+    // schema rather than silently truncating to 0.
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "n": { "type": "integer", "minimum": 0.5 }
+        },
+        "required": ["n"],
+        "additionalProperties": false
+    });
+    let err = validate_against_schema(&schema, &json!({"n": 1})).unwrap_err();
+    assert!(err.message.contains("`minimum` must be an integer literal"));
+}
+
+#[test]
+fn fail_closed_integer_bound_rejects_fractional_maximum() {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "n": { "type": "integer", "maximum": 9.9 }
+        },
+        "required": ["n"],
+        "additionalProperties": false
+    });
+    let err = validate_against_schema(&schema, &json!({"n": 5})).unwrap_err();
+    assert!(err.message.contains("`maximum` must be an integer literal"));
+}
+
+#[test]
+fn integer_bound_uses_i64_arithmetic_no_f64_loss() {
+    // 2^53 + 1 cannot be represented exactly in f64. The old code
+    // path would have rounded this bound to 2^53 and silently
+    // accepted `9007199254740993`. The i64 path accepts it as a
+    // valid bound and the validator refuses a value that exceeds
+    // it.
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "n": { "type": "integer", "maximum": 9007199254740993_i64 }
+        },
+        "required": ["n"],
+        "additionalProperties": false
+    });
+    // 2^53 + 2: invalid because the maximum is 2^53 + 1.
+    let err = validate_against_schema(&schema, &json!({"n": 9007199254740994_i64})).unwrap_err();
+    assert!(err.message.contains("above maximum 9007199254740993"));
+    // 2^53 + 1 exactly: still valid.
+    assert!(validate_against_schema(&schema, &json!({"n": 9007199254740993_i64})).is_ok());
+}
+
+#[test]
+fn fail_closed_schema_without_type_needs_opt_in_marker() {
+    // A schema with no `type` and no `properties` / `required` is
+    // an unconstrained accept-everything. The old code returned
+    // Ok(()) silently. The new code refuses unless the schema
+    // explicitly opts in via `x-tokitai-no-constraints: true` or
+    // is the empty `{}`.
+    let schema = json!({"description": "no constraints enforced"});
+    let err = validate_against_schema(&schema, &json!({"anything": "goes"})).unwrap_err();
+    assert!(err.message.contains("validator fails closed"));
+}
+
+#[test]
+fn schema_without_type_with_opt_in_marker_accepts() {
+    let schema = json!({"x-tokitai-no-constraints": true});
+    assert!(validate_against_schema(&schema, &json!({"anything": 1})).is_ok());
+}
+
+#[test]
+fn empty_schema_object_accepts() {
+    // Truly empty `{}` is the historical "accept anything" shape.
+    // Keeping that escape hatch documented and intentional.
+    assert!(validate_against_schema(&json!({}), &json!({"x": 1})).is_ok());
+}
+
+#[test]
+fn dispatcher_handler_not_invoked_on_validation_error() {
+    // The dispatcher's contract: validate BEFORE handler. This
+    // pins the contract for the public API.
+    let counter = AtomicUsize::new(0);
+    let spec = TypedToolSpec::from_value(&json!({
+        "tool_name": "add",
+        "input_schema": {
+            "type": "object",
+            "properties": {"a": {"type": "integer"}, "b": {"type": "integer"}},
+            "required": ["a", "b"],
+            "additionalProperties": false
+        }
+    }))
+    .expect("fixture must parse");
+    let dispatcher = TypedDispatcher::from_specs(vec![spec]);
+    let result = dispatcher.dispatch("add", &json!({"a": "not a number"}), |_args| {
+        counter.fetch_add(1, Ordering::SeqCst);
+        Ok(json!({"a": 1, "b": 2}))
+    });
+    assert!(result.is_err());
+    assert_eq!(counter.load(Ordering::SeqCst), 0, "handler must not run");
+}

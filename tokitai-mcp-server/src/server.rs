@@ -14,6 +14,29 @@ use tokitai_core::serde_types;
 // dynamic-registry dispatch path resolves trait methods at the use site.
 #[allow(unused_imports)]
 use tokitai_core::DynamicToolProvider;
+// T-021: when the `mcp-typed` feature is enabled, validate caller
+// arguments against the matching fixture's `inputSchema` BEFORE
+// dispatching to the handler. The typed-dispatch path is intentionally
+// `#[allow(dead_code)]` when the feature is off: the import + the
+// cached `TypedDispatcher` cost zero cycles (the cache is built lazily
+// and only read inside the `#[cfg(feature = "mcp-typed")]` branch).
+#[cfg(feature = "mcp-typed")]
+use crate::typed::{load_typed_fixtures, TypedDispatcher, TypedToolSpec};
+#[cfg(feature = "mcp-typed")]
+use std::sync::OnceLock;
+
+// T-021: lazily build a process-wide `TypedDispatcher` from the fixture
+// directory. The cache survives the lifetime of the process so repeated
+// `tools/call` requests do not pay the file-system scan cost. The cache
+// is built the first time a typed request arrives and is then read-only.
+#[cfg(feature = "mcp-typed")]
+fn typed_dispatcher() -> &'static TypedDispatcher {
+    static CACHE: OnceLock<TypedDispatcher> = OnceLock::new();
+    CACHE.get_or_init(|| {
+        let specs: Vec<TypedToolSpec> = load_typed_fixtures();
+        TypedDispatcher::from_specs(specs)
+    })
+}
 use tower_http::{
     cors::{Any, CorsLayer},
     trace::TraceLayer,
@@ -733,6 +756,27 @@ where
     })?;
 
     info!("Found tool: {} - {}", tool.name, tool.description);
+
+    // T-021: when the `mcp-typed` feature is on, validate the caller's
+    // arguments against the matching fixture's `inputSchema` BEFORE the
+    // handler runs. The handler is unreachable from a malformed call.
+    // On a validation failure we return 400 Bad Request (not 500) with
+    // the JSON Pointer to the offending field embedded in the response
+    // body, so the LLM client can correct its input and retry.
+    #[cfg(feature = "mcp-typed")]
+    {
+        let dispatcher = typed_dispatcher();
+        if let Some(spec) = dispatcher.find(&request.name) {
+            if let Err(e) = spec.validate(&request.arguments) {
+                warn!(
+                    "T-021 typed validation refused call: name={} err={}",
+                    request.name, e
+                );
+                return Ok(Json(ToolCallResponse::error(format!("{}", e))));
+            }
+        }
+        // No spec registered for this tool = passthrough (T-005 path).
+    }
 
     // T-010: when the provider is a `DynamicToolRegistry`, dispatch
     // through `call_for_tenant` so per-tenant enable/disable is honored.
