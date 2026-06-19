@@ -25,5 +25,6 @@ async fn main() -> Result<()> {
         Command::Verify(args) => tokitai_llm::verify::run(args).await,
         Command::Infer(args) => tokitai_llm::infer::run(args).await,
         Command::Examples(args) => tokitai_llm::examples::run(args).await,
+        Command::InferCapabilities(args) => tokitai_llm::infer_capabilities::run(args).await,
     }
 }

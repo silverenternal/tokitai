@@ -46,6 +46,12 @@ pub enum Command {
     /// The output is JSON Lines — one envelope per line.
     #[command(name = "examples")]
     Examples(ExamplesArgs),
+
+    /// Infer capability requirements for tool definitions using an
+    /// LLM. Reads tool definitions from --schema and asks the model
+    /// to suggest requires = [...] entries per tool.
+    #[command(name = "infer-capabilities")]
+    InferCapabilities(InferCapabilitiesArgs),
 }
 
 /// Which LLM provider to talk to. The enum maps 1:1 onto
@@ -104,6 +110,18 @@ pub struct VerifyArgs {
     /// (useful for shell `set -e` workflows that just want a report).
     #[arg(long)]
     pub no_fail: bool,
+
+    /// Provider configuration (URL, key, model). When set, the
+    /// verifier also runs an LLM-based description-quality check
+    /// and merges the findings with the syntactic pass.
+    #[command(flatten)]
+    pub provider_args: ProviderArgs,
+
+    /// Path to write the verification report JSON. When set, the
+    /// report is written there; otherwise it is printed to stdout
+    /// as JSON at the end of the run.
+    #[arg(long)]
+    pub report_path: Option<String>,
 }
 
 /// `tokitai-llm infer` arguments.
@@ -149,6 +167,36 @@ pub struct ExamplesArgs {
     /// matches this substring.
     #[arg(long)]
     pub name_contains: Option<String>,
+
+    /// Provider configuration (URL, key, model). When set, the
+    /// examples subcommand also generates LLM-based example values
+    /// for every tool's parameters and attaches them as baked_examples.
+    #[command(flatten)]
+    pub provider: Option<ProviderArgs>,
+
+    /// Inline tool-definitions JSON array. When set alongside
+    /// --provider, the examples subcommand generates baked_examples
+    /// using LLM calls instead of emitting empty envelopes.
+    #[arg(long)]
+    pub schema: Option<String>,
+}
+
+/// `tokitai-llm infer-capabilities` arguments.
+#[derive(Debug, Args, Clone)]
+pub struct InferCapabilitiesArgs {
+    /// Provider configuration (URL, key, model).
+    #[command(flatten)]
+    pub provider: ProviderArgs,
+
+    /// Inline tool-definitions JSON array. Each entry must have
+    /// `name`, `description`, and `input_schema` fields matching
+    /// the `ToolDefinition` shape.
+    #[arg(long)]
+    pub schema: Option<String>,
+
+    /// Bypass the LLM response cache.
+    #[arg(long, default_value_t = false)]
+    pub no_cache: bool,
 }
 
 /// JSON-Schema envelope flavours emitted by `tokitai-llm examples`.

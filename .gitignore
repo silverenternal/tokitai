@@ -37,3 +37,4 @@ node_modules/
 
 # proptest regression files
 **/*.proptest-regressions
+.claude/

@@ -41,6 +41,7 @@ pub mod cache;
 pub mod cli;
 pub mod examples;
 pub mod infer;
+pub mod infer_capabilities;
 pub mod provider;
 pub mod verify;
 

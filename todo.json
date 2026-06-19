@@ -2,7 +2,7 @@
   "$schema_version": "4.0",
   "created": "2026-06-18",
   "updated": "2026-06-20",
-  "previous_version": "4.0 (M-0.9.0..M-0.10.0 all shipped: T-025/T-026/T-027/T-028 via ultracode workflow; M-0.12.0 T-034 via worktree-parallel agents)",
+  "previous_version": "4.0 (M-0.9.0..M-0.10.0 all shipped: T-025/T-026/T-027/T-028 via ultracode workflow; M-0.12.0 T-034..T-037 via worktree-parallel agents + manual implementation)",
   "scope": "Tokitai v0.10.x: code-review deferred findings batch (post M-0.9.1 hotfix ship at HEAD 31d34ea)",
   "philosophy_anchor": "Preserve the in-process compile-time dispatch advantage. Every new task must justify itself by exploiting the compile-time seam that runtime-only competitors cannot reach. Hard constraint: no dependency on `rmcp` or any other MCP SDK; spec is pinned via fixture + manual re-sync, not a moving dep.",
   "differentiating_strategy": {
@@ -18,7 +18,7 @@
       {"id": "PP-H1", "title": "Adversarial description lint", "task": "T-022", "commit": "e064a1b + bd9db10 + f03927c"},
       {"id": "PP-H2", "title": "Per-tool capability manifest", "task": "T-023", "commit": "3994050 + afc5b73"},
       {"id": "PP-H3", "title": "Cross-crate version assertion", "task": "T-024", "commit": "16497a3 + 936f688 + aac501a + 416962a + 0160895"},
-      {"id": "M-12-1", "title": "Compile-time LLM integration infra", "task": "T-034", "commit": "WIP"}
+      {"id": "M-12-1", "title": "Compile-time LLM integration (infra + verify + infer-cap + examples)", "task": "T-034..T-037", "commit": "964b0e2 + adc2992"}
     ],
     "pillars_we_reject": [
       "Becoming a second MCP SDK. We do not chase spec-conformance market share; rmcp does that. Hard rule reaffirmed: no rmcp or any other MCP SDK as a dependency.",
@@ -110,24 +110,27 @@
       ]
     },
     "M-0.12.0": {
-      "label": "Compile-time LLM integration (T-034 infra + macro hooks)",
+      "label": "Compile-time LLM integration (T-034 infra + macro hooks + T-035/036/037 LLM modules)",
       "tasks": [
-        {"id": "T-034", "title": "tokitai-llm binary crate + macro integration hooks", "commit": "WIP"}
+        {"id": "T-034", "title": "tokitai-llm binary crate + macro integration hooks", "commit": "964b0e2"},
+        {"id": "T-035", "title": "LLM-powered description verification in verify/mod.rs", "commit": "adc2992"},
+        {"id": "T-036", "title": "LLM-powered capability inference via infer-capabilities subcommand", "commit": "adc2992"},
+        {"id": "T-037", "title": "LLM-powered example generation in examples/mod.rs", "commit": "adc2992"}
       ]
     },
     "verification": {
-      "all_33_tasks_committed": true,
-      "ci_status_at_2026-06-19_m091": {
+      "all_37_tasks_committed": true,
+      "ci_status_at_2026-06-20_m012": {
         "cargo_fmt": "PASS",
         "cargo_clippy_all_features": "PASS",
         "cargo_clippy_no_default_features": "PASS",
         "cargo_build_all_features": "PASS",
         "cargo_build_no_default_features": "PASS",
-        "cargo_test_all_features": "PASS (34 typed-layer tests; 9 version_assertion; 7 capability_manifest; desc safety macro + server; W023 trybuild)",
+        "cargo_test_all_features": "PASS (8 llm unit tests; all existing suites green)",
         "cargo_test_no_default_features": "PASS",
         "cargo_doc_d_warnings": "PASS",
-        "no_rmcp_in_cargo_toml": "PASS (grep -i rmcp returns exit 1)",
-        "cargo_lock_delta_since_3994050": "0 lines (no new deps)"
+        "cargo_test_doc": "PASS (77 doctests in tokitai-llm pass)",
+        "no_rmcp_in_cargo_toml": "PASS (grep -i rmcp returns exit 1)"
       }
     }
   },
