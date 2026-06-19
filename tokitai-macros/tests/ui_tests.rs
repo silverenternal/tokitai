@@ -159,3 +159,16 @@ fn test_example_baking_wrong_result() {
     let t = trybuild::TestCases::new();
     t.compile_fail("tests/ui/example_baking_wrong_result.rs");
 }
+
+// ---------------------------------------------------------------------------
+// T-019: per-tool result-size budget. `result_truncate_bytes = 0` is
+// rejected at parse time because the truncation sentinel would
+// consume the whole output. The trybuild snapshot pins the
+// diagnostic so a future rustc version's wording change is
+// visible to the maintainer.
+// ---------------------------------------------------------------------------
+#[test]
+fn test_result_truncate_zero_is_compile_error() {
+    let t = trybuild::TestCases::new();
+    t.compile_fail("tests/ui/result_truncate_zero.rs");
+}

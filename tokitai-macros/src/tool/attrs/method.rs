@@ -171,6 +171,13 @@ pub struct MethodToolAttrs {
     /// bypasses the score lint. Used for one-word verbs and
     /// other intentionally terse descriptions.
     pub allow_short_desc: bool,
+    /// T-019: per-method byte budget for the serialized result.
+    /// When set, the macro compiles a runtime guard into the
+    /// `__call_*` wrapper that truncates the result or returns
+    /// `ToolError::Truncated` once the budget is exceeded. The
+    /// value of `0` is a compile error (the sentinel would
+    /// consume the whole output).
+    pub result_truncate_bytes: Option<usize>,
 }
 
 impl Parse for MethodToolAttrs {
@@ -224,6 +231,7 @@ impl Parse for MethodToolAttrs {
                         baked_examples: Vec::new(),
                         min_desc_score: None,
                         allow_short_desc: false,
+                        result_truncate_bytes: None,
                     });
                 }
             }
@@ -256,6 +264,7 @@ impl Parse for MethodToolAttrs {
         let mut baked_examples: Vec<BakedExample> = Vec::new();
         let mut min_desc_score: Option<u8> = None;
         let mut allow_short_desc = false;
+        let mut result_truncate_bytes: Option<usize> = None;
 
         while !input.is_empty() {
             let key: Ident = input.parse()?;
@@ -560,6 +569,43 @@ impl Parse for MethodToolAttrs {
                         let _ = input.parse::<token::Comma>();
                     }
                 }
+                // T-019: per-method byte budget for the
+                // serialized result. Accepts an integer literal
+                // (the canonical form) or a string literal
+                // (mirrors `min_desc_score` above). `0` is a
+                // compile error and is validated in
+                // `generate_for_impl` because the parser path
+                // cannot propagate `syn::Error` to the user
+                // (the `attr.parse_args::<MethodToolAttrs>()`
+                // call site in `extract_tool_info` silently
+                // swallows parse errors and falls through to
+                // the default attribute values, so a `0` value
+                // would compile without a diagnostic). The
+                // post-parse validation emits a `compile_error!`
+                // at the offending literal's span. Negative
+                // values are rejected by the unsigned `usize`
+                // parse path.
+                "result_truncate_bytes" => {
+                    input.parse::<token::Eq>()?;
+                    let parsed: Option<usize> = if let Ok(lit_int) = input.parse::<syn::LitInt>() {
+                        lit_int.base10_parse::<usize>().ok()
+                    } else if let Ok(lit_str) = input.parse::<LitStr>() {
+                        lit_str.value().parse().ok()
+                    } else {
+                        None
+                    };
+                    match parsed {
+                        Some(0) => result_truncate_bytes = Some(0),
+                        Some(n) => result_truncate_bytes = Some(n),
+                        None => {
+                            return Err(syn::Error::new(
+                                key.span(),
+                                "tokitai `result_truncate_bytes` must be a positive integer literal \
+                                 (e.g. `result_truncate_bytes = 4096`)",
+                            ));
+                        }
+                    }
+                }
                 _ => {
                     let key_str = key.to_string();
                     let validation_prefixes = [
@@ -722,6 +768,7 @@ impl Parse for MethodToolAttrs {
             baked_examples,
             min_desc_score,
             allow_short_desc,
+            result_truncate_bytes,
         })
     }
 }

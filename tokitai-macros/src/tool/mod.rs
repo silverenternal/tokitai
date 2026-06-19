@@ -646,6 +646,41 @@ fn generate_for_impl(mut impl_item: ItemImpl, attrs: ToolAttributes) -> TokenStr
         };
     }
 
+    // T-019: reject `#[tool(result_truncate_bytes = 0)]` at
+    // compile time. The parser accepts the literal and stores
+    // `Some(0)`; the rejection has to live here because the
+    // `attr.parse_args::<MethodToolAttrs>()` call site in
+    // `extract_tool_info` silently swallows parse errors and
+    // would otherwise compile the offending code without a
+    // diagnostic. We scan the method's raw `#[tool]`
+    // attribute tokens to recover the literal's span so the
+    // `compile_error!` points at the user's source, not the
+    // macro's generated code.
+    for tool in &tool_methods {
+        if tool.result_truncate_bytes == Some(0) {
+            // Find the `result_truncate_bytes = 0` literal
+            // span by walking the method's raw attribute
+            // tokens. Falls back to the method ident span
+            // when the scan cannot locate the literal (e.g.
+            // a future attribute shape).
+            let span =
+                find_result_truncate_zero_span(&impl_item, &tool.name).unwrap_or(tool.ident_span);
+            let err = crate::error::MacroError::new(
+                crate::error::ErrorCode::E0099, // generic catch-all
+                span,
+                "tokitai `result_truncate_bytes = 0` is a compile error: \
+                 the truncation sentinel would consume the whole output. \
+                 Omit the attribute for an unlimited budget, or pick \
+                 a positive value (e.g. `result_truncate_bytes = 4096`).",
+            );
+            let err_tokens = err.to_compile_error();
+            return quote! {
+                #impl_item
+                #err_tokens
+            };
+        }
+    }
+
     if tool_methods.is_empty() && replaced_by_redirects.is_empty() {
         return quote! { #impl_item };
     }
@@ -918,4 +953,77 @@ fn generate_for_impl(mut impl_item: ItemImpl, attrs: ToolAttributes) -> TokenStr
 /// 配置宏主函数
 pub fn config(item: TokenStream) -> TokenStream {
     config::registry::config(item)
+}
+
+/// T-019: scan the `#[tool]` attribute on a method for the
+/// `result_truncate_bytes = 0` literal and return its span.
+/// Used by the 0-rejection path in `generate_for_impl` so
+/// the `compile_error!` anchors at the user's source rather
+/// than at the macro's generated code.
+///
+/// The scan walks the method's attribute token stream and
+/// looks for the four-token sequence
+/// `result_truncate_bytes = <integer-literal 0>`. We do not
+/// reuse the structured `MethodToolAttrs` parser because
+/// the parse error is silently swallowed by the call site
+/// (see `extract_tool_info`'s `if let Ok(args) = ...`
+/// branch), and because the structured parser stores the
+/// value as a bare `usize` with no span info attached.
+///
+/// Returns `None` when the literal is not found (e.g. a
+/// `result_truncate_bytes = "0"` string-literal form, or
+/// any future shape we don't recognise); the caller falls
+/// back to the method ident span in that case.
+fn find_result_truncate_zero_span(
+    impl_item: &ItemImpl,
+    method_name: &str,
+) -> Option<proc_macro2::Span> {
+    use proc_macro2::TokenTree;
+    // Find the method's `ImplItemFn` first.
+    let method = impl_item.items.iter().find_map(|item| {
+        if let ImplItem::Fn(fn_item) = item {
+            if fn_item.sig.ident == method_name {
+                return Some(fn_item);
+            }
+        }
+        None
+    })?;
+    // Walk each `#[tool(...)]` attribute on the method.
+    for attr in &method.attrs {
+        if !attr.path().is_ident("tool") {
+            continue;
+        }
+        // In syn 2.x, an attribute's body is exposed via
+        // `attr.meta`; the `(...)` list of arguments lives in
+        // `Meta::List(tokens)`. Recover the token stream the
+        // way `parse_args` would see it, so the span we
+        // recover is the same span the user wrote.
+        let tokens = match &attr.meta {
+            syn::Meta::List(list) => list.tokens.clone(),
+            _ => continue,
+        };
+        let mut prev_ident: Option<String> = None;
+        let mut iter = tokens.into_iter();
+        while let Some(tok) = iter.next() {
+            match &tok {
+                TokenTree::Ident(i) => prev_ident = Some(i.to_string()),
+                TokenTree::Punct(p) if p.as_char() == '=' => {
+                    if let Some(TokenTree::Literal(lit)) = iter.next() {
+                        if lit.to_string() == "0" {
+                            if let Some(prev) = &prev_ident {
+                                if prev == "result_truncate_bytes" {
+                                    return Some(lit.span());
+                                }
+                            }
+                        }
+                    }
+                    prev_ident = None;
+                }
+                _ => {
+                    prev_ident = None;
+                }
+            }
+        }
+    }
+    None
 }

@@ -232,6 +232,7 @@ pub fn extract_tool_info(fn_item: &ImplItemFn) -> Option<ToolMethodInfo> {
             desc_span: None,
             min_desc_score: None,
             allow_short_desc: false,
+            result_truncate_bytes: None,
         });
     }
 
@@ -262,6 +263,7 @@ pub fn extract_tool_info(fn_item: &ImplItemFn) -> Option<ToolMethodInfo> {
     let mut desc_span: Option<proc_macro2::Span> = None;
     let mut min_desc_score: Option<u8> = None;
     let mut allow_short_desc = false;
+    let mut result_truncate_bytes: Option<usize> = None;
 
     for attr in &fn_item.attrs {
         if attr.path().is_ident("tool") {
@@ -295,6 +297,7 @@ pub fn extract_tool_info(fn_item: &ImplItemFn) -> Option<ToolMethodInfo> {
                 baked_examples = args.baked_examples;
                 min_desc_score = args.min_desc_score;
                 allow_short_desc = args.allow_short_desc;
+                result_truncate_bytes = args.result_truncate_bytes;
                 // T-018: capture the desc literal's span from the
                 // raw token tree. We do this AFTER the structured
                 // parse so we only run the scan when there is
@@ -372,5 +375,6 @@ pub fn extract_tool_info(fn_item: &ImplItemFn) -> Option<ToolMethodInfo> {
         desc_span,
         min_desc_score,
         allow_short_desc,
+        result_truncate_bytes,
     })
 }

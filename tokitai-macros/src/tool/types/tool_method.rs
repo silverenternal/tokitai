@@ -68,4 +68,10 @@ pub struct ToolMethodInfo {
     /// T-018: per-method opt-out flag. When `true`, the lint is
     /// bypassed for this method regardless of score.
     pub allow_short_desc: bool,
+    /// T-019: per-method byte budget for the serialized result.
+    /// When `Some(n)`, the macro compiles a runtime guard into
+    /// the `__call_*` wrapper. The guard is a no-op when
+    /// `None` — every existing tool that does not opt in
+    /// continues to behave exactly as it did before T-019.
+    pub result_truncate_bytes: Option<usize>,
 }

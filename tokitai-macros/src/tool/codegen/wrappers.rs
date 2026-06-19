@@ -185,6 +185,239 @@ macro_rules! warn_if_not_test {
     };
 }
 
+// ---------------------------------------------------------------------------
+// T-019: per-tool result-size budget (`#[tool(result_truncate_bytes = N)]`).
+//
+// When the method carries a budget, the macro compiles a runtime guard
+// into the `__call_*` wrapper. The guard is structured so the *default*
+// (no budget) path collapses to the pre-T-019 behaviour:
+//
+//   - Serialize the tool's return value to JSON bytes.
+//   - If the bytes fit the budget, return them unchanged.
+//   - If they exceed the budget and the value is a `String`, truncate
+//     at the largest UTF-8 codepoint boundary at or before the budget,
+//     append a `...[truncated at N bytes, original was M bytes]`
+//     sentinel, and emit a `tracing::warn!` when the `trace` feature
+//     is on. The LLM still gets a parseable `String` payload back.
+//   - If the value is *not* a `String`, return
+//     `ToolError::truncated_with(original_bytes, kept_bytes)`. We
+//     refuse to return a mid-JSON string for arbitrary
+//     `Serialize` types because the deserializer would reject it
+//     and the LLM would see a parse error rather than a clear
+//     "truncated" diagnostic.
+//
+// The check is `Some(n) = tool.result_truncate_bytes`. When the
+// attribute is omitted, the helper emits a no-op token stream
+// (i.e. the wrapper compiles to the same machine code as before
+// T-019), so the feature is fully backwards compatible.
+// ---------------------------------------------------------------------------
+
+/// T-019: emit the runtime truncation guard. Returns the *final
+/// expression* the wrapper should evaluate, replacing
+/// `result_handling` entirely. The token stream is the body of a
+/// `Result<serde_json::Value, ::tokitai::ToolError>` so it can be
+/// spliced directly in place of `#record_result`.
+///
+/// The guard is only emitted when the method carries a
+/// `result_truncate_bytes = N` attribute. On the default (no
+/// budget) path this helper returns `None` and the wrapper
+/// compiles to the pre-T-019 machine code (`result_handling`
+/// is used as-is).
+///
+/// `tracing_enabled()` (T-015) is also probed here so the
+/// `tracing::warn!` only appears in the emitted source when
+/// the `trace` feature is on. On the default build, the
+/// entire `tracing::warn!` collapses to an `if false` (because
+/// `tracing_enabled()` is a compile-time `false`), and the
+/// linker drops the `tracing` reference.
+fn result_truncate_guard(tool: &ToolMethodInfo) -> Option<TokenStream2> {
+    // T-019: `0` is rejected at parse time (see
+    // `generate_for_impl`); we still guard here so a future
+    // call site that bypasses the validation cannot produce
+    // a runtime guard with an empty budget. The `?` returns
+    // `None` (i.e. no guard) when the attribute was not
+    // supplied at all; the explicit `if budget == 0` arm
+    // returns `None` for the `Some(0)` case.
+    let budget = match tool.result_truncate_bytes {
+        Some(n) if n > 0 => n,
+        _ => return None,
+    };
+    let tool_name = tool.tool_name.clone();
+    let trace_on = tracing_enabled();
+    // The guard operates on the wrapper's local `result`
+    // binding. When the method is `is_result` (returns
+    // `Result<T, E>`), we first unwrap the `Ok` arm and
+    // hand the truncated value back as `Ok(...)`; the `Err`
+    // arm is propagated untouched so an upstream error never
+    // gets swallowed by the truncation guard. The
+    // `is_result` flag is set by the `is_result_type` helper
+    // in the extract layer.
+    let guard = if tool.is_result {
+        quote! {
+            match result {
+                Ok(__tokitai_value) => {
+                    match ::serde_json::to_vec(&__tokitai_value) {
+                        Ok(__tokitai_bytes) => {
+                            if __tokitai_bytes.len() <= #budget {
+                                // `Value::from` is only
+                                // implemented for a fixed set
+                                // of primitive types; for an
+                                // arbitrary `Serialize` value
+                                // we re-serialize through
+                                // `serde_json::to_value`. The
+                                // pre-T-019 `result_handling`
+                                // did the same.
+                                Ok(::serde_json::to_value(
+                                    &__tokitai_value,
+                                )
+                                .unwrap_or(::serde_json::Value::Null))
+                            } else {
+                                let __tokitai_original =
+                                    __tokitai_bytes.len();
+                                // T-019: arbitrary `Serialize`
+                                // type over budget. The
+                                // truncated JSON is unlikely
+                                // to deserialize, so we return
+                                // a structured error and drop
+                                // the value. Emit a
+                                // `tracing::warn!` when the
+                                // trace feature is on.
+                                if #trace_on {
+                                    ::tracing::warn!(
+                                        tool.name = #tool_name,
+                                        original_bytes = __tokitai_original,
+                                        kept_bytes = #budget,
+                                        "tokitai T-019: tool result exceeded result_truncate_bytes budget; returning ToolError::Truncated"
+                                    );
+                                }
+                                Err(::tokitai::ToolError::truncated_with(
+                                    __tokitai_original,
+                                    #budget,
+                                ))
+                            }
+                        }
+                        Err(__tokitai_err) => {
+                            Err(::tokitai::ToolError::internal_error(
+                                format!(
+                                    "tokitai T-019: failed to serialize result for truncation guard: {}",
+                                    __tokitai_err
+                                ),
+                            ))
+                        }
+                    }
+                }
+                Err(__tokitai_err) => Err(::tokitai::ToolError::internal_error(
+                    format!("{}", __tokitai_err),
+                )),
+            }
+        }
+    } else {
+        quote! {
+            match ::serde_json::to_vec(&result) {
+                Ok(__tokitai_bytes) => {
+                    if __tokitai_bytes.len() <= #budget {
+                        Ok(::serde_json::to_value(&result).unwrap_or(
+                            ::serde_json::Value::Null,
+                        ))
+                    } else {
+                        let __tokitai_original = __tokitai_bytes.len();
+                        // T-019: detect `String` returns so we
+                        // can do UTF-8-aware truncation.
+                        // Anything else (struct / vec / map
+                        // / number / bool) returns
+                        // `ToolError::Truncated`.
+                        let __tokitai_str: Option<String> =
+                            serde_json::from_value(
+                                ::serde_json::to_value(&result)
+                                    .unwrap_or(::serde_json::Value::Null),
+                            )
+                            .ok();
+                        if let Some(__tokitai_s) = __tokitai_str {
+                            // T-019: string path — truncate
+                            // at the largest valid UTF-8
+                            // boundary at or before
+                            // `#budget`, then append the
+                            // sentinel.
+                            let __tokitai_kept = {
+                                let mut __tokitai_end = #budget;
+                                if __tokitai_end > __tokitai_s.len() {
+                                    __tokitai_end = __tokitai_s.len();
+                                }
+                                // Walk back to a UTF-8
+                                // codepoint boundary. UTF-8
+                                // continuation bytes have
+                                // their top two bits set to
+                                // `10`; the byte *before* a
+                                // codepoint is either ASCII
+                                // (`0xxxxxxx`) or a leading
+                                // byte (`11xxxxxx`). A byte
+                                // is a continuation iff
+                                // `(b & 0xC0) == 0x80`.
+                                while __tokitai_end > 0
+                                    && (__tokitai_s.as_bytes()
+                                        [__tokitai_end - 1]
+                                        & 0xC0)
+                                        == 0x80
+                                {
+                                    __tokitai_end -= 1;
+                                }
+                                __tokitai_s[..__tokitai_end].to_string()
+                            };
+                            let __tokitai_sentinel = format!(
+                                "...[truncated at {} bytes, original was {} bytes]",
+                                #budget, __tokitai_original
+                            );
+                            let __tokitai_truncated = format!(
+                                "{}{}",
+                                __tokitai_kept, __tokitai_sentinel
+                            );
+                            if #trace_on {
+                                ::tracing::warn!(
+                                    tool.name = #tool_name,
+                                    original_bytes = __tokitai_original,
+                                    kept_bytes = #budget,
+                                    "tokitai T-019: tool result exceeded result_truncate_bytes budget; truncated string with sentinel"
+                                );
+                            }
+                            Ok(::serde_json::Value::String(
+                                __tokitai_truncated,
+                            ))
+                        } else {
+                            // T-019: arbitrary `Serialize`
+                            // type over budget. Return
+                            // `ToolError::Truncated`; the
+                            // LLM sees a clear error rather
+                            // than a half-deserialized
+                            // payload.
+                            if #trace_on {
+                                ::tracing::warn!(
+                                    tool.name = #tool_name,
+                                    original_bytes = __tokitai_original,
+                                    kept_bytes = #budget,
+                                    "tokitai T-019: tool result exceeded result_truncate_bytes budget; returning ToolError::Truncated"
+                                );
+                            }
+                            Err(::tokitai::ToolError::truncated_with(
+                                __tokitai_original,
+                                #budget,
+                            ))
+                        }
+                    }
+                }
+                Err(__tokitai_err) => {
+                    Err(::tokitai::ToolError::internal_error(
+                        format!(
+                            "tokitai T-019: failed to serialize result for truncation guard: {}",
+                            __tokitai_err
+                        ),
+                    ))
+                }
+            }
+        }
+    };
+    Some(guard)
+}
+
 /// 生成参数解析辅助方法
 pub fn generate_helper_methods(tools: &[ToolMethodInfo]) -> Vec<TokenStream2> {
     // Upper bound: each async tool emits 2 wrappers (async + sync),
@@ -537,7 +770,18 @@ pub fn generate_wrapper_method_sync(tool: &ToolMethodInfo) -> TokenStream2 {
     // `tracing` reference that the linker then drops.
     let tracing_attr = tracing_instrument_attr(tool).unwrap_or_else(|| quote! {});
     let record_static = tracing_record_static_fields(tool);
-    let record_result = tracing_record_result_and_return(quote! { #result_handling });
+    // T-019: when a `result_truncate_bytes` budget is declared,
+    // the truncation guard *replaces* `result_handling`. The
+    // `tracing_record_result_and_return` wrapper still wraps
+    // the guard so `result.size` is recorded on the span when
+    // the trace feature is on. On the default (no budget) path
+    // `result_truncate_guard` returns `None` and the wrapper
+    // compiles to the pre-T-019 machine code.
+    let result_expr = match result_truncate_guard(tool) {
+        Some(guard) => guard,
+        None => result_handling,
+    };
+    let record_result = tracing_record_result_and_return(quote! { #result_expr });
 
     quote! {
         #[allow(clippy::all)]
@@ -983,7 +1227,18 @@ pub fn generate_wrapper_method(tool: &ToolMethodInfo, is_async: bool) -> TokenSt
     // `tracing` reference that the linker then drops.
     let tracing_attr = tracing_instrument_attr(tool).unwrap_or_else(|| quote! {});
     let record_static = tracing_record_static_fields(tool);
-    let record_result = tracing_record_result_and_return(quote! { #result_handling });
+    // T-019: when a `result_truncate_bytes` budget is declared,
+    // the truncation guard *replaces* `result_handling`. The
+    // `tracing_record_result_and_return` wrapper still wraps
+    // the guard so `result.size` is recorded on the span when
+    // the trace feature is on. On the default (no budget) path
+    // `result_truncate_guard` returns `None` and the wrapper
+    // compiles to the pre-T-019 machine code.
+    let result_expr = match result_truncate_guard(tool) {
+        Some(guard) => guard,
+        None => result_handling,
+    };
+    let record_result = tracing_record_result_and_return(quote! { #result_expr });
 
     quote! {
         #[allow(clippy::all)]

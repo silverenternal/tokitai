@@ -1357,6 +1357,27 @@ impl ToolError {
             message,
         }
     }
+
+    /// T-019: shortcut to build a `Truncated` variant for
+    /// `#[tool(result_truncate_bytes = N)]` runs that exceeded the
+    /// declared byte budget. The diagnostic message identifies
+    /// the result as a truncated payload so the LLM-side harness
+    /// can decide whether to retry with a narrower input.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::{ToolError, ToolErrorKind};
+    ///
+    /// let err = ToolError::truncated();
+    /// assert_eq!(err.kind, ToolErrorKind::Truncated);
+    /// ```
+    pub fn truncated() -> Self {
+        Self {
+            kind: ToolErrorKind::Truncated,
+            message: "tool result exceeded the result_truncate_bytes budget",
+        }
+    }
 }
 
 #[cfg(feature = "serde")]
@@ -1448,6 +1469,33 @@ impl ToolError {
             message: message.into(),
         }
     }
+
+    /// T-019: shortcut to build a `Truncated` variant for
+    /// `#[tool(result_truncate_bytes = N)]` runs that exceeded the
+    /// declared byte budget. The `message` includes the original
+    /// and kept byte counts so a downstream log scraper can
+    /// decide whether the dropped bytes matter.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::{ToolError, ToolErrorKind};
+    ///
+    /// let err = ToolError::truncated_with(8000, 4096);
+    /// assert_eq!(err.kind, ToolErrorKind::Truncated);
+    /// assert!(err.message.contains("8000"));
+    /// assert!(err.message.contains("4096"));
+    /// ```
+    pub fn truncated_with(original_bytes: usize, kept_bytes: usize) -> Self {
+        Self {
+            kind: ToolErrorKind::Truncated,
+            message: format!(
+                "tool result exceeded the result_truncate_bytes budget: \
+                 original {} bytes, kept {} bytes",
+                original_bytes, kept_bytes
+            ),
+        }
+    }
 }
 
 /// Classification of a [`ToolError`] for structured error handling.
@@ -1457,10 +1505,11 @@ impl ToolError {
 /// ```rust
 /// use tokitai_core::ToolErrorKind;
 ///
-/// // The five classifications:
+/// // The six classifications:
 /// assert_ne!(ToolErrorKind::ValidationError, ToolErrorKind::NotFound);
 /// assert_ne!(ToolErrorKind::InternalError, ToolErrorKind::TypeError);
 /// assert_ne!(ToolErrorKind::Removed, ToolErrorKind::NotFound);
+/// assert_ne!(ToolErrorKind::Truncated, ToolErrorKind::InternalError);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -1479,6 +1528,15 @@ pub enum ToolErrorKind {
     /// `ToolError::message` (and `replaced_by` if present) to
     /// discover the successor.
     Removed = 4,
+    /// T-019: the tool's serialized result exceeded the per-method
+    /// `result_truncate_bytes` budget. The error's `message`
+    /// carries the diagnostic (`"original N bytes, kept M bytes"`)
+    /// and the macro also emits a `tracing::warn!` when the
+    /// `trace` feature is on. The original payload is dropped;
+    /// downstream callers should treat this as a partial answer
+    /// and (where the consumer's contract allows) call the tool
+    /// again with a narrower input.
+    Truncated = 5,
 }
 
 /// Compile-time tool registry trait.

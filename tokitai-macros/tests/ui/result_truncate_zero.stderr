@@ -1,0 +1,8 @@
+error: error[E0099]: tokitai `result_truncate_bytes = 0` is a compile error: the truncation sentinel would consume the whole output. Omit the attribute for an unlimited budget, or pick a positive value (e.g. `result_truncate_bytes = 4096`).
+              = help: see the docs page for this error code
+              = help: see https://docs.rs/tokitai/latest/tokitai/errors.html#E0099
+
+  --> tests/ui/result_truncate_zero.rs:17:36
+   |
+17 |     #[tool(result_truncate_bytes = 0)]
+   |                                    ^

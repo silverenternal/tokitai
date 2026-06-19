@@ -10,7 +10,8 @@
 4. [Integrating with Ollama](#integrating-with-ollama)
 5. [Integrating with other AI platforms](#integrating-with-other-ai-platforms)
 6. [End-to-end workflow](#end-to-end-workflow)
-7. [Troubleshooting](#troubleshooting)
+7. [Bounding tool result size (T-019)](#bounding-tool-result-size-t-019)
+8. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -495,6 +496,91 @@ for (call, result) in tool_calls.iter().zip(results.iter()) {
 let final_response = call_ai_api(messages, None).await?;
 println!("AI reply: {}", final_response.content);
 ```
+
+---
+
+## Bounding tool result size (T-019)
+
+> **Why this matters.** A 2026-06-10 CSDN production post-mortem
+> described an agent that called a single upstream API which
+> returned 8 MB of unstructured JSON; the agent tried to
+> process the entire payload, the context blew up, the
+> retry loop fired 15 times, and the system cascaded.
+> Headroom and the MCP code-execution pattern both attack
+> this at the LLM-API layer. Tokitai attacks it at the
+> tool boundary, so a single tool cannot blow the context
+> regardless of what the LLM-side layer does.
+
+Per-method byte budgets are declared with
+`#[tool(result_truncate_bytes = N)]` and compile a runtime
+guard into the wrapper:
+
+```rust
+#[tool]
+impl BigService {
+    /// Fetch a transcript; cap the result at 4 KiB so a
+    /// single call cannot blow the context window.
+    #[tool(result_truncate_bytes = 4096)]
+    pub fn fetch_transcript(&self, id: String) -> String {
+        // The macro guards the return value. If the
+        // serialized transcript exceeds 4096 bytes, the
+        // guard truncates it at a UTF-8 codepoint boundary
+        // and appends
+        //   ...[truncated at 4096 bytes, original was N bytes]
+        // so the LLM sees a bounded payload.
+        upstream.fetch(id)
+    }
+
+    /// Return a structured payload. Truncated JSON would
+    /// not round-trip, so the guard returns
+    /// `ToolError::Truncated { original_bytes, kept_bytes }`
+    /// instead of a half-deserializable string.
+    #[tool(result_truncate_bytes = 1024)]
+    pub fn fetch_record(&self, id: String) -> Record { ... }
+}
+```
+
+Behaviour matrix:
+
+| Return type | Over budget | Tracing |
+| --- | --- | --- |
+| `String` | Truncate at the largest UTF-8 boundary at or before `N`, append `...[truncated at N bytes, original was M bytes]` | `tracing::warn!` when `trace` is on |
+| `Result<Ok(T), E>` where `T: Serialize` | Drop the value, return `ToolError::Truncated` (the `Err` arm is propagated as before) | Same |
+| Other `Serialize` (struct / vec / map / number) | Return `ToolError::Truncated`; the LLM sees a clear error rather than a half-deserialized payload | Same |
+| Anything that fits | Returned as-is. No sentinel, no warn | — |
+
+Defaults: omitting the attribute is unlimited (the pre-T-019
+behaviour). `result_truncate_bytes = 0` is a compile error —
+the truncation sentinel would consume the whole output.
+
+The trace integration is opt-in. Enable it the same way as
+the T-015 in-process tool-call trace:
+
+```toml
+tokitai = { version = "0.5", features = ["trace"] }
+```
+
+Or, for an env-gated build, set `TOKITAI_TRACE=1` in the
+cargo environment. When neither is set, the `tracing::warn!`
+collapses to an `if false` and the linker drops the
+`tracing` reference — the binary-size delta is zero.
+
+### Worked example: an 8 MB API call
+
+The CSDN-style 8 MB failure is now a one-line attribute:
+
+```rust
+#[tool(result_truncate_bytes = 8192)]
+pub fn fetch_unstructured_blob(&self, url: String) -> String {
+    upstream.get(url).unwrap_or_default()
+}
+```
+
+After the change, the worst-case payload the LLM sees is
+8 KiB + the truncation sentinel. The original 8 MB is
+dropped on the floor and a `tracing::warn!` event with
+`original_bytes = 8388608` and `kept_bytes = 8192` lands
+in the subscriber. The agent no longer cascades.
 
 ---
 
