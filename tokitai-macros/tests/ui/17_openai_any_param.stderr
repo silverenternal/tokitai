@@ -1,6 +1,6 @@
 error: error[E0030]: schema dialect violation [OA-2] at `.properties.payload`: OpenAI strict-mode rejects properties without an explicit `type`; add a concrete type to parameter `payload`
               = help: either switch the impl to `dialect = "anthropic"` (looser), or change the Rust signature so the offending shape is not emitted
-              = help: see https://docs.rs/tokitai/latest/tokitai/errors.html#E0030
+              = help: see https://docs.rs/tokitai_macros/latest/tokitai_macros/enum.ErrorCode.html#variant.E0030
 
   --> tests/ui/17_openai_any_param.rs:18:12
    |

@@ -1,6 +1,6 @@
 error: error[E0030]: schema dialect violation [OA-3] at `prefixItems`: OpenAI strict-mode does not implement JSON Schema 2020-12 positional tuples; replace the Rust tuple type with a struct or `Vec<T>`
               = help: either switch the impl to `dialect = "anthropic"` (looser), or change the Rust signature so the offending shape is not emitted
-              = help: see https://docs.rs/tokitai/latest/tokitai/errors.html#E0030
+              = help: see https://docs.rs/tokitai_macros/latest/tokitai_macros/enum.ErrorCode.html#variant.E0030
 
   --> tests/ui/16_openai_tuple_param.rs:16:12
    |

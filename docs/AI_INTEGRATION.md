@@ -736,7 +736,7 @@ fires before the model sees the text:
 | Macro path | `#[tool]` expansion | `O(len(desc))` per `#[tool]` impl block |
 | Build env var | Compile-time `option_env!` read | One env lookup per impl block |
 | Server-start path | `tools/list` (mcp-typed) | `O(N_tools * len(desc))` at server start |
-| Per-call (tools/call) | — | **Zero.** The hot path is unchanged. |
+| Per-call (tools/call) | — | `O(len(desc))` at macro time (allocates for blocklist merge) |
 
 There is no per-call runtime cost. The defensive check is
 entirely structural — the literal is rejected at compile

@@ -1,6 +1,6 @@
 error: error[E0012]: method `method_without_self` has no `self` parameter
               = help: add a `self` parameter (`&self` for read-only, `&mut self` to mutate, `self` to consume); the macro generates a tool dispatcher that needs a receiver to call into
-              = help: see https://docs.rs/tokitai/latest/tokitai/errors.html#E0012
+              = help: see https://docs.rs/tokitai_macros/latest/tokitai_macros/enum.ErrorCode.html#variant.E0012
 
   --> tests/ui/07_missing_self_param.rs:11:12
    |

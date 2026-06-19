@@ -1,6 +1,6 @@
 error: error[E0021]: method `fn_ptr_method` has an unsupported return type: bare function pointer `fn(...) -> ...`
               = help: the macro can only lower `String`, primitive numbers, `bool`, `Option<T>`, `Vec<T>`, `HashMap<K, V>`, structs that derive `serde::Deserialize`, and `serde_json::Value`; wrap the value in a concrete type or return `serde_json::Value` and serialize inside the body
-              = help: see https://docs.rs/tokitai/latest/tokitai/errors.html#E0021
+              = help: see https://docs.rs/tokitai_macros/latest/tokitai_macros/enum.ErrorCode.html#variant.E0021
 
   --> tests/ui/14_invalid_return_type.rs:18:36
    |

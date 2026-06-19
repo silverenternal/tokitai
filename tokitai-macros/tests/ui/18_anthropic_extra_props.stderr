@@ -1,6 +1,6 @@
 error: error[E0030]: schema dialect violation [AN-1] at `.properties.user.additionalProperties`: Anthropic's tool-use parser requires an explicit `additionalProperties: false` on every nested object; add `additionalProperties = false` (use `HashMap<String, T>` if you genuinely want extras)
               = help: either switch the impl to `dialect = "mcp"` (looser), or change the Rust signature so the offending shape is not emitted
-              = help: see https://docs.rs/tokitai/latest/tokitai/errors.html#E0030
+              = help: see https://docs.rs/tokitai_macros/latest/tokitai_macros/enum.ErrorCode.html#variant.E0030
 
   --> tests/ui/18_anthropic_extra_props.rs:33:12
    |

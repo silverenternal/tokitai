@@ -1,6 +1,6 @@
 error: error[E0004]: method `generic_method` uses generic parameters
               = help: use a concrete type in the signature, or take a `serde_json::Value` and deserialize inside the body; the macro cannot generate a single typed schema for an open-ended `T: ...`
-              = help: see https://docs.rs/tokitai/latest/tokitai/errors.html#E0004
+              = help: see https://docs.rs/tokitai_macros/latest/tokitai_macros/enum.ErrorCode.html#variant.E0004
 
   --> tests/ui/08_generic_method.rs:11:12
    |

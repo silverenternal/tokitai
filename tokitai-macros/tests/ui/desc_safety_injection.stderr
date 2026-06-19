@@ -1,6 +1,6 @@
 error: error[E0032]: tool description looks like a prompt-injection payload; matched categories: [instruction-like phrase (e.g. `ignore previous`, `always respond`, `you must`, `do not mention`)]. The literal is checked at compile time so the LLM never sees this text.
               = help: rewrite the description to be factual and bounded: one sentence on the action, one sentence on the caveats, no embedded instructions. Pass `#[tool(allow_insecure_desc)]` only when the description is part of an audited security test fixture. Add per-tool extensions with `#[tool(desc_blocklist("phrase1", "phrase2"))]` when the org-wide default set is not enough.
-              = help: see https://docs.rs/tokitai/latest/tokitai/errors.html#E0032
+              = help: see https://docs.rs/tokitai_macros/latest/tokitai_macros/enum.ErrorCode.html#variant.E0032
 
   --> tests/ui/desc_safety_injection.rs:19:19
    |

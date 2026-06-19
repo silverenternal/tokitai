@@ -1,6 +1,6 @@
 error: error[E0099]: `2026.06` is not a valid SemVer version (version_policy = "semver")
               = help: SemVer 2.0 strings look like `1.0.0` (with an optional `v` prefix). Drop `version_policy = "semver"` if you want to use CalVer (e.g. `2026.06`) or commit-SHA strings instead.
-              = help: see https://docs.rs/tokitai/latest/tokitai/errors.html#E0099
+              = help: see https://docs.rs/tokitai_macros/latest/tokitai_macros/enum.ErrorCode.html#variant.E0099
 
   --> tests/ui/version_interval_invalid_semver.rs:13:12
    |

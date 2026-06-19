@@ -1,6 +1,6 @@
 error: error[E0001]: compose chain type mismatch: step `step_a` returns `String`, but step `step_b` expects `i32` as its first argument
               = help: make step `step_b`'s first argument type `String` (matching the previous step's return type), or change step `step_a`'s return type to match what `step_b` expects
-              = help: see https://docs.rs/tokitai/latest/tokitai/errors.html#E0001
+              = help: see https://docs.rs/tokitai_macros/latest/tokitai_macros/enum.ErrorCode.html#variant.E0001
 
   --> tests/ui/compose_chain_mismatch.rs:13:45
    |

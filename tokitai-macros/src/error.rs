@@ -11,7 +11,7 @@
 //! 10 |     fn foo() {}
 //!   |     ^^ did you mean `bar` or `baz`?
 //!   |
-//!   = help: see https://docs.rs/tokitai/latest/tokitai/errors.html#E0001
+//!   = help: see https://docs.rs/tokitai_macros/latest/tokitai_macros/enum.ErrorCode.html#variant.E0001
 //! ```
 //!
 //! Three things are guaranteed for every diagnostic:
@@ -194,8 +194,16 @@ impl ErrorCode {
 
     /// Anchor in the public docs site.
     pub fn doc_url(self) -> String {
+        // T-025: `ErrorCode` lives in the `tokitai_macros` proc-macro
+        // crate (not the user-facing `tokitai` re-export), so the
+        // docs.rs anchor must point at `tokitai_macros`. The variant
+        // is documented as a `///` doc-comment on each enum arm in
+        // this file, so rustdoc generates a stable `#variant.E0032`
+        // anchor on the rendered `enum.ErrorCode.html` page. The old
+        // `/tokitai/latest/tokitai/errors.html#E0032` path does not
+        // resolve (the user-facing crate has no `errors.html`).
         format!(
-            "https://docs.rs/tokitai/latest/tokitai/errors.html#{}",
+            "https://docs.rs/tokitai_macros/latest/tokitai_macros/enum.ErrorCode.html#variant.{}",
             self.as_str()
         )
     }
