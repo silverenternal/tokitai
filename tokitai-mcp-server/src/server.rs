@@ -23,7 +23,9 @@ use tokitai_core::DynamicToolProvider;
 #[cfg(feature = "mcp-typed")]
 use crate::typed::{load_typed_fixtures, TypedDispatcher, TypedToolSpec};
 #[cfg(feature = "mcp-typed")]
-use std::sync::OnceLock;
+use std::collections::HashSet;
+#[cfg(feature = "mcp-typed")]
+use std::sync::{Mutex, OnceLock};
 
 // T-021: lazily build a process-wide `TypedDispatcher` from the fixture
 // directory. The cache survives the lifetime of the process so repeated
@@ -36,6 +38,43 @@ fn typed_dispatcher() -> &'static TypedDispatcher {
         let specs: Vec<TypedToolSpec> = load_typed_fixtures();
         TypedDispatcher::from_specs(specs)
     })
+}
+
+// T-021: per-tool warn-once log for tools that have no matching
+// `tests/fixtures/mcp-spec/typed/*.json` fixture. Without this
+// signal an operator who adds a new tool but forgets to drop a
+// fixture alongside it would silently lose typed validation coverage
+// (the call goes through the T-005 JSON-passthrough path). The
+// `OnceLock<Mutex<HashSet<String>>>` keeps the de-duplication cost
+// O(1) per call after the first hit, and the Mutex is only held
+// for the HashSet insert — never around the warn! call — so the
+// hot path is uncontended.
+//
+// Split into a pure `record_missing_fixture` (returns whether this
+// is the first time we have seen `tool_name`) and a thin wrapper
+// that emits the `warn!` only when the pure function says "first
+// time". Splitting the function this way lets the unit test verify
+// the dedup logic without depending on a tracing subscriber, which
+// would require pulling in a new test dependency and is forbidden
+// by the no-new-deps rule.
+#[cfg(feature = "mcp-typed")]
+fn record_missing_fixture(tool_name: &str) -> bool {
+    static SEEN: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    let cell = SEEN.get_or_init(|| Mutex::new(HashSet::new()));
+    let mut guard = cell.lock().expect("warn-missing-fixture mutex poisoned");
+    guard.insert(tool_name.to_string())
+}
+
+#[cfg(feature = "mcp-typed")]
+fn warn_missing_fixture_once(tool_name: &str) {
+    if record_missing_fixture(tool_name) {
+        warn!(
+            "T-021 no typed spec for tool `{}`; dispatching unvalidated \
+             (add a fixture under tests/fixtures/mcp-spec/typed/ to enable \
+             validation). This warning fires once per missing tool name.",
+            tool_name
+        );
+    }
 }
 use tower_http::{
     cors::{Any, CorsLayer},
@@ -763,19 +802,32 @@ where
     // On a validation failure we return 400 Bad Request (not 500) with
     // the JSON Pointer to the offending field embedded in the response
     // body, so the LLM client can correct its input and retry.
+    //
+    // When the request targets a tool with no matching fixture we
+    // still fall through to the T-005 JSON-passthrough path (the
+    // fixture set is a project-supplied artefact, not a complete
+    // registry of every tool the provider exposes), but we emit a
+    // warn! exactly once per such tool name so an operator can see
+    // coverage gaps instead of discovering them after a security
+    // incident. See `warn_missing_fixture_once` for the dedup
+    // mechanism.
     #[cfg(feature = "mcp-typed")]
     {
         let dispatcher = typed_dispatcher();
-        if let Some(spec) = dispatcher.find(&request.name) {
-            if let Err(e) = spec.validate(&request.arguments) {
-                warn!(
-                    "T-021 typed validation refused call: name={} err={}",
-                    request.name, e
-                );
-                return Ok(Json(ToolCallResponse::error(format!("{}", e))));
+        match dispatcher.find(&request.name) {
+            Some(spec) => {
+                if let Err(e) = spec.validate(&request.arguments) {
+                    warn!(
+                        "T-021 typed validation refused call: name={} err={}",
+                        request.name, e
+                    );
+                    return Ok(Json(ToolCallResponse::error(format!("{}", e))));
+                }
+            }
+            None => {
+                warn_missing_fixture_once(&request.name);
             }
         }
-        // No spec registered for this tool = passthrough (T-005 path).
     }
 
     // T-010: when the provider is a `DynamicToolRegistry`, dispatch
@@ -1065,5 +1117,62 @@ impl tokitai_core::ToolCaller for MultiToolProvider {
             "Tool '{}' not found in any provider",
             name
         )))
+    }
+}
+
+// =====================================================================
+// T-021 fail-closed state-drift visibility test.
+//
+// The state-drift failure mode is: an operator adds a new tool to
+// the provider, but forgets to drop a matching fixture in
+// `tests/fixtures/mcp-spec/typed/`. Without a signal, the call goes
+// through the T-005 JSON-passthrough path silently and the operator
+// learns about the missing coverage only after a security incident.
+//
+// `record_missing_fixture` is the dedup state machine behind
+// `warn_missing_fixture_once`. We test the state machine directly
+// (the warn! call is a thin shim around it) because pulling in a
+// tracing-test subscriber would be a new dev-dependency and the
+// project rule is "no new top-level dependencies". The test uses
+// a unique tool name per invocation so the `OnceLock<HashSet>`
+// global does not collide with a previous test run's state.
+// =====================================================================
+#[cfg(all(test, feature = "mcp-typed"))]
+mod warn_missing_fixture_tests {
+    use super::record_missing_fixture;
+
+    #[test]
+    fn first_call_for_a_tool_name_returns_true() {
+        // Unique name per test run so we are not at the mercy of
+        // test parallelism / ordering.
+        let name = format!("__test_first_call_{}__", std::process::id());
+        assert!(
+            record_missing_fixture(&name),
+            "first call for a fresh tool name must report 'first time'"
+        );
+    }
+
+    #[test]
+    fn second_call_for_same_tool_name_returns_false() {
+        let name = format!("__test_second_call_{}__", std::process::id());
+        assert!(
+            record_missing_fixture(&name),
+            "first call reports 'first time'"
+        );
+        assert!(
+            !record_missing_fixture(&name),
+            "second call for the same tool name must report 'already seen'"
+        );
+    }
+
+    #[test]
+    fn distinct_tool_names_do_not_collide() {
+        let name_a = format!("__test_distinct_a_{}__", std::process::id());
+        let name_b = format!("__test_distinct_b_{}__", std::process::id());
+        assert!(record_missing_fixture(&name_a));
+        assert!(
+            record_missing_fixture(&name_b),
+            "a fresh name must report 'first time' even after another name was inserted"
+        );
     }
 }
