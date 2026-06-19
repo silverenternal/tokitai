@@ -68,7 +68,7 @@ mod tokitai_manifest {
 /// Returned by [`parse_serve_args`] so the unit tests can cover
 /// every branch without binding a port.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ServeArgs {
+pub struct ServeArgs {
     /// The SemVer prefix the manifest must satisfy. When `None`
     /// the manifest version is accepted as-is (no-op check).
     pub require_tokitai: Option<String>,
@@ -93,7 +93,7 @@ pub(crate) struct ServeArgs {
 /// * `--allow-tokitai-mismatch` (no value).
 ///
 /// Unknown flags are ignored. The function never panics.
-pub(crate) fn parse_serve_args<I, S>(args: I) -> Result<ServeArgs, &'static str>
+pub fn parse_serve_args<I, S>(args: I) -> Result<ServeArgs, &'static str>
 where
     I: IntoIterator<Item = S>,
     S: AsRef<str>,

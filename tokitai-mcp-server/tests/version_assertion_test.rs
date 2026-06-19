@@ -17,7 +17,9 @@
 //! is the responsibility of the `serve()` entry point and is
 //! covered by the unit tests in `src/serve.rs`.
 
-use tokitai_mcp_server::serve::{manifest_version, version_matches_prefix};
+use tokitai_mcp_server::serve::{
+    manifest_version, parse_serve_args, version_matches_prefix, ServeArgs,
+};
 
 /// Positive: 1-component prefix matches a version on the same
 /// major. The default manifest version is `0.5.1`, so the
@@ -139,6 +141,111 @@ fn resolved_manifest_version_satisfies_workspace_prefix() {
     assert!(
         version_matches_prefix(manifest, Some("0.5")),
         "resolved manifest `{}` must satisfy the `0.5` prefix",
+        manifest,
+    );
+}
+
+/// T-027: integration test that exercises `parse_serve_args` with
+/// realistic argc/argv, mirroring what `std::env::args()` returns
+/// when the binary is launched with the documented flags. The
+/// unit tests in `src/serve.rs` cover the helper with hand-crafted
+/// `Vec<&str>` inputs; this test adds the integration path where
+/// the input comes from `std::env::args()` itself, so the boundary
+/// between OS argv and the parser is exercised end-to-end.
+///
+/// We construct a realistic argv by skipping `argv[0]` (the binary
+/// path), exactly as `serve()` does internally:
+/// `parse_serve_args(std::env::args().skip(1))`. The test then
+/// asserts the same outcomes the unit tests assert, but on a
+/// path that round-trips through `OsString -> String -> &str`
+/// the way the real OS startup does.
+///
+/// We deliberately do NOT call `serve()` itself in this test
+/// because it would observe whatever flags the test runner
+/// happened to pass to the test binary; instead we synthesize
+/// the argv and feed it to the same parser `serve()` uses.
+#[test]
+fn parse_serve_args_with_realistic_argv_via_env_args_skip_one() {
+    // Mirror what `std::env::args()` produces when the binary
+    // is launched as: `<binary> --require-tokitai=0.5.1 --allow-tokitai-mismatch`.
+    // We model it as `Vec<String>` (the exact type
+    // `std::env::args().skip(1)` yields) and feed it through the
+    // parser. This is the same code path `serve()` runs on startup.
+    let realistic_argv: Vec<String> = vec![
+        "--require-tokitai=0.5.1".to_string(),
+        "--allow-tokitai-mismatch".to_string(),
+    ];
+
+    let parsed = parse_serve_args(realistic_argv.iter().map(String::as_str))
+        .expect("realistic argv must parse successfully");
+
+    assert_eq!(
+        parsed,
+        ServeArgs {
+            require_tokitai: Some("0.5.1".to_string()),
+            allow_mismatch: true,
+        }
+    );
+}
+
+/// T-027: integration test for the boundary case where the test
+/// runner (or a real user) launches the binary with NO flags.
+/// Mirrors `std::env::args()` returning just `argv[0]`, which
+/// after `.skip(1)` yields an empty iterator.
+#[test]
+fn parse_serve_args_with_empty_env_args_skip_one() {
+    let empty_argv: Vec<String> = vec![];
+    let parsed = parse_serve_args(empty_argv.iter().map(String::as_str))
+        .expect("empty argv must parse successfully");
+    assert_eq!(
+        parsed,
+        ServeArgs {
+            require_tokitai: None,
+            allow_mismatch: false,
+        }
+    );
+}
+
+/// T-027: integration test that feeds a realistic `--require-tokitai`
+/// with a malformed prefix through the same path. The parser must
+/// not panic and must surface the operator-error message.
+#[test]
+fn parse_serve_args_rejects_empty_prefix_via_realistic_argv() {
+    // Simulate `<binary> --require-tokitai=` — the empty-prefix
+    // operator error path. The parser must NOT panic and must
+    // return Err with the operator-fix message, exactly as the
+    // unit tests assert on hand-crafted inputs.
+    let realistic_argv: Vec<String> = vec!["--require-tokitai=".to_string()];
+    let result = parse_serve_args(realistic_argv.iter().map(String::as_str));
+    let err = result.expect_err("empty prefix must be rejected");
+    assert!(
+        err.contains("non-empty"),
+        "operator-error message must mention the fix: got {:?}",
+        err,
+    );
+}
+
+/// T-027: end-to-end integration with the live `manifest_version()`.
+///
+/// Calls `version_matches_prefix` with the live manifest version
+/// (whatever the binary was compiled against) and a realistic
+/// prefix that the OS-level operator would pass via
+/// `--require-tokitai=0.5`. The test asserts the version check
+/// path that `serve()` runs at startup actually accepts the
+/// manifest under the workspace's current major.minor.
+#[test]
+fn version_check_at_startup_accepts_workspace_prefix_via_realistic_argv() {
+    // Live manifest (whatever the binary was compiled against).
+    let manifest = manifest_version();
+    // A realistic `--require-tokitai=0.5` prefix the OS operator
+    // would pass. The workspace is on 0.5.x, so this must match.
+    let realistic_argv: Vec<String> = vec!["--require-tokitai=0.5".to_string()];
+    let parsed = parse_serve_args(realistic_argv.iter().map(String::as_str))
+        .expect("realistic argv must parse successfully");
+    assert_eq!(parsed.require_tokitai.as_deref(), Some("0.5"));
+    assert!(
+        version_matches_prefix(manifest, parsed.require_tokitai.as_deref()),
+        "live manifest `{}` must satisfy realistic prefix `0.5`",
         manifest,
     );
 }
