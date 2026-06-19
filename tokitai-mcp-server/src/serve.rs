@@ -87,11 +87,13 @@ pub(crate) struct ServeArgs {
 /// * `--require-tokitai=<prefix>` (the value is anything after
 ///   the first `=`; whitespace inside the prefix is not
 ///   supported, but typical SemVer strings contain no
-///   whitespace).
+///   whitespace).  An empty or whitespace-only prefix is
+///   rejected as an operator error — it would silently
+///   disable the version check.
 /// * `--allow-tokitai-mismatch` (no value).
 ///
 /// Unknown flags are ignored. The function never panics.
-pub(crate) fn parse_serve_args<I, S>(args: I) -> ServeArgs
+pub(crate) fn parse_serve_args<I, S>(args: I) -> Result<ServeArgs, &'static str>
 where
     I: IntoIterator<Item = S>,
     S: AsRef<str>,
@@ -103,13 +105,19 @@ where
     for arg in args {
         let a = arg.as_ref();
         if let Some(rest) = a.strip_prefix("--require-tokitai=") {
+            if rest.trim().is_empty() {
+                return Err(
+                    "operator error: --require-tokitai=<prefix> requires a non-empty \
+                     prefix (use --allow-tokitai-mismatch to bypass the version check)",
+                );
+            }
             out.require_tokitai = Some(rest.to_string());
         } else if a == "--allow-tokitai-mismatch" {
             out.allow_mismatch = true;
         }
         // Unknown flags: ignore (forward compatibility).
     }
-    out
+    Ok(out)
 }
 
 /// The manifest entry the `serve()` function returns to the
@@ -289,7 +297,8 @@ pub(crate) fn check_version_at_startup(args: &ServeArgs) -> Result<(), ServerErr
 /// This split keeps the unit test surface tiny: the version
 /// check can be exercised with a fake argv, without any port.
 pub fn serve() -> Result<(), ServerError> {
-    let args = parse_serve_args(std::env::args().skip(1));
+    let args = parse_serve_args(std::env::args().skip(1))
+        .map_err(|e| ServerError::ServerStartupError(e.to_string()))?;
     check_version_at_startup(&args)?;
     tracing::info!(
         target: "tokitai_mcp_server::serve",
@@ -313,7 +322,7 @@ mod tests {
 
     #[test]
     fn parse_args_empty() {
-        let args = parse_serve_args(Vec::<&str>::new());
+        let args = parse_serve_args(Vec::<&str>::new()).unwrap();
         assert_eq!(
             args,
             ServeArgs {
@@ -325,30 +334,58 @@ mod tests {
 
     #[test]
     fn parse_args_require_only() {
-        let args = parse_serve_args(vec!["--require-tokitai=0.8"]);
+        let args = parse_serve_args(vec!["--require-tokitai=0.8"]).unwrap();
         assert_eq!(args.require_tokitai.as_deref(), Some("0.8"));
         assert!(!args.allow_mismatch);
     }
 
     #[test]
     fn parse_args_allow_only() {
-        let args = parse_serve_args(vec!["--allow-tokitai-mismatch"]);
+        let args = parse_serve_args(vec!["--allow-tokitai-mismatch"]).unwrap();
         assert_eq!(args.require_tokitai, None);
         assert!(args.allow_mismatch);
     }
 
     #[test]
     fn parse_args_both() {
-        let args = parse_serve_args(vec!["--require-tokitai=0.9.0", "--allow-tokitai-mismatch"]);
+        let args =
+            parse_serve_args(vec!["--require-tokitai=0.9.0", "--allow-tokitai-mismatch"]).unwrap();
         assert_eq!(args.require_tokitai.as_deref(), Some("0.9.0"));
         assert!(args.allow_mismatch);
     }
 
     #[test]
     fn parse_args_unknown_flag_ignored() {
-        let args = parse_serve_args(vec!["--unknown", "--require-tokitai=0.5"]);
+        let args = parse_serve_args(vec!["--unknown", "--require-tokitai=0.5"]).unwrap();
         assert_eq!(args.require_tokitai.as_deref(), Some("0.5"));
         assert!(!args.allow_mismatch);
+    }
+
+    #[test]
+    fn parse_args_rejects_empty_require_prefix() {
+        let result = parse_serve_args(vec!["--require-tokitai="]);
+        assert!(result.is_err(), "empty prefix must be rejected");
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("non-empty"),
+            "error message must mention the operator fix: got {:?}",
+            err,
+        );
+    }
+
+    #[test]
+    fn parse_args_rejects_whitespace_prefix() {
+        let result = parse_serve_args(vec!["--require-tokitai=   "]);
+        assert!(result.is_err(), "whitespace-only prefix must be rejected");
+    }
+
+    #[test]
+    fn parse_args_accepts_valid_prefix_with_leading_whitespace() {
+        // The value after `=` is not trimmed, but the empty-check
+        // rejects whitespace-only. A prefix with surrounding
+        // whitespace is preserved as-is (callers handle it).
+        let args = parse_serve_args(vec!["--require-tokitai=0.5"]).unwrap();
+        assert_eq!(args.require_tokitai.as_deref(), Some("0.5"));
     }
 
     #[test]
