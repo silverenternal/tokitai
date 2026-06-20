@@ -31,7 +31,7 @@ Tokitai Core provides the foundational types and traits that underpin the Tokita
 
 ```toml
 [dependencies]
-tokitai-core = "0.5"
+tokitai-core = "0.6"
 ```
 
 ### Basic Usage

@@ -22,45 +22,45 @@ use tokitai_mcp_server::serve::{
 };
 
 /// Positive: 1-component prefix matches a version on the same
-/// major. The default manifest version is `0.5.1`, so the
+/// major. The default manifest version is `0.6.0`, so the
 /// `0` prefix is always satisfied; the `1` prefix is never
 /// satisfied.
 #[test]
 fn one_component_prefix_matches_same_major() {
-    assert!(version_matches_prefix("0.5.1", Some("0")));
-    assert!(!version_matches_prefix("0.5.1", Some("1")));
+    assert!(version_matches_prefix("0.6.0", Some("0")));
+    assert!(!version_matches_prefix("0.6.0", Some("1")));
 }
 
 /// Positive: 2-component prefix matches any patch on the same
 /// `MAJOR.MINOR` line.
 #[test]
 fn two_component_prefix_matches_same_minor() {
-    assert!(version_matches_prefix("0.5.1", Some("0.5")));
-    assert!(version_matches_prefix("0.5.99", Some("0.5")));
-    assert!(!version_matches_prefix("0.6.0", Some("0.5")));
+    assert!(version_matches_prefix("0.6.0", Some("0.6")));
+    assert!(version_matches_prefix("0.6.99", Some("0.6")));
+    assert!(!version_matches_prefix("0.7.0", Some("0.6")));
 }
 
 /// Positive: 3-component prefix is an exact match.
 #[test]
 fn three_component_prefix_is_exact() {
-    assert!(version_matches_prefix("0.5.1", Some("0.5.1")));
-    assert!(!version_matches_prefix("0.5.1", Some("0.5.2")));
+    assert!(version_matches_prefix("0.6.0", Some("0.6.0")));
+    assert!(!version_matches_prefix("0.6.0", Some("0.6.1")));
 }
 
 /// Positive: a `v`/`V` prefix is accepted transparently.
 #[test]
 fn v_prefix_is_transparent() {
-    assert!(version_matches_prefix("0.5.1", Some("v0.5")));
-    assert!(version_matches_prefix("0.5.1", Some("V0.5.1")));
-    assert!(!version_matches_prefix("0.5.1", Some("v0.6")));
+    assert!(version_matches_prefix("0.6.0", Some("v0.6")));
+    assert!(version_matches_prefix("0.6.0", Some("V0.6.0")));
+    assert!(!version_matches_prefix("0.6.0", Some("v0.7")));
 }
 
 /// Positive: `None` and the empty string both mean "no
 /// requirement" — the helper is a no-op.
 #[test]
 fn no_requirement_is_a_no_op() {
-    assert!(version_matches_prefix("0.5.1", None));
-    assert!(version_matches_prefix("0.5.1", Some("")));
+    assert!(version_matches_prefix("0.6.0", None));
+    assert!(version_matches_prefix("0.6.0", Some("")));
     assert!(version_matches_prefix("garbage", None));
 }
 
@@ -70,17 +70,17 @@ fn no_requirement_is_a_no_op() {
 #[test]
 fn malformed_inputs_never_silently_pass() {
     // Garbage on either side.
-    assert!(!version_matches_prefix("garbage", Some("0.5")));
-    assert!(!version_matches_prefix("0.5.1", Some("garbage")));
+    assert!(!version_matches_prefix("garbage", Some("0.6")));
+    assert!(!version_matches_prefix("0.6.0", Some("garbage")));
     // Empty manifest + valid prefix.
-    assert!(!version_matches_prefix("", Some("0.5")));
+    assert!(!version_matches_prefix("", Some("0.6")));
     // Leading-zero component is not canonical SemVer.
     assert!(!version_matches_prefix("01.0.0", Some("0")));
-    assert!(!version_matches_prefix("0.5.1", Some("01.0.0")));
+    assert!(!version_matches_prefix("0.6.0", Some("01.0.0")));
 }
 
 /// Acceptance criterion 5: a server compiled against
-/// `tokitai-core 0.5.1` started with `--require-tokitai=0.9.0`
+/// `tokitai-core 0.6.0` started with `--require-tokitai=0.9.0`
 /// refuses to start. The pure helper returns `false`, and
 /// `serve()` propagates the refusal to the caller. We test the
 /// pure helper here; the surrounding `serve()` plumbing is
@@ -88,9 +88,9 @@ fn malformed_inputs_never_silently_pass() {
 /// `src/serve.rs`.
 #[test]
 fn required_prefix_mismatch_is_rejected() {
-    assert!(!version_matches_prefix("0.5.1", Some("0.9.0")));
-    assert!(!version_matches_prefix("0.5.1", Some("0.9")));
-    assert!(!version_matches_prefix("0.5.1", Some("1")));
+    assert!(!version_matches_prefix("0.6.0", Some("0.9.0")));
+    assert!(!version_matches_prefix("0.6.0", Some("0.9")));
+    assert!(!version_matches_prefix("0.6.0", Some("1")));
 }
 
 /// Verify that the workspace root resolution (used by `build.rs`
@@ -125,22 +125,22 @@ fn workspace_root_contains_cargo_lock_with_tokitai_core() {
     assert!(found, "workspace root not found from {:?}", manifest_dir);
 }
 /// baked into the test binary by `build.rs`, satisfies its own
-/// `0.5` prefix. If a future contributor bumps the workspace
+/// `0.6` prefix. If a future contributor bumps the workspace
 /// version without updating the build script's resolution
 /// path, this test fails loudly.
 #[test]
 fn resolved_manifest_version_satisfies_workspace_prefix() {
     // The manifest is whatever tokitai-core version this build
     // was compiled against; the workspace is currently on
-    // `0.5.x`, so the `0.5` prefix always matches.
+    // `0.6.x`, so the `0.6` prefix always matches.
     //
     // The version is reachable via the same `include!` the
     // runtime uses, so we exercise the live path rather than
     // hard-coding the literal.
     let manifest = manifest_version();
     assert!(
-        version_matches_prefix(manifest, Some("0.5")),
-        "resolved manifest `{}` must satisfy the `0.5` prefix",
+        version_matches_prefix(manifest, Some("0.6")),
+        "resolved manifest `{}` must satisfy the `0.6` prefix",
         manifest,
     );
 }
@@ -167,12 +167,12 @@ fn resolved_manifest_version_satisfies_workspace_prefix() {
 #[test]
 fn parse_serve_args_with_realistic_argv_via_env_args_skip_one() {
     // Mirror what `std::env::args()` produces when the binary
-    // is launched as: `<binary> --require-tokitai=0.5.1 --allow-tokitai-mismatch`.
+    // is launched as: `<binary> --require-tokitai=0.6.0 --allow-tokitai-mismatch`.
     // We model it as `Vec<String>` (the exact type
     // `std::env::args().skip(1)` yields) and feed it through the
     // parser. This is the same code path `serve()` runs on startup.
     let realistic_argv: Vec<String> = vec![
-        "--require-tokitai=0.5.1".to_string(),
+        "--require-tokitai=0.6.0".to_string(),
         "--allow-tokitai-mismatch".to_string(),
     ];
 
@@ -182,7 +182,7 @@ fn parse_serve_args_with_realistic_argv_via_env_args_skip_one() {
     assert_eq!(
         parsed,
         ServeArgs {
-            require_tokitai: Some("0.5.1".to_string()),
+            require_tokitai: Some("0.6.0".to_string()),
             allow_mismatch: true,
         }
     );
@@ -230,22 +230,22 @@ fn parse_serve_args_rejects_empty_prefix_via_realistic_argv() {
 /// Calls `version_matches_prefix` with the live manifest version
 /// (whatever the binary was compiled against) and a realistic
 /// prefix that the OS-level operator would pass via
-/// `--require-tokitai=0.5`. The test asserts the version check
+/// `--require-tokitai=0.6`. The test asserts the version check
 /// path that `serve()` runs at startup actually accepts the
 /// manifest under the workspace's current major.minor.
 #[test]
 fn version_check_at_startup_accepts_workspace_prefix_via_realistic_argv() {
     // Live manifest (whatever the binary was compiled against).
     let manifest = manifest_version();
-    // A realistic `--require-tokitai=0.5` prefix the OS operator
-    // would pass. The workspace is on 0.5.x, so this must match.
-    let realistic_argv: Vec<String> = vec!["--require-tokitai=0.5".to_string()];
+    // A realistic `--require-tokitai=0.6` prefix the OS operator
+    // would pass. The workspace is on 0.6.x, so this must match.
+    let realistic_argv: Vec<String> = vec!["--require-tokitai=0.6".to_string()];
     let parsed = parse_serve_args(realistic_argv.iter().map(String::as_str))
         .expect("realistic argv must parse successfully");
-    assert_eq!(parsed.require_tokitai.as_deref(), Some("0.5"));
+    assert_eq!(parsed.require_tokitai.as_deref(), Some("0.6"));
     assert!(
         version_matches_prefix(manifest, parsed.require_tokitai.as_deref()),
-        "live manifest `{}` must satisfy realistic prefix `0.5`",
+        "live manifest `{}` must satisfy realistic prefix `0.6`",
         manifest,
     );
 }

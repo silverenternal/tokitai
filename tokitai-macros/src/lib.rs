@@ -21,7 +21,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! tokitai = "0.5"
+//! tokitai = "0.6"
 //! ```
 //!
 //! Then use the `#[tool]` macro:

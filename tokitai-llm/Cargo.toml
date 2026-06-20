@@ -26,10 +26,10 @@ path = "src/main.rs"
 
 [dependencies]
 # Core types - what the `#[tool]` macro emits.
-tokitai-core = { path = "../tokitai-core", version = "0.5.1", features = ["serde"] }
+tokitai-core = { path = "../tokitai-core", version = "0.6", features = ["serde"] }
 # The user-facing re-export surface (re-exports the `#[tool]` macro,
 # `ToolProvider`, `AiToolError`).
-tokitai = { path = "../tokitai", version = "0.5.1", features = ["mcp", "http-server"] }
+tokitai = { path = "../tokitai", version = "0.6", features = ["mcp", "http-server"] }
 
 # Async runtime + HTTP client
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "time"] }

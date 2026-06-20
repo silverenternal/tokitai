@@ -36,8 +36,8 @@ Tokitai is a procedural-macro library. A single `#[tool]` attribute turns your R
 
 ```toml
 [dependencies]
-tokitai = "0.5.0"
-tokitai-mcp-server = "0.5"  # optional: MCP server scaffolding
+tokitai = "0.6"
+tokitai-mcp-server = "0.6"  # optional: MCP server scaffolding
 tokio = { version = "1", features = ["full"] }
 serde_json = "1.0"
 ```
@@ -142,7 +142,7 @@ cargo run --example dev_assistant
 
 | Feature | Description |
 |---------|-------------|
-| **Minimal dependency footprint** | Add only `tokitai = "0.5"`; the runtime needs just serde + serde_json |
+| **Minimal dependency footprint** | Add only `tokitai = "0.6"`; the runtime needs just serde + serde_json |
 | **Compile-time generation** | Tool definitions are generated during compilation, so type errors surface early |
 | **One attribute** | Just `#[tool]` — no chain of annotations to remember |
 | **Type-safe by construction** | Rust types are mapped to JSON Schema automatically |

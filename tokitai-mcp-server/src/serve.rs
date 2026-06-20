@@ -356,8 +356,8 @@ mod tests {
 
     #[test]
     fn parse_args_unknown_flag_ignored() {
-        let args = parse_serve_args(vec!["--unknown", "--require-tokitai=0.5"]).unwrap();
-        assert_eq!(args.require_tokitai.as_deref(), Some("0.5"));
+        let args = parse_serve_args(vec!["--unknown", "--require-tokitai=0.6"]).unwrap();
+        assert_eq!(args.require_tokitai.as_deref(), Some("0.6"));
         assert!(!args.allow_mismatch);
     }
 
@@ -384,57 +384,57 @@ mod tests {
         // The value after `=` is not trimmed, but the empty-check
         // rejects whitespace-only. A prefix with surrounding
         // whitespace is preserved as-is (callers handle it).
-        let args = parse_serve_args(vec!["--require-tokitai=0.5"]).unwrap();
-        assert_eq!(args.require_tokitai.as_deref(), Some("0.5"));
+        let args = parse_serve_args(vec!["--require-tokitai=0.6"]).unwrap();
+        assert_eq!(args.require_tokitai.as_deref(), Some("0.6"));
     }
 
     #[test]
     fn prefix_match_major_only() {
         // 1-component prefix: matches any version on the same major.
-        assert!(version_matches_prefix("0.5.1", Some("0")));
-        assert!(version_matches_prefix("0.5.1", Some("0")));
-        assert!(!version_matches_prefix("0.5.1", Some("1")));
+        assert!(version_matches_prefix("0.6.0", Some("0")));
+        assert!(version_matches_prefix("0.6.0", Some("0")));
+        assert!(!version_matches_prefix("0.6.0", Some("1")));
         assert!(version_matches_prefix("1.0.0", Some("1")));
-        assert!(!version_matches_prefix("0.5.1", Some("2")));
+        assert!(!version_matches_prefix("0.6.0", Some("2")));
     }
 
     #[test]
     fn prefix_match_major_minor() {
-        assert!(version_matches_prefix("0.5.1", Some("0.5")));
-        assert!(version_matches_prefix("0.5.99", Some("0.5")));
-        assert!(!version_matches_prefix("0.6.0", Some("0.5")));
+        assert!(version_matches_prefix("0.6.0", Some("0.6")));
+        assert!(version_matches_prefix("0.6.99", Some("0.6")));
+        assert!(!version_matches_prefix("0.7.0", Some("0.6")));
     }
 
     #[test]
     fn prefix_match_exact() {
-        assert!(version_matches_prefix("0.5.1", Some("0.5.1")));
-        assert!(!version_matches_prefix("0.5.1", Some("0.5.2")));
+        assert!(version_matches_prefix("0.6.0", Some("0.6.0")));
+        assert!(!version_matches_prefix("0.6.0", Some("0.6.1")));
     }
 
     #[test]
     fn prefix_match_v_prefix_accepted() {
-        assert!(version_matches_prefix("0.5.1", Some("v0.5")));
-        assert!(version_matches_prefix("0.5.1", Some("V0.5.1")));
+        assert!(version_matches_prefix("0.6.0", Some("v0.6")));
+        assert!(version_matches_prefix("0.6.0", Some("V0.6.0")));
     }
 
     #[test]
     fn prefix_match_none_means_no_op() {
-        assert!(version_matches_prefix("0.5.1", None));
+        assert!(version_matches_prefix("0.6.0", None));
         assert!(version_matches_prefix("anything", None));
     }
 
     #[test]
     fn prefix_match_empty_prefix_means_no_op() {
-        assert!(version_matches_prefix("0.5.1", Some("")));
-        assert!(version_matches_prefix("0.5.1", Some("  ")));
+        assert!(version_matches_prefix("0.6.0", Some("")));
+        assert!(version_matches_prefix("0.6.0", Some("  ")));
     }
 
     #[test]
     fn prefix_match_rejects_malformed_inputs() {
         // Both sides invalid -> false. The function never panics.
-        assert!(!version_matches_prefix("garbage", Some("0.5")));
-        assert!(!version_matches_prefix("0.5.1", Some("garbage")));
-        assert!(!version_matches_prefix("", Some("0.5")));
+        assert!(!version_matches_prefix("garbage", Some("0.6")));
+        assert!(!version_matches_prefix("0.6.0", Some("garbage")));
+        assert!(!version_matches_prefix("", Some("0.6")));
     }
 
     #[test]

@@ -30,7 +30,7 @@
 //! fragments). The final record is the literal `data: [DONE]`. The
 //! provider parses the stream into a sequence of
 //! [`CompletionEvent::TextDelta`] and
-//! [`CompletionEvent::ToolCallBegin`/`ToolCallArgsDelta`] events
+//! [`CompletionEvent::ToolCallBegin`] / [`CompletionEvent::ToolCallArgsDelta`] events
 //! and finishes with [`CompletionEvent::Done`].
 
 use std::pin::Pin;

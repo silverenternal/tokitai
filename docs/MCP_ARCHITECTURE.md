@@ -51,8 +51,8 @@ Tokitai's design philosophy lines up naturally with the MCP protocol, making Rus
 
 ```toml
 [dependencies]
-tokitai = { version = "0.5.0", features = ["mcp"] }
-tokitai-mcp-server = "0.5"  # Optional: MCP server scaffolding
+tokitai = { version = "0.6", features = ["mcp"] }
+tokitai-mcp-server = "0.6"  # Optional: MCP server scaffolding
 tokio = { version = "1", features = ["full"] }
 serde_json = "1.0"
 ```
@@ -552,7 +552,7 @@ compile time.
 
 ```toml
 [dependencies]
-tokitai = { version = "0.5", features = ["trace"] }
+tokitai = { version = "0.6", features = ["trace"] }
 ```
 
 Or via a compile-time env var (no Cargo.toml change):

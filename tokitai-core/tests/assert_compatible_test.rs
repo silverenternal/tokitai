@@ -191,16 +191,16 @@ fn _format_smoke_test() {
 // compile error here — the same compile-time guarantee the
 // function promises to downstream consumers.
 //
-// The literals are pinned at "0.5" because the workspace currently
-// pins `tokitai-core = "0.5.x"`. The exact-match and prefix-match
+// The literals are pinned at "0.6" because the workspace currently
+// pins `tokitai-core = "0.6.x"`. The exact-match and prefix-match
 // blocks both target that line; if the major bumps, both fail to
 // compile and the contributor is forced to update the literals in
 // lockstep with the version bump.
 // ---------------------------------------------------------------------------
 
 const _: () = {
-    // Prefix match: 2-component, must always pass for 0.5.x.
-    tokitai_core::assert_compatible_with("0.5");
+    // Prefix match: 2-component, must always pass for 0.6.x.
+    tokitai_core::assert_compatible_with("0.6");
 };
 
 const _: () = {
@@ -210,5 +210,5 @@ const _: () = {
 
 const _: () = {
     // `v` prefix is accepted transparently.
-    tokitai_core::assert_compatible_with("v0.5");
+    tokitai_core::assert_compatible_with("v0.6");
 };

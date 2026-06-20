@@ -18,7 +18,7 @@ publish = false
 # Path-based dependency on the local tokitai checkout. This is the
 # default for users who run the script from a clone of the tokitai
 # repo. If you publish or move tokitai, swap this for
-# `tokitai = "0.5"` (or whatever the current major is) in the same
+# `tokitai = "0.6"` (or whatever the current major is) in the same
 # way you would for a real consumer crate.
 tokitai = { path = "/home/hugo/codes/tokitai/tokitai/tokitai" }
 # `#[tool]` emits `::tokitai_core::...` paths into the consumer

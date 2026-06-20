@@ -151,8 +151,8 @@ pub struct ToolDefinition {
     pub baked_examples: Option<&'static str>,
     /// T-046: optional free-form usage hint shown to the model alongside
     /// the description. Useful for nudging specific invocation patterns
-    /// (e.g. "Always pass `limit` <= 100"). See [`ToolHintPlacement`]
-    /// for delivery options.
+    /// (e.g. "Always pass `limit` <= 100"). See the
+    /// `tokitai-llm` `ToolHintPlacement` enum for delivery options.
     #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     #[cfg(feature = "serde")]
     pub usage_hint: Option<alloc::string::String>,
@@ -345,7 +345,7 @@ impl ToolDefinition {
 
     /// T-046: attach a usage hint that the provider layer can
     /// auto-inject into the system prompt or as a separate message.
-    /// See [`ToolHintPlacement`] for delivery options.
+    /// See the `tokitai-llm` `ToolHintPlacement` enum for delivery options.
     ///
     /// # Example
     ///
@@ -2985,7 +2985,7 @@ pub const CORE_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// // Inside your own crate, gated by a `const _: () = ...;` block
 /// // so the check fires at compile time:
 /// const _: () = {
-///     tokitai_core::assert_compatible_with("0.5");
+///     tokitai_core::assert_compatible_with("0.6");
 /// };
 /// ```
 ///

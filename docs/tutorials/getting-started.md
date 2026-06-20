@@ -31,13 +31,13 @@ Add Tokitai to `Cargo.toml`:
 
 ```toml
 [dependencies]
-tokitai = "0.5"
+tokitai = "0.6"
 serde_json = "1"
 ```
 
 > If you only need the `#[tool]` codegen and want to hand-roll the
 > runtime yourself, depend on it without defaults:
-> `tokitai = { version = "0.5", default-features = false }`.
+> `tokitai = { version = "0.6", default-features = false }`.
 
 ## Table of contents
 
@@ -289,7 +289,7 @@ decouples itself from Tokio via the [`AsyncExecutor`] trait.
 > `Cargo.toml`:
 > ```toml
 > [dependencies]
-> tokitai = "0.5"
+> tokitai = "0.6"
 > serde_json = "1"
 > tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
 > ```

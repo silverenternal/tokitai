@@ -374,6 +374,7 @@ mod tests {
             return_type: ReturnType::Default,
             doc: None,
             alias: Vec::new(),
+            usage_hint: None,
             allow: Vec::new(),
             cache: None,
             rate_limit: None,

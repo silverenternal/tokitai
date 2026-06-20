@@ -22,7 +22,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! tokitai = "0.5"
+//! tokitai = "0.6"
 //! ```
 //!
 //! That's it! All required dependencies (serde, serde_json, thiserror) are included automatically.
@@ -146,7 +146,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! tokitai = { version = "0.5", default-features = false }
+//! tokitai = { version = "0.6", default-features = false }
 //! ```
 //!
 //! Note: Runtime features (call_tool, etc.) require serde/serde_json which are included by default.

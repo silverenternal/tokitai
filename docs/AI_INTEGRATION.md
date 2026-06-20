@@ -558,7 +558,7 @@ The trace integration is opt-in. Enable it the same way as
 the T-015 in-process tool-call trace:
 
 ```toml
-tokitai = { version = "0.5", features = ["trace"] }
+tokitai = { version = "0.6", features = ["trace"] }
 ```
 
 Or, for an env-gated build, set `TOKITAI_TRACE=1` in the

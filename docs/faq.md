@@ -630,7 +630,7 @@ methods into separate `#[tool]` impl blocks.
 
 ```toml
 [dependencies]
-tokitai = "0.5"   # was "0.4"
+tokitai = "0.6"   # was "0.4"
 ```
 
 ### 3.4 `error: #[delegate] is meant to be applied to a method signature (no body); remove the existing method body`

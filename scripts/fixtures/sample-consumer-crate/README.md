@@ -38,5 +38,5 @@ The `Cargo.toml` pins `tokitai` to
 `/home/hugo/codes/tokitai/tokitai/tokitai` so the fixture builds
 out of the box from a clone of the repo. If you fork the repo
 into a different absolute path, update the `path =` value in
-`Cargo.toml` (or change it to `tokitai = "0.5"` to use a
+`Cargo.toml` (or change it to `tokitai = "0.6"` to use a
 published version).

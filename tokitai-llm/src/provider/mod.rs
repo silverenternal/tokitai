@@ -39,9 +39,33 @@ use futures::{Future, Stream};
 /// T-044: a single event in a streaming chat-completion response.
 #[derive(Debug, Clone, PartialEq)]
 pub enum CompletionEvent {
+    /// Incremental text token from the model's reply.
     TextDelta(String),
-    ToolCallBegin { index: usize, name: String, id: Option<String> },
-    ToolCallArgsDelta { index: usize, args: String },
+    /// A new tool call started; carries the index, name, and
+    /// (when the provider supplies one) the server-assigned id.
+    ToolCallBegin {
+        /// Zero-based index of the tool call within the
+        /// response's `tool_calls` array.
+        index: usize,
+        /// Name of the tool the model wants to invoke.
+        name: String,
+        /// Provider-assigned id for the tool call, when one
+        /// is supplied (e.g. OpenAI's `call_*`, Anthropic's
+        /// block id). May be `None` for providers that do not
+        /// emit stable ids in their SSE stream.
+        id: Option<String>,
+    },
+    /// Incremental JSON-arguments fragment for a tool call.
+    ToolCallArgsDelta {
+        /// Zero-based index of the tool call whose arguments
+        /// are being streamed.
+        index: usize,
+        /// Fragment of the JSON arguments string. The caller
+        /// accumulates fragments across all `ToolCallArgsDelta`
+        /// events that share an `index` until the call ends.
+        args: String,
+    },
+    /// Stream is finished; carries the final aggregated response.
     Done(CompletionResponse),
 }
 

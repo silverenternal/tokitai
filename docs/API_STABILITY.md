@@ -184,11 +184,11 @@ T-024 closes the gap with two structural defenses:
 1. **Compile-time check (consumer-side).** A downstream crate
    that wants to declare its expected `tokitai-core` version
    writes
-   `const _: () = tokitai_core::assert_compatible_with("0.5");`
+   `const _: () = tokitai_core::assert_compatible_with("0.6");`
    in any `const` context. A mismatch fails to build with a
    `compile_error!` naming both versions and the docs.rs
    migration link. The match rule is canonical SemVer prefix
-   match: `"0.5"` matches `0.5.0`, `0.5.1`, ...; `"0.5.1"`
+   match: `"0.6"` matches `0.6.0`, `0.6.1`, ...; `"0.6.1"`
    matches exactly; `"0"` matches any `0.x.y`. A `v` prefix is
    accepted transparently.
 
@@ -221,10 +221,10 @@ T-013/T-020 for *within-crate* schema evolution, T-024 for
 
 ```bash
 # Default: hard refusal on mismatch (exit 78 / EX_CONFIG).
-tokitai-mcp-server --require-tokitai=0.5
+tokitai-mcp-server --require-tokitai=0.6
 
 # Documented emergency override. Logged at warn! level.
-tokitai-mcp-server --require-tokitai=0.5 --allow-tokitai-mismatch
+tokitai-mcp-server --require-tokitai=0.6 --allow-tokitai-mismatch
 
 # NOTE: TOKITAI_VERSION_OVERRIDE was removed in M-0.9.1 as a
 # security-hardening measure. Canary / staging deploys must
@@ -233,7 +233,7 @@ tokitai-mcp-server --require-tokitai=0.5 --allow-tokitai-mismatch
 
 ### Acceptance
 
-- `tokitai_core::assert_compatible_with("0.5")` is a
+- `tokitai_core::assert_compatible_with("0.6")` is a
   `pub const fn` and passes when called from a
   `const _ = ...` context with a matching / prefix-matching
   version.
@@ -248,7 +248,7 @@ tokitai-mcp-server --require-tokitai=0.5 --allow-tokitai-mismatch
   `OUT_DIR/tokitai_manifest.rs` carrying the resolved
   `tokitai-core` version.
 - `tokitai-mcp-server --require-tokitai=0.9.0` started
-  against a binary compiled for `0.5.1` logs a `warn!` and
+  against a binary compiled for `0.6.0` logs a `warn!` and
   refuses to bind.
 - `tokitai-core/tests/assert_compatible_test.rs` and
   `tokitai-mcp-server/tests/version_assertion_test.rs`
@@ -257,7 +257,7 @@ tokitai-mcp-server --require-tokitai=0.5 --allow-tokitai-mismatch
 
 ---
 
-The following APIs are stable across the v0.5.x series:
+The following APIs are stable across the v0.6.x series:
 
 ### Stable APIs
 
@@ -272,7 +272,7 @@ The following APIs are stable across the v0.5.x series:
 
 ### Experimental APIs
 
-The following APIs may change within the v0.5.x series:
+The following APIs may change within the v0.6.x series:
 
 | API | Description | Stability |
 |-----|-------------|-----------|
@@ -282,7 +282,7 @@ The following APIs may change within the v0.5.x series:
 
 ### Attribute syntax
 
-The following attribute syntax is stable across the v0.4.x / v0.5.x series:
+The following attribute syntax is stable across the v0.4.x / v0.5.x / v0.6.x series:
 
 ```rust
 // Method-level attributes
@@ -325,7 +325,7 @@ After v1.0.0 ships:
 
 - **All public APIs remain backward-compatible throughout the v1.x series**
 - **Breaking changes are deferred to v2.0.0**
-- **At least six months of v0.5.x maintenance support**
+- **At least six months of v0.6.x maintenance support**
 
 ---
 
@@ -333,9 +333,9 @@ After v1.0.0 ships:
 
 | Tokitai version | Minimum Rust | Compatibility notes |
 |-----------------|--------------|---------------------|
-| v0.5.x | 1.80+ | Current stable |
-| v0.4.x | 1.80+ | Maintained, receives security fixes for six more months |
-| v0.3.x | 1.80+ | Deprecated, please upgrade |
+| v0.6.x | 1.80+ | Current stable |
+| v0.5.x | 1.80+ | Maintained, receives security fixes for six more months |
+| v0.4.x | 1.80+ | Deprecated, please upgrade |
 | v1.0.0 (planned) | 1.80+ | Long-term support |
 
 ---
