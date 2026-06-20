@@ -836,7 +836,7 @@ from here:
   `wrap_openapi`. `wrap_native`, `delegate_method`, and
   `resilient_tool` are placeholders under
   [`examples/deprecated/`](../../examples/deprecated/) because their
-  proc-macro attributes are not part of v0.5.0.
+  proc-macro attributes are not part of v0.6.0.
 - **[API reference on docs.rs](https://docs.rs/tokitai)** — the
   full rustdoc, including [`ToolProvider`], [`ToolCaller`],
   [`ToolDefinition`], [`ToolError`], and the [`AsyncExecutor`]

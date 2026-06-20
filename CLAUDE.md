@@ -29,7 +29,7 @@ examples/                           # basic_usage, multi_tool_chat, mcp_http_ser
                                     # runtime_agnostic, debug_tools, ollama_integration;
                                     # sub-crates database_tool/, starter_project/, py/, js/, go/, curl/
 examples/deprecated/                # placeholder files for wrap/delegate/resilient — not
-                                    # yet exposed in 0.5.0
+                                    # yet exposed in 0.6.0
 scripts/                            # measure-consumer-impact.sh (compile-time cost harness)
 docs/                               # ARCHITECTURE, wrap-architecture, MCP_ARCHITECTURE,
                                     # wrap-cheatsheet, USAGE, ADVANCED_USAGE, AI_INTEGRATION,
@@ -99,7 +99,7 @@ cargo run --example dev_assistant                            # end-to-end regres
    - `pub fn call_tool(&self, name: &str, args: &Value) -> Result<Value, ToolError>` — a `match` over tool names that delegates to a per-method `__call_<name>` wrapper.
 2. Per-parameter parsing is generated from each Rust parameter's type via `FromJsonValue` (defined in `tokitai-core`); custom structs deserialize via `serde_json::from_value` at the call site.
 3. **Async from a sync caller.** When a tool method is `async fn`, the macro generates a sync wrapper that drives the future. The wrapper probes three paths in order: a user-registered `AsyncExecutor` (set once via `tokitai_core::set_async_executor(Box::new(my_exec))`), then the current Tokio runtime via `Handle::block_on`, then `block_on_async_error_message()`. Without a Tokio runtime **and** without a registered executor, the call returns `ToolError::InternalError("no async runtime registered; …")`. For non-Tokio runtimes (`async-std`, `smol`), the user MUST register a custom executor — the Tokio fallback won't apply.
-4. **Wrap features** (`#[wrap]`, `#[openapi]` / `#[openapi_op]`, `#[delegate]`, `#[retry]`, `#[rate_limit]`, `#[circuit_breaker]`) are documented in `docs/wrap-architecture.md` and `docs/wrap-cheatsheet.md`. As of 0.5.0 the dedicated examples for `wrap_native`, `delegate_method`, and `resilient_tool` live in `examples/deprecated/` — the corresponding attributes are documented but not all are exposed via runnable examples yet. `#[openapi]` does have a runnable example (`examples/wrap_openapi.rs`).
+4. **Wrap features** (`#[wrap]`, `#[openapi]` / `#[openapi_op]`, `#[delegate]`, `#[retry]`, `#[rate_limit]`, `#[circuit_breaker]`) are documented in `docs/wrap-architecture.md` and `docs/wrap-cheatsheet.md`. As of 0.6.0 the dedicated examples for `wrap_native`, `delegate_method`, and `resilient_tool` live in `examples/deprecated/` — the corresponding attributes are documented but not all are exposed via runnable examples yet. `#[openapi]` does have a runnable example (`examples/wrap_openapi.rs`).
 5. The tool-definition schema is **compile-time only** — `input_schema` is a `&'static str` literal baked into the binary. Runtime mutations go through `ToolConfig` / `ToolConfigRegistry` / `GLOBAL_CONFIG_REGISTRY` (in `tokitai-core/src/config.rs`) and `apply_configs` on `ToolDefinition`.
 
 ## Conventions enforced by the build / CI

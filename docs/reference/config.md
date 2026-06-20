@@ -193,7 +193,7 @@ expansion time. The macro does not currently emit any
 If a `config!` invocation refers to a `TypeName` that has no
 `#[tool]` impl block in the same binary, the entry sits in the
 registry forever and is never applied. There is no dead-config warning
-in v0.5.0.
+in v0.6.0.
 
 ## See also
 

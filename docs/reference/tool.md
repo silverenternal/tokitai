@@ -26,7 +26,7 @@ arguments; the method-level form accepts per-method overrides such as
 
 | Argument | Type | Default | Description |
 |---|---|---|---|
-| _(none)_ | — | — | The impl-block form takes no arguments in v0.5.0. Per-method configuration is done on individual methods. |
+| _(none)_ | — | — | The impl-block form takes no arguments in v0.6.0. Per-method configuration is done on individual methods. |
 
 ### Method-level (`#[tool(...)]` on a method)
 

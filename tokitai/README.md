@@ -32,7 +32,7 @@ Tokitai is a procedural-macro library with zero runtime dependencies. A single `
 
 ```toml
 [dependencies]
-tokitai = "0.5.0"
+tokitai = "0.6"
 ```
 
 That's it. All required dependencies (serde, serde_json, thiserror) are pulled in automatically.
@@ -74,7 +74,7 @@ println!("{}", result);  // 30
 
 | Feature | Description |
 |---------|-------------|
-| **Zero dependency footprint** | Add only `tokitai = "0.5.0"` |
+| **Zero dependency footprint** | Add only `tokitai = "0.6"` |
 | **Compile-time generation** | Tool definitions are generated during compilation, so type errors surface early |
 | **One attribute** | Just `#[tool]` — no chain of annotations to remember |
 | **Type-safe by construction** | Rust types are mapped to JSON Schema automatically |
@@ -160,7 +160,7 @@ Tokitai is shipped as three crates:
 
 ```toml
 [dependencies]
-tokitai = "0.5.0"
+tokitai = "0.6"
 ```
 
 ## Examples

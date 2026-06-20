@@ -23,7 +23,7 @@ Tokitai Macros ships the `#[tool]` procedural macro, which generates AI tool def
 
 ```toml
 [dependencies]
-tokitai = "0.5.0"
+tokitai = "0.6"
 ```
 
 **Note**: you usually do not need to add `tokitai-macros` directly. It is re-exported by the `tokitai` crate.

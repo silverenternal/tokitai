@@ -1,6 +1,6 @@
 # Cross-Language SDK Guide
 
-**Version**: 0.5.0
+**Version**: 0.6.0
 **Last updated**: 2026-06-02
 
 The HTTP+JSON contract spoken by the `tokitai-mcp-server` crate,
@@ -111,7 +111,7 @@ probe. Always cheap (no allocation, no JSON).
 
 ### 2.4 Future / planned endpoints
 
-Tracked on the roadmap but **not** part of the 0.5.0 contract:
+Tracked on the roadmap but **not** part of the 0.6.0 contract:
 `POST /sse/<name>` (SSE; opt-in via the `sse` build feature —
 see section 7), `WebSocket /ws` (bidirectional), and
 `POST /batch` (multi-call in one round-trip).
@@ -378,7 +378,7 @@ Recommended retry policy:
 - `400` / `404` / `405` / `413` — do **not** retry.
 
 A future minor version may add an `Idempotency-Key` header; it
-is not part of the 0.5.0 contract yet.
+is not part of the 0.6.0 contract yet.
 
 ---
 
@@ -421,7 +421,7 @@ the load balancer.
 
 ## 7. Streaming / Long-Running Tools
 
-The 0.5.0 release ships a **feature-gated** SSE endpoint at
+The 0.6.0 release ships a **feature-gated** SSE endpoint at
 `POST /sse/<name>`. When the server is built with the `sse`
 feature, that endpoint returns `text/event-stream`, with each
 `data:` line carrying a JSON fragment of the tool's incremental

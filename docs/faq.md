@@ -1,6 +1,6 @@
 # Tokitai — FAQ & Troubleshooting Guide
 
-**Crate versions covered**: 0.4.x (stable) and 0.5.0-preview.
+**Crate versions covered**: 0.6.0 (latest)
 **Audience**: downstream users of [`tokitai`](https://crates.io/crates/tokitai)
 who hit a compile error, a runtime error, a confusing tool definition, or
 a behaviour gap between the docs and the macro output.
@@ -465,7 +465,7 @@ impl WeatherClient {
 #### Q: Can I retry on a *specific* error, not all `Err`?
 
 A: Not in v0.5. The `on` argument is accepted for forward
-compatibility, but v0.5.0 always retries on any `Err`. If you need
+compatibility, but v0.6.0 always retries on any `Err`. If you need
 conditional retry, branch inside the body and return a non-retryable
 error for the "do not retry" case.
 
@@ -1340,7 +1340,7 @@ let openai_envelopes: Vec<serde_json::Value> =
 | **`phf` version** | 0.11 (only used by `#[openapi]`). | [`tokitai-macros/Cargo.toml`](../../tokitai-macros/Cargo.toml) |
 | **`async-trait` version** | 0.1. | workspace deps |
 | **Stability of the `#[tool]` macro** | Stable across 0.4.x and 0.5.x. | [`docs/API_STABILITY.md`](API_STABILITY.md) |
-| **Stability of the wrap features** | Stable as of 0.5.0 (per [`API_STABILITY.md`](API_STABILITY.md)). | — |
+| **Stability of the wrap features** | Stable as of 0.6.0 (per [`API_STABILITY.md`](API_STABILITY.md)). | — |
 | **`circuit_breaker` v1 limitation** | Observe-only; no fail-fast. v2 will add it. | [ADR-0004](adr/0004-circuit-breaker-v1-observe-only.md) |
 | **`call_tool_sync`/`call_tool` shape** | Sync for all-sync impls; async if any method is `async`. Mixed impl blocks were buggy in 0.4; fixed in 0.5. | [`migration/v0.4-to-v0.5.md`](migration/v0.4-to-v0.5.md#bug-fix-1-tool-mixed-syncasync-methods) |
 | **Crate licence** | Dual MIT or Apache-2.0. | every `Cargo.toml` |

@@ -1,6 +1,6 @@
 # Tokitai Wrap Features: Architecture
 
-**Version**: 0.5.0 | **Audience**: Rust developers evaluating Tokitai's
+**Version**: 0.6.0 | **Audience**: Rust developers evaluating Tokitai's
 auto-wrapping proc-macro attributes
 
 Tokitai's **`#[tool]`** proc-macro turns the public methods of an `impl`

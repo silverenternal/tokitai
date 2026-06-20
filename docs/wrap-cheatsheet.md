@@ -1,6 +1,6 @@
 # Tokitai Wrap Features — Cheatsheet
 
-**Version**: 0.5.0 | One-page quick reference for `#[tool]`,
+**Version**: 0.6.0 | One-page quick reference for `#[tool]`,
 `#[wrap]`, `#[openapi]` / `#[openapi_op]`, `#[delegate]`, and the
 three resilience decorators.
 

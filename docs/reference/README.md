@@ -1,6 +1,6 @@
 # Tokitai Attribute Reference
 
-**Version**: 0.5.0 | **Crate**: [`tokitai`](https://crates.io/crates/tokitai)
+**Version**: 0.6.0 | **Crate**: [`tokitai`](https://crates.io/crates/tokitai)
 
 This directory is the per-attribute API reference for Tokitai. Every proc-macro
 attribute and macro in `tokitai-macros` gets one page, with a uniform structure

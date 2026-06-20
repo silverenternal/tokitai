@@ -22,8 +22,8 @@ Tokitai MCP Server provides a server implementation built on the MCP (Model Cont
 
 ```toml
 [dependencies]
-tokitai = "0.5.0"
-tokitai-mcp-server = "0.5.0"
+tokitai = "0.6"
+tokitai-mcp-server = "0.6"
 tokio = { version = "1", features = ["full"] }
 ```
 

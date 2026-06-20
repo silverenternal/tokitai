@@ -95,7 +95,7 @@ fn extract_struct_schema(
     // local `Type -> Schema` map, and look up the parameter's type
     // there. That requires resolving cross-crate type information
     // (e.g. via `syn::Type` ↔ `proc-macro2` ↔ cargo metadata) and
-    // is deferred to a post-0.5.0 release.
+    // is deferred to a post-0.6.0 release.
     //
     // Current behaviour: emit an object schema carrying the Rust
     // type name as a `description` so callers at least see the type

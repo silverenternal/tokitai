@@ -4,7 +4,7 @@
 
 ```toml
 [dependencies]
-tokitai = "0.5.0"
+tokitai = "0.6"
 serde_json = "1.0"
 ```
 

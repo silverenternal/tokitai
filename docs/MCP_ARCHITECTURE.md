@@ -1,6 +1,6 @@
 # Tokitai x MCP Architecture Guide
 
-**Version**: 0.5.0
+**Version**: 0.6.0
 **Last updated**: 2026-06-02
 
 ---
@@ -304,9 +304,9 @@ console.log(`Result: ${result.result}`);  // 30
 | **Standard protocol** | Follows the MCP specification |
 | **Extensible** | New tools are easy to add |
 
-### 4. Wrapper macros for production hardening (v0.5.0)
+### 4. Wrapper macros for production hardening (v0.6.0)
 
-Tokitai v0.5.0 ships wrapper macros that decorate the generated dispatcher with cross-cutting behavior. They are especially valuable on the MCP server side, where one bad call can stall the whole agent loop.
+Tokitai v0.6.0 ships wrapper macros that decorate the generated dispatcher with cross-cutting behavior. They are especially valuable on the MCP server side, where one bad call can stall the whole agent loop.
 
 | Macro | Why it matters on an MCP server |
 |-------|----------------------------------|

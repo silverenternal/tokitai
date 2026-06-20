@@ -227,7 +227,7 @@ Tokitai is shipped as three crates:
 
 ```toml
 [dependencies]
-tokitai = "0.5.0"
+tokitai = "0.6"
 ```
 
 ## Requirements

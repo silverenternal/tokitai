@@ -1,6 +1,6 @@
 # Tokitai Usage Guide
 
-**Version**: 0.5.0 | **Last updated**: 2026-06-02
+**Version**: 0.6.0 | **Last updated**: 2026-06-02
 
 ## Table of Contents
 
@@ -21,7 +21,7 @@
 
 ```toml
 [dependencies]
-tokitai = "0.5.0"
+tokitai = "0.6"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 ```
@@ -62,7 +62,7 @@ let result = calc.call_tool("add", &serde_json::json!({"a": 10, "b": 20}))?;
 
 ```toml
 [dependencies]
-tokitai = "0.5.0"
+tokitai = "0.6"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 ```
@@ -71,7 +71,7 @@ serde_json = "1.0"
 
 ```toml
 [dependencies]
-tokitai = { version = "0.5.0", default-features = false }
+tokitai = { version = "0.6", default-features = false }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 ```
@@ -249,7 +249,7 @@ impl SearchEngine {
 ```rust
 use tokitai::ToolProvider;
 
-// Get all tool definitions (in v0.5.0+ this is a method, not a constant)
+// Get all tool definitions (in v0.6.0+ this is a method, not a constant)
 let tools = Calculator::tool_definitions();
 
 // Count the tools
@@ -403,7 +403,7 @@ impl MyStruct {
 
 ## Three ways to describe a tool
 
-Tokitai v0.5.0 supports three flexible ways to describe a tool:
+Tokitai v0.6.0 supports three flexible ways to describe a tool:
 
 ### Method 1: doc comments (recommended)
 
@@ -605,7 +605,7 @@ error[E0433]: failed to resolve: use of undeclared crate or module `serde_json`
 
 ```toml
 [dependencies]
-tokitai = { version = "0.5.0", features = ["serde"] }
+tokitai = { version = "0.6", features = ["serde"] }
 serde_json = "1.0"
 ```
 

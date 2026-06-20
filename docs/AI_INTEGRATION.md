@@ -1,6 +1,6 @@
 # Tokitai AI Integration Guide
 
-**Version**: 0.5.0 | **Last updated**: 2026-06-19
+**Version**: 0.6.0 | **Last updated**: 2026-06-19
 
 ## Table of Contents
 

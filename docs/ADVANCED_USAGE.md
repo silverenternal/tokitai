@@ -1,6 +1,6 @@
 # Tokitai Advanced Usage Guide
 
-**Version**: 0.5.0 | **Last updated**: 2026-06-02
+**Version**: 0.6.0 | **Last updated**: 2026-06-02
 
 This guide covers Tokitai's advanced features and best practices.
 
