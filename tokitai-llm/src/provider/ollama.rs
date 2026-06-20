@@ -4,6 +4,16 @@
 //! The endpoint is `/api/chat` and the request/response shape is
 //! near-identical to OpenAI's. The local install is assumed at
 //! `http://localhost:11434` and is reached with no auth header.
+//!
+//! T-043: the request is now an `InferenceRequest`. Ollama's
+//! `/api/chat` API natively accepts `system` (as a message role
+//! OR a `system` field on the request), `temperature`, `stop`,
+//! `seed`, and `format` (its `response_format` equivalent). The
+//! remaining T-043 knobs (`tool_choice`, `parallel_tool_calls`,
+//! `stream`) are forwarded as best as the wire format allows:
+//! `tool_choice` is mapped to Ollama's "let the model pick"
+//! (no native equivalent), `parallel_tool_calls` is dropped, and
+//! `stream` is rendered as the `stream` body field.
 
 use async_trait::async_trait;
 use reqwest::Client;
@@ -11,7 +21,9 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use tokitai_core::ToolDefinition;
 
-use super::{ChatMessage, CompletionResponse, Provider, ProviderToolCall};
+use super::{
+    ChatMessage, CompletionResponse, InferenceRequest, Provider, ProviderToolCall, ResponseFormat,
+};
 
 /// Default base URL for the local Ollama install.
 pub const DEFAULT_BASE_URL: &str = "http://localhost:11434";
@@ -85,35 +97,51 @@ impl Provider for OllamaProvider {
 
     async fn complete_with_tools(
         &self,
-        _system: Option<&str>,
-        messages: &[ChatMessage],
-        tools: &[ToolDefinition],
+        req: &InferenceRequest,
     ) -> anyhow::Result<CompletionResponse> {
-        // Ollama folds the system prompt into the first user turn
-        // (it doesn't have a dedicated `system` field), so the
-        // provider-agnostic `system` argument is intentionally
-        // ignored here. Use the `OllamaMessage::System` variant
-        // if you need it on the wire.
-        let wire_messages: Vec<Value> = messages.iter().map(ollama_message).collect();
+        // T-043: Ollama's wire format does not have a dedicated
+        // `system` field; it accepts a `system`-role message
+        // instead. Forward the system prompt as the first message
+        // so the model sees it (was silently dropped before T-043
+        // — see T-038 Bug 4).
+        let mut wire_messages: Vec<Value> = Vec::with_capacity(req.messages.len() + 1);
+        if let Some(sys) = req.system.as_deref() {
+            wire_messages.push(json!({"role": "system", "content": sys}));
+        }
+        for m in &req.messages {
+            wire_messages.push(ollama_message(m));
+        }
 
         // Prefer the pre-rendered cache when it matches the active
         // tool slice (length-equality is the cheap approximation);
         // fall back to rendering on demand otherwise.
-        let wire_tools: Vec<Value> = if self.tools_cache.len() == tools.len() && !tools.is_empty() {
-            self.tools_cache.clone()
-        } else {
-            tools
-                .iter()
-                .map(|t| t.to_openai_function()["function"].clone())
-                .collect()
-        };
+        let wire_tools: Vec<Value> =
+            if self.tools_cache.len() == req.tools.len() && !req.tools.is_empty() {
+                self.tools_cache.clone()
+            } else {
+                req.tools
+                    .iter()
+                    .map(|t| t.to_openai_function()["function"].clone())
+                    .collect()
+            };
 
-        let body = json!({
+        // T-043: every optional knob is rendered only when the
+        // caller set it. `stream: false` is always present (Ollama
+        // defaults to streaming otherwise).
+        let mut body = json!({
             "model": self.config.model,
             "messages": wire_messages,
-            "tools": wire_tools,
-            "stream": false,
+            "stream": req.stream,
         });
+        if !wire_tools.is_empty() {
+            body["tools"] = json!(wire_tools);
+        }
+        if let Some(opts) = ollama_options(req) {
+            body["options"] = opts;
+        }
+        if let Some(rf) = req.response_format.as_ref() {
+            body["format"] = json!(ollama_response_format(rf));
+        }
 
         let resp = self
             .client
@@ -128,6 +156,39 @@ impl Provider for OllamaProvider {
 }
 
 // -- internal helpers ---------------------------------------------------
+
+/// Map the T-043 sampling knobs onto Ollama's `options` block.
+/// `tool_choice`, `parallel_tool_calls`, and `max_tokens` have no
+/// direct Ollama equivalent and are dropped; `temperature`, `stop`,
+/// and `seed` are forwarded.
+fn ollama_options(req: &InferenceRequest) -> Option<Value> {
+    let mut opts = serde_json::Map::new();
+    if let Some(temp) = req.temperature {
+        opts.insert("temperature".into(), json!(temp));
+    }
+    if let Some(stop) = req.stop.as_ref() {
+        opts.insert("stop".into(), json!(stop));
+    }
+    if let Some(seed) = req.seed {
+        opts.insert("seed".into(), json!(seed));
+    }
+    if opts.is_empty() {
+        None
+    } else {
+        Some(Value::Object(opts))
+    }
+}
+
+/// Map `ResponseFormat` to Ollama's `format` field. Ollama accepts
+/// either the string `"json"` (free-form JSON object) or a JSON
+/// schema object. The `JsonSchema` value is forwarded verbatim so
+/// callers can pin the exact shape.
+fn ollama_response_format(rf: &ResponseFormat) -> Value {
+    match rf {
+        ResponseFormat::JsonObject => json!("json"),
+        ResponseFormat::JsonSchema(v) => v.clone(),
+    }
+}
 
 #[derive(Debug, Deserialize)]
 struct OllamaResponse {
@@ -237,7 +298,7 @@ fn ollama_message(m: &ChatMessage) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::provider::ProviderToolCall;
+    use crate::provider::{ProviderToolCall, ResponseFormat};
     use serde_json::json;
 
     #[test]
@@ -355,5 +416,34 @@ mod tests {
     fn ollama_provider_name() {
         let p = OllamaProvider::new(OllamaConfig::from_args(None, "m".into()));
         assert_eq!(p.name(), "ollama");
+    }
+
+    #[test]
+    fn ollama_options_only_includes_set_knobs() {
+        let req = InferenceRequest::new("hi", vec![]);
+        assert!(ollama_options(&req).is_none());
+
+        let req = InferenceRequest::new("hi", vec![]).with_temperature(0.5);
+        let opts = ollama_options(&req).unwrap();
+        assert_eq!(opts["temperature"], 0.5);
+
+        let req = InferenceRequest::new("hi", vec![])
+            .with_stop(vec!["END".into()])
+            .with_seed(7);
+        let opts = ollama_options(&req).unwrap();
+        assert_eq!(opts["stop"][0], "END");
+        assert_eq!(opts["seed"], 7);
+    }
+
+    #[test]
+    fn ollama_response_format_mapping() {
+        // JsonObject -> "json" string.
+        let v = ollama_response_format(&ResponseFormat::JsonObject);
+        assert_eq!(v, json!("json"));
+
+        // JsonSchema -> the schema value verbatim.
+        let schema = json!({"type": "object", "properties": {"x": {"type": "number"}}});
+        let v = ollama_response_format(&ResponseFormat::JsonSchema(schema.clone()));
+        assert_eq!(v, schema);
     }
 }

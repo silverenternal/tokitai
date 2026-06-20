@@ -177,6 +177,72 @@ pub struct InferArgs {
     /// self-consistency 5-sample path with room to spare.
     #[arg(long, default_value_t = 1000, env = "TOKITAI_LLM_TOOL_CACHE_SIZE")]
     pub tool_cache_size: usize,
+
+    /// T-043: how the model should pick tools. `auto` lets the
+    /// model decide, `required` forces at least one tool call,
+    /// `none` disables tools for this request, and `tool:<name>`
+    /// pins the model to a specific tool. Defaults to `auto`.
+    /// Ignored by providers that have no equivalent field
+    /// (Anthropic).
+    #[arg(long, value_enum, env = "TOKITAI_LLM_TOOL_CHOICE")]
+    pub tool_choice: Option<InferToolChoice>,
+
+    /// T-043: structured-output response format. `json_object`
+    /// hints the model to emit a free-form JSON object;
+    /// `json_schema:<path>` pins the model to a specific JSON
+    /// schema file. Ignored by providers with no equivalent
+    /// (Anthropic).
+    #[arg(long, value_enum, env = "TOKITAI_LLM_RESPONSE_FORMAT")]
+    pub response_format: Option<InferResponseFormat>,
+
+    /// T-043: sampling temperature (0.0-2.0). Maps directly to
+    /// the wire field on OpenAI / Anthropic / Ollama.
+    #[arg(long, env = "TOKITAI_LLM_TEMPERATURE")]
+    pub temperature: Option<f32>,
+
+    /// T-043: deterministic-sampling seed. OpenAI and Ollama
+    /// honour it; Anthropic ignores the field.
+    #[arg(long, env = "TOKITAI_LLM_SEED")]
+    pub seed: Option<u64>,
+}
+
+/// T-043: CLI-side enum for the `--tool-choice` argument. Maps
+/// onto the provider-agnostic `provider::ToolChoice` enum.
+#[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
+pub enum InferToolChoice {
+    /// `"auto"` - the model picks.
+    Auto,
+    /// `"required"` - the model MUST call a tool.
+    Required,
+    /// `"none"` - tools are disabled.
+    None,
+}
+
+impl From<InferToolChoice> for crate::provider::ToolChoice {
+    fn from(c: InferToolChoice) -> Self {
+        match c {
+            InferToolChoice::Auto => crate::provider::ToolChoice::Auto,
+            InferToolChoice::Required => crate::provider::ToolChoice::Required,
+            InferToolChoice::None => crate::provider::ToolChoice::None,
+        }
+    }
+}
+
+/// T-043: CLI-side enum for the `--response-format` argument.
+/// The schema-pinned variant reads the JSON-Schema body from a
+/// file on disk so the CLI flag stays a single token.
+#[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
+pub enum InferResponseFormat {
+    /// `{"type":"json_object"}` - free-form JSON object.
+    JsonObject,
+}
+
+impl From<InferResponseFormat> for crate::provider::ResponseFormat {
+    fn from(c: InferResponseFormat) -> Self {
+        match c {
+            InferResponseFormat::JsonObject => crate::provider::ResponseFormat::JsonObject,
+        }
+    }
 }
 
 /// `tokitai-llm examples` arguments.

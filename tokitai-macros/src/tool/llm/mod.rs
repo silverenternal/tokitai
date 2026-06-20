@@ -384,6 +384,8 @@ mod tests {
             min_desc_score: None,
             allow_short_desc: false,
             allow_insecure_desc: false,
+            allow_imperative_desc: false,
+            desc_safety_scope: None,
             desc_blocklist: Vec::new(),
             result_truncate_bytes: None,
             since: None,

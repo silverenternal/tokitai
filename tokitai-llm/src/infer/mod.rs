@@ -12,13 +12,18 @@
 //! The loop is provider-agnostic: every provider implements
 //! `Provider::complete_with_tools`, so adding a new one is one
 //! trait impl.
+//!
+//! T-043: the per-iteration request is now built into an
+//! `InferenceRequest` struct so the same shape works for every
+//! provider and every call site (verify / examples /
+//! infer-capabilities / infer).
 
-use crate::cache::{cache_key, CacheBackend, InMemoryCache, ToolCache};
+use crate::cache::{cache_key_v2, CacheBackend, InMemoryCache, ToolCache};
 use crate::cli::{InferArgs, ProviderArgs, ProviderKind};
 use crate::provider::anthropic::AnthropicProvider;
 use crate::provider::ollama::OllamaProvider;
 use crate::provider::openai::OpenAiProvider;
-use crate::provider::{ChatMessage, CompletionResponse, Provider};
+use crate::provider::{CompletionResponse, InferenceRequest, Provider};
 use crate::Result;
 use serde_json::Value;
 use tokitai_core::{ToolCaller, ToolDefinition};
@@ -48,14 +53,12 @@ impl Provider for AnyProvider {
 
     async fn complete_with_tools(
         &self,
-        system: Option<&str>,
-        messages: &[ChatMessage],
-        tools: &[ToolDefinition],
+        req: &InferenceRequest,
     ) -> anyhow::Result<CompletionResponse> {
         match self {
-            AnyProvider::Openai(p) => p.complete_with_tools(system, messages, tools).await,
-            AnyProvider::Anthropic(p) => p.complete_with_tools(system, messages, tools).await,
-            AnyProvider::Ollama(p) => p.complete_with_tools(system, messages, tools).await,
+            AnyProvider::Openai(p) => p.complete_with_tools(req).await,
+            AnyProvider::Anthropic(p) => p.complete_with_tools(req).await,
+            AnyProvider::Ollama(p) => p.complete_with_tools(req).await,
         }
     }
 }
@@ -77,9 +80,32 @@ pub async fn run(args: InferArgs, tool_cache: Option<ToolCache>) -> Result<()> {
     // arg that points at a `cdylib` exposing the slice.
     let tools: Vec<ToolDefinition> = Vec::new();
 
-    let messages = vec![ChatMessage::User {
-        content: args.prompt.clone(),
-    }];
+    // T-043: build the request up-front so the CLI args
+    // (system, tool_choice, response_format, temperature, seed,
+    // stream) flow through one shape.
+    let mut req = InferenceRequest::new(args.prompt.clone(), tools.clone());
+    if let Some(sys) = args.system.as_deref() {
+        req.system = Some(sys.to_string());
+    }
+    if let Some(max) = args.provider.max_tokens {
+        req.max_tokens = Some(max);
+    }
+    if let Some(temp) = args.temperature {
+        req.temperature = Some(temp);
+    }
+    if let Some(seed) = args.seed {
+        req.seed = Some(seed);
+    }
+    if let Some(tc) = args.tool_choice {
+        req.tool_choice = tc.into();
+    }
+    if let Some(rf) = args.response_format {
+        req.response_format = Some(rf.into());
+    }
+    req.stream = !args.no_stream;
+    // Messages were set by `InferenceRequest::new`; nothing else
+    // to do for the v0.1 stub.
+
     let cache = InMemoryCache::new();
 
     // `build_provider` already validated that `model` is set
@@ -91,16 +117,7 @@ pub async fn run(args: InferArgs, tool_cache: Option<ToolCache>) -> Result<()> {
         .as_deref()
         .expect("model validated by build_provider");
 
-    let response = complete_with_cache(
-        &provider,
-        &cache,
-        args.no_cache,
-        model,
-        args.system.as_deref(),
-        &messages,
-        &tools,
-    )
-    .await?;
+    let response = complete_with_cache(&provider, &cache, args.no_cache, model, &req).await?;
 
     println!("{}", response.content);
     if !response.tool_calls.is_empty() {
@@ -158,25 +175,25 @@ pub(crate) fn build_provider(args: &ProviderArgs) -> Result<AnyProvider> {
 /// When `no_cache` is false and a cached response exists for the
 /// given key, the cached value is returned and no HTTP request
 /// is made.
+///
+/// T-043: the request is now an `InferenceRequest`; the cache
+/// key is the v2 hash that includes tool_choice,
+/// response_format, temperature, stop, and seed.
 pub async fn complete_with_cache(
     provider: &dyn Provider,
     cache: &dyn CacheBackend,
     no_cache: bool,
     model: &str,
-    system: Option<&str>,
-    messages: &[ChatMessage],
-    tools: &[ToolDefinition],
+    req: &InferenceRequest,
 ) -> Result<CompletionResponse> {
-    let key = cache_key(model, system, messages, tools);
+    let key = cache_key_v2(model, req);
     if !no_cache {
         if let Some(cached) = cache.get(&key) {
             tracing::debug!(provider = provider.name(), key = %key, "cache hit");
             return Ok((&cached).into());
         }
     }
-    let response = provider
-        .complete_with_tools(system, messages, tools)
-        .await?;
+    let response = provider.complete_with_tools(req).await?;
     if !no_cache {
         let cr: crate::cache::CachedResponse = (&response).into();
         cache.put(key, &cr);
@@ -218,7 +235,7 @@ pub async fn dispatch_with_cache(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cache::{cache_key, InMemoryCache};
+    use crate::cache::InMemoryCache;
     use crate::cli::ProviderKind;
     use crate::provider::ProviderToolCall;
     use async_trait::async_trait;
@@ -239,9 +256,7 @@ mod tests {
         }
         async fn complete_with_tools(
             &self,
-            _system: Option<&str>,
-            _messages: &[ChatMessage],
-            _tools: &[ToolDefinition],
+            _req: &InferenceRequest,
         ) -> anyhow::Result<CompletionResponse> {
             self.called.store(true, Ordering::SeqCst);
             Ok(CompletionResponse {
@@ -350,11 +365,8 @@ mod tests {
             called: Arc::clone(&called),
         };
 
-        let messages = vec![ChatMessage::User {
-            content: "hello".into(),
-        }];
-        let tools: Vec<ToolDefinition> = vec![];
-        let key = cache_key("mock-model", None, &messages, &tools);
+        let req = InferenceRequest::new("hello", vec![]);
+        let key = crate::cache::cache_key_v2("mock-model", &req);
         cache.put(
             key,
             &crate::cache::CachedResponse {
@@ -364,17 +376,9 @@ mod tests {
             },
         );
 
-        let resp = complete_with_cache(
-            &provider,
-            &cache,
-            false,
-            "mock-model",
-            None,
-            &messages,
-            &tools,
-        )
-        .await
-        .expect("complete_with_cache should succeed");
+        let resp = complete_with_cache(&provider, &cache, false, "mock-model", &req)
+            .await
+            .expect("complete_with_cache should succeed");
         assert_eq!(resp.content, "cached");
         assert!(
             !called.load(Ordering::SeqCst),
@@ -392,29 +396,18 @@ mod tests {
             called: Arc::clone(&called),
         };
 
-        let messages = vec![ChatMessage::User {
-            content: "hello".into(),
-        }];
-        let tools: Vec<ToolDefinition> = vec![];
+        let req = InferenceRequest::new("hello", vec![]);
 
-        let resp = complete_with_cache(
-            &provider,
-            &cache,
-            false,
-            "mock-model",
-            None,
-            &messages,
-            &tools,
-        )
-        .await
-        .expect("complete_with_cache should succeed");
+        let resp = complete_with_cache(&provider, &cache, false, "mock-model", &req)
+            .await
+            .expect("complete_with_cache should succeed");
         assert_eq!(resp.content, "live");
         assert!(
             called.load(Ordering::SeqCst),
             "provider must be called on miss"
         );
 
-        let key = cache_key("mock-model", None, &messages, &tools);
+        let key = crate::cache::cache_key_v2("mock-model", &req);
         let cached = cache.get(&key).expect("cache populated after miss");
         assert_eq!(cached.content, "live");
     }
@@ -429,11 +422,8 @@ mod tests {
             called: Arc::clone(&called),
         };
 
-        let messages = vec![ChatMessage::User {
-            content: "hello".into(),
-        }];
-        let tools: Vec<ToolDefinition> = vec![];
-        let key = cache_key("mock-model", None, &messages, &tools);
+        let req = InferenceRequest::new("hello", vec![]);
+        let key = crate::cache::cache_key_v2("mock-model", &req);
         cache.put(
             key.clone(),
             &crate::cache::CachedResponse {
@@ -443,17 +433,9 @@ mod tests {
             },
         );
 
-        let resp = complete_with_cache(
-            &provider,
-            &cache,
-            true,
-            "mock-model",
-            None,
-            &messages,
-            &tools,
-        )
-        .await
-        .expect("complete_with_cache should succeed");
+        let resp = complete_with_cache(&provider, &cache, true, "mock-model", &req)
+            .await
+            .expect("complete_with_cache should succeed");
         assert_eq!(resp.content, "live");
         assert!(
             called.load(Ordering::SeqCst),
@@ -470,38 +452,19 @@ mod tests {
         let provider = MockProviderToolCalls {
             called: Arc::clone(&called),
         };
-        let messages = vec![ChatMessage::User {
-            content: "hi".into(),
-        }];
-        let tools: Vec<ToolDefinition> = vec![];
-        let resp = complete_with_cache(
-            &provider,
-            &cache,
-            false,
-            "mock-model",
-            None,
-            &messages,
-            &tools,
-        )
-        .await
-        .expect("complete_with_cache should succeed");
+        let req = InferenceRequest::new("hi", vec![]);
+        let resp = complete_with_cache(&provider, &cache, false, "mock-model", &req)
+            .await
+            .expect("complete_with_cache should succeed");
         assert_eq!(resp.content, "");
         assert_eq!(resp.tool_calls.len(), 1);
         assert_eq!(resp.tool_calls[0].name, "echo");
         assert_eq!(resp.tool_calls[0].arguments, json!({"x": 1}));
 
         called.store(false, Ordering::SeqCst);
-        let resp2 = complete_with_cache(
-            &provider,
-            &cache,
-            false,
-            "mock-model",
-            None,
-            &messages,
-            &tools,
-        )
-        .await
-        .expect("complete_with_cache should succeed");
+        let resp2 = complete_with_cache(&provider, &cache, false, "mock-model", &req)
+            .await
+            .expect("complete_with_cache should succeed");
         assert_eq!(resp2.tool_calls.len(), 1);
         assert_eq!(resp2.tool_calls[0].name, "echo");
         assert!(
@@ -521,9 +484,7 @@ mod tests {
         }
         async fn complete_with_tools(
             &self,
-            _system: Option<&str>,
-            _messages: &[ChatMessage],
-            _tools: &[ToolDefinition],
+            _req: &InferenceRequest,
         ) -> anyhow::Result<CompletionResponse> {
             self.called.store(true, Ordering::SeqCst);
             Ok(CompletionResponse {

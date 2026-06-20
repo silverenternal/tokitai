@@ -149,6 +149,15 @@ pub struct ToolDefinition {
     pub baked_examples: Option<serde_json::Value>,
     #[cfg(not(feature = "serde"))]
     pub baked_examples: Option<&'static str>,
+    /// T-046: optional free-form usage hint shown to the model alongside
+    /// the description. Useful for nudging specific invocation patterns
+    /// (e.g. "Always pass `limit` <= 100"). See [`ToolHintPlacement`]
+    /// for delivery options.
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg(feature = "serde")]
+    pub usage_hint: Option<alloc::string::String>,
+    #[cfg(not(feature = "serde"))]
+    pub usage_hint: Option<&'static str>,
     /// T-020: lower bound of the tool's schema-evolution interval
     /// (inclusive). Set from `#[tool(since = "1.0")]` on the
     /// method. The dispatcher serves the tool only when
@@ -239,6 +248,7 @@ impl ToolDefinition {
             replaced_by: None,
             description_explicit: false,
             baked_examples: None,
+            usage_hint: None,
             since: None,
             until: None,
         }
@@ -274,6 +284,7 @@ impl ToolDefinition {
             replaced_by: None,
             description_explicit: false,
             baked_examples: None,
+            usage_hint: None,
             since: None,
             until: None,
         }
@@ -301,6 +312,7 @@ impl ToolDefinition {
             replaced_by: None,
             description_explicit: false,
             baked_examples: None,
+            usage_hint: None,
             since: None,
             until: None,
         }

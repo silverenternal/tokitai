@@ -18,7 +18,7 @@
 use crate::cache::InMemoryCache;
 use crate::cli::VerifyArgs;
 use crate::infer::{build_provider, complete_with_cache};
-use crate::provider::ChatMessage;
+use crate::provider::InferenceRequest;
 use crate::Result;
 use serde::Serialize;
 use tokitai_core::ToolDefinition;
@@ -202,12 +202,13 @@ If no issues are found, return {\"findings\":[]}. Do not add markdown fences or 
 
     let user_message = format!("Tool definitions to review:\n\n{tools_text}");
 
-    let messages = vec![ChatMessage::User {
-        content: user_message,
-    }];
+    // T-043: build an `InferenceRequest` instead of passing
+    // (system, messages, tools) as separate arguments.
+    let mut req = InferenceRequest::new(user_message, Vec::new());
+    req.system = Some(system.to_string());
+    req.tool_choice = crate::provider::ToolChoice::None;
 
-    let response =
-        complete_with_cache(provider, cache, false, model, Some(system), &messages, &[]).await?;
+    let response = complete_with_cache(provider, cache, false, model, &req).await?;
 
     // Parse the LLM response as JSON.
     let content = response.content.trim();

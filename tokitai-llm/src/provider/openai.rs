@@ -8,9 +8,18 @@
 //! {
 //!   "model": "gpt-4o",
 //!   "messages": [{"role":"user","content":"..."}],
-//!   "tools":  [{"type":"function","function":{...}}]
+//!   "tools":  [{"type":"function","function":{...}}],
+//!   "tool_choice": "auto",
+//!   "response_format": {"type":"json_object"},
+//!   "temperature": 0.7,
+//!   "max_tokens": 1024
 //! }
 //! ```
+//!
+//! T-043: every generation knob lives on `InferenceRequest`; the
+//! provider threads them through to the wire body and drops
+//! anything that is `None` (so the wire stays a faithful mirror of
+//! the user request).
 //!
 //! The response is parsed back into a [`CompletionResponse`].
 
@@ -18,9 +27,11 @@ use async_trait::async_trait;
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use tokitai_core::ToolDefinition;
 
-use super::{ChatMessage, CompletionResponse, Provider, ProviderToolCall, UsageReport};
+use super::{
+    ChatMessage, CompletionResponse, InferenceRequest, Provider, ProviderToolCall, ResponseFormat,
+    ToolChoice, UsageReport,
+};
 
 /// Default base URL for the OpenAI Chat Completions API. Override
 /// with `--base-url` for the Azure-hosted variant.
@@ -83,41 +94,69 @@ impl Provider for OpenAiProvider {
 
     async fn complete_with_tools(
         &self,
-        system: Option<&str>,
-        messages: &[ChatMessage],
-        tools: &[ToolDefinition],
+        req: &InferenceRequest,
     ) -> anyhow::Result<CompletionResponse> {
         // 1. Convert the provider-agnostic messages to the OpenAI shape.
-        let mut wire_messages: Vec<Value> = Vec::with_capacity(messages.len() + 1);
-        if let Some(sys) = system {
+        let mut wire_messages: Vec<Value> = Vec::with_capacity(req.messages.len() + 1);
+        if let Some(sys) = req.system.as_deref() {
             wire_messages.push(json!({"role": "system", "content": sys}));
         }
-        for m in messages {
+        for m in &req.messages {
             wire_messages.push(openai_message(m));
         }
 
         // 2. Convert every ToolDefinition into the OpenAI `tools` array.
-        let wire_tools: Vec<Value> = tools.iter().map(|t| t.to_openai_function()).collect();
+        let wire_tools: Vec<Value> = req.tools.iter().map(|t| t.to_openai_function()).collect();
 
-        let body = json!({
+        // 3. Build the body. Every T-043 knob is rendered only when
+        //    the user actually set it so the wire stays a faithful
+        //    mirror of the request.
+        let mut body = json!({
             "model": self.config.model,
             "messages": wire_messages,
-            "tools": wire_tools,
         });
+        // Tools + tool_choice only matter when tools are present.
+        // Sending `tool_choice: "none"` with an empty `tools` array
+        // is a 400 on the OpenAI side.
+        if !wire_tools.is_empty() {
+            body["tools"] = json!(wire_tools);
+            body["tool_choice"] = json!(openai_tool_choice(&req.tool_choice));
+        }
+        if let Some(max_tokens) = req.max_tokens {
+            body["max_tokens"] = json!(max_tokens);
+        }
+        if let Some(temperature) = req.temperature {
+            body["temperature"] = json!(temperature);
+        }
+        if let Some(stop) = req.stop.as_ref() {
+            body["stop"] = json!(stop);
+        }
+        if let Some(seed) = req.seed {
+            body["seed"] = json!(seed);
+        }
+        if let Some(parallel) = req.parallel_tool_calls {
+            body["parallel_tool_calls"] = json!(parallel);
+        }
+        if req.stream {
+            body["stream"] = json!(true);
+        }
+        if let Some(rf) = req.response_format.as_ref() {
+            body["response_format"] = json!(openai_response_format(rf));
+        }
 
-        // 3. POST. The bearer token is optional; a missing key
+        // 4. POST. The bearer token is optional; a missing key
         //    is forwarded as an empty header (some local
         //    proxies accept that).
-        let mut req = self
+        let mut http_req = self
             .client
             .post(&self.api_url)
             .header("Content-Type", "application/json");
         if !self.config.api_key.is_empty() {
-            req = req.bearer_auth(&self.config.api_key);
+            http_req = http_req.bearer_auth(&self.config.api_key);
         }
-        let resp = req.json(&body).send().await?;
+        let resp = http_req.json(&body).send().await?;
 
-        // 4. Parse the response. We use the typed `OpenAiResponse`
+        // 5. Parse the response. We use the typed `OpenAiResponse`
         //    struct for the bits we care about and fall back to
         //    `Value` for the tool-call argument blobs (which are
         //    already JSON strings on the wire).
@@ -127,6 +166,36 @@ impl Provider for OpenAiProvider {
 }
 
 // -- internal helpers ---------------------------------------------------
+
+/// Render an `InferenceRequest::tool_choice` as the OpenAI wire
+/// format. The OpenAI API expects one of:
+/// - a string (`"auto"`, `"required"`, `"none"`), or
+/// - `{"type":"function","function":{"name": "..."}}`.
+fn openai_tool_choice(tc: &ToolChoice) -> Value {
+    match tc {
+        ToolChoice::Auto => json!("auto"),
+        ToolChoice::Required => json!("required"),
+        ToolChoice::None => json!("none"),
+        ToolChoice::Specific { name } => json!({
+            "type": "function",
+            "function": { "name": name }
+        }),
+    }
+}
+
+/// Render an `InferenceRequest::response_format` as the OpenAI
+/// wire format. OpenAI accepts `{"type":"json_object"}` and
+/// `{"type":"json_schema","json_schema":{...}}`; the schema body
+/// is forwarded verbatim.
+fn openai_response_format(rf: &ResponseFormat) -> Value {
+    match rf {
+        ResponseFormat::JsonObject => json!({"type": "json_object"}),
+        ResponseFormat::JsonSchema(schema) => json!({
+            "type": "json_schema",
+            "json_schema": schema,
+        }),
+    }
+}
 
 #[derive(Debug, Deserialize)]
 struct OpenAiResponse {
@@ -260,6 +329,7 @@ fn openai_message(m: &ChatMessage) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::provider::ToolChoice;
 
     #[test]
     fn openai_message_user_renders_with_role_and_content() {
@@ -281,5 +351,34 @@ mod tests {
         assert_eq!(v["role"], "tool");
         assert_eq!(v["tool_call_id"], "call_42");
         assert_eq!(v["content"], "42");
+    }
+
+    #[test]
+    fn openai_tool_choice_wire_strings() {
+        assert_eq!(openai_tool_choice(&ToolChoice::Auto), json!("auto"));
+        assert_eq!(openai_tool_choice(&ToolChoice::Required), json!("required"));
+        assert_eq!(openai_tool_choice(&ToolChoice::None), json!("none"));
+    }
+
+    #[test]
+    fn openai_tool_choice_specific_renders_function_object() {
+        let v = openai_tool_choice(&ToolChoice::Specific {
+            name: "search_web".into(),
+        });
+        assert_eq!(v["type"], "function");
+        assert_eq!(v["function"]["name"], "search_web");
+    }
+
+    #[test]
+    fn openai_response_format_wire() {
+        let v = openai_response_format(&ResponseFormat::JsonObject);
+        assert_eq!(v, json!({"type": "json_object"}));
+
+        let v = openai_response_format(&ResponseFormat::JsonSchema(json!({
+            "name": "answer",
+            "schema": {"type": "object"}
+        })));
+        assert_eq!(v["type"], "json_schema");
+        assert_eq!(v["json_schema"]["schema"]["type"], "object");
     }
 }

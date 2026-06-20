@@ -8,9 +8,16 @@
 //!   "model": "claude-3-5-sonnet-latest",
 //!   "system": "...",
 //!   "messages": [{"role":"user","content":"..."}],
-//!   "tools": [{"name": "...", "description": "...", "input_schema": {...}}]
+//!   "tools": [{"name": "...", "description": "...", "input_schema": {...}}],
+//!   "max_tokens": 4096
 //! }
 //! ```
+//!
+//! T-043: the request is now an `InferenceRequest`. Anthropic
+//! natively supports `max_tokens` (required) and `temperature` /
+//! `stop_sequences`; everything else (`tool_choice`, `seed`,
+//! `parallel_tool_calls`, `stream`, `response_format`) is dropped
+//! from the wire body because the Anthropic API has no equivalent.
 //!
 //! The response uses Anthropic's `content` array of typed blocks;
 //! the provider only cares about `text` and `tool_use` blocks.
@@ -19,9 +26,10 @@ use async_trait::async_trait;
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use tokitai_core::ToolDefinition;
 
-use super::{ChatMessage, CompletionResponse, Provider, ProviderToolCall, UsageReport};
+use super::{
+    ChatMessage, CompletionResponse, InferenceRequest, Provider, ProviderToolCall, UsageReport,
+};
 
 /// Default base URL for the Anthropic Messages API.
 pub const DEFAULT_BASE_URL: &str = "https://api.anthropic.com";
@@ -95,32 +103,51 @@ impl Provider for AnthropicProvider {
 
     async fn complete_with_tools(
         &self,
-        system: Option<&str>,
-        messages: &[ChatMessage],
-        tools: &[ToolDefinition],
+        req: &InferenceRequest,
     ) -> anyhow::Result<CompletionResponse> {
-        let wire_messages: Vec<Value> = messages.iter().map(anthropic_message).collect();
-        let wire_tools: Vec<Value> = tools.iter().map(|t| t.to_anthropic_tool()).collect();
+        let wire_messages: Vec<Value> = req.messages.iter().map(anthropic_message).collect();
+        let wire_tools: Vec<Value> = req.tools.iter().map(|t| t.to_anthropic_tool()).collect();
+
+        // T-043: max_tokens on the request overrides the config
+        // default; the field is required by the Anthropic API so
+        // we always render it.
+        let max_tokens = req.max_tokens.unwrap_or(self.config.max_tokens);
 
         let mut body = json!({
             "model": self.config.model,
             "messages": wire_messages,
-            "tools": wire_tools,
-            "max_tokens": self.config.max_tokens,
+            "max_tokens": max_tokens,
         });
-        if let Some(sys) = system {
+        if !wire_tools.is_empty() {
+            body["tools"] = json!(wire_tools);
+        }
+        if let Some(sys) = req.system.as_deref() {
             body["system"] = json!(sys);
         }
+        if let Some(temp) = req.temperature {
+            body["temperature"] = json!(temp);
+        }
+        if let Some(stop) = req.stop.as_ref() {
+            // Anthropic uses `stop_sequences`, plural, where OpenAI
+            // uses `stop` (singular). Translate the field name.
+            body["stop_sequences"] = json!(stop);
+        }
+        // T-043: Anthropic has no `tool_choice`, `seed`,
+        // `parallel_tool_calls`, `stream`, or `response_format`
+        // equivalents in the v1 Messages API. The fields are
+        // accepted on the request (so callers can use a single
+        // `InferenceRequest` shape across providers) and dropped
+        // here at the wire boundary.
 
-        let mut req = self
+        let mut http_req = self
             .client
             .post(&self.api_url)
             .header("Content-Type", "application/json")
             .header("anthropic-version", "2023-06-01");
         if !self.config.api_key.is_empty() {
-            req = req.header("x-api-key", &self.config.api_key);
+            http_req = http_req.header("x-api-key", &self.config.api_key);
         }
-        let resp = req.json(&body).send().await?;
+        let resp = http_req.json(&body).send().await?;
         let parsed: AnthropicResponse = resp.error_for_status()?.json().await?;
         Ok(parsed.into_completion())
     }

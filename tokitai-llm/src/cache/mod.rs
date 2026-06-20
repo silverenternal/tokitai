@@ -20,7 +20,7 @@ use blake3::Hasher;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::provider::ChatMessage;
+use crate::provider::{ChatMessage, InferenceRequest};
 use tokitai_core::ToolDefinition;
 
 /// One cached response. Persisted as a single JSON blob so the
@@ -150,6 +150,58 @@ struct CacheKey {
     system: Option<String>,
     messages: Vec<ChatMessage>,
     tools: Vec<Value>,
+}
+
+/// T-043: hash a full `InferenceRequest` for the response cache.
+///
+/// Unlike `cache_key` (which takes the request as a tuple of
+/// `(model, system, messages, tools)`), `cache_key_v2` includes
+/// every T-043 generation knob that affects the model's reply:
+/// `tool_choice`, `response_format`, `temperature`, `stop`,
+/// `seed`. Two requests that differ in `temperature` MUST hash
+/// to different keys, otherwise the cache would silently serve a
+/// `temperature=0` reply to a `temperature=1` caller.
+///
+/// `max_tokens`, `stream`, and `parallel_tool_calls` are
+/// deliberately NOT included: they constrain the response
+/// envelope (truncation, streaming, dispatch count) but not the
+/// content the model would otherwise produce.
+pub fn cache_key_v2(model: &str, req: &InferenceRequest) -> String {
+    let tools_json: Vec<Value> = req.tools.iter().map(|t| t.to_openai_function()).collect();
+    let key = CacheKeyV2 {
+        model: model.to_string(),
+        system: req.system.clone(),
+        messages: req.messages.clone(),
+        tools: tools_json,
+        tool_choice: req.tool_choice.clone(),
+        response_format: req.response_format.clone(),
+        temperature: req.temperature,
+        stop: req.stop.clone(),
+        seed: req.seed,
+    };
+    let bytes = match serde_json::to_vec(&key) {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::warn!("cache_key_v2 serialisation failed: {e}");
+            return String::new();
+        }
+    };
+    let mut hasher = Hasher::new();
+    hasher.update(&bytes);
+    hasher.finalize().to_hex().to_string()
+}
+
+#[derive(Serialize, Deserialize)]
+struct CacheKeyV2 {
+    model: String,
+    system: Option<String>,
+    messages: Vec<ChatMessage>,
+    tools: Vec<Value>,
+    tool_choice: crate::provider::ToolChoice,
+    response_format: Option<crate::provider::ResponseFormat>,
+    temperature: Option<f32>,
+    stop: Option<Vec<String>>,
+    seed: Option<u64>,
 }
 
 /// In-memory cache backend. The default for the binary.
@@ -686,5 +738,86 @@ mod tests {
             Some(serde_json::json!("ok"))
         );
         assert!(cache.get("echo", &serde_json::json!({"x": 2})).is_none());
+    }
+
+    // -----------------------------------------------------------------
+    // T-043: cache_key_v2
+    // -----------------------------------------------------------------
+
+    /// `cache_key_v2` is a pure function of the
+    /// `InferenceRequest` shape (with the model name); two
+    /// identical requests must produce identical keys.
+    #[test]
+    fn cache_key_v2_deterministic_for_identical_input() {
+        let tools = vec![ToolDefinition::new(
+            "add",
+            "add two numbers",
+            r#"{"type":"object"}"#,
+        )];
+        let req = InferenceRequest::new("hi", tools);
+        let k1 = cache_key_v2("gpt-4o", &req);
+        let k2 = cache_key_v2("gpt-4o", &req);
+        assert_eq!(k1, k2);
+        assert!(!k1.is_empty());
+    }
+
+    /// Changing the model must change the key so cross-model
+    /// cache pollution is impossible.
+    #[test]
+    fn cache_key_v2_differs_with_model() {
+        let req = InferenceRequest::new("hi", vec![]);
+        assert_ne!(
+            cache_key_v2("gpt-4o", &req),
+            cache_key_v2("claude-3-5-sonnet-latest", &req)
+        );
+    }
+
+    /// `temperature` is part of the key — otherwise a
+    /// `temperature=0` reply would be served to a
+    /// `temperature=1` caller.
+    #[test]
+    fn cache_key_v2_differs_with_temperature() {
+        let req_cold = InferenceRequest::new("hi", vec![]).with_temperature(0.0);
+        let req_hot = InferenceRequest::new("hi", vec![]).with_temperature(1.0);
+        assert_ne!(cache_key_v2("m", &req_cold), cache_key_v2("m", &req_hot));
+    }
+
+    /// `tool_choice` is part of the key. Two requests that
+    /// differ only in tool-choice MUST hash differently.
+    #[test]
+    fn cache_key_v2_differs_with_tool_choice() {
+        use crate::provider::ToolChoice;
+        let auto = InferenceRequest::new("hi", vec![]).with_tool_choice(ToolChoice::Auto);
+        let required = InferenceRequest::new("hi", vec![]).with_tool_choice(ToolChoice::Required);
+        let specific = InferenceRequest::new("hi", vec![]).with_tool_choice(ToolChoice::Specific {
+            name: "echo".into(),
+        });
+        assert_ne!(cache_key_v2("m", &auto), cache_key_v2("m", &required));
+        assert_ne!(cache_key_v2("m", &auto), cache_key_v2("m", &specific));
+        assert_ne!(cache_key_v2("m", &required), cache_key_v2("m", &specific));
+    }
+
+    /// `response_format` is part of the key.
+    #[test]
+    fn cache_key_v2_differs_with_response_format() {
+        use crate::provider::ResponseFormat;
+        let none = InferenceRequest::new("hi", vec![]);
+        let json =
+            InferenceRequest::new("hi", vec![]).with_response_format(ResponseFormat::JsonObject);
+        let schema = InferenceRequest::new("hi", vec![]).with_response_format(
+            ResponseFormat::JsonSchema(serde_json::json!({"type": "object"})),
+        );
+        assert_ne!(cache_key_v2("m", &none), cache_key_v2("m", &json));
+        assert_ne!(cache_key_v2("m", &none), cache_key_v2("m", &schema));
+        assert_ne!(cache_key_v2("m", &json), cache_key_v2("m", &schema));
+    }
+
+    /// `seed` is part of the key — the same prompt at
+    /// `seed=1` and `seed=2` may give different replies.
+    #[test]
+    fn cache_key_v2_differs_with_seed() {
+        let req1 = InferenceRequest::new("hi", vec![]).with_seed(1);
+        let req2 = InferenceRequest::new("hi", vec![]).with_seed(2);
+        assert_ne!(cache_key_v2("m", &req1), cache_key_v2("m", &req2));
     }
 }

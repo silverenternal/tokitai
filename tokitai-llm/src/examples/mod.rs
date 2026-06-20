@@ -24,7 +24,7 @@
 use crate::cache::InMemoryCache;
 use crate::cli::{EnvelopeFormat, ExamplesArgs};
 use crate::infer::{build_provider, complete_with_cache};
-use crate::provider::{envelope_for, ChatMessage};
+use crate::provider::{envelope_for, InferenceRequest};
 use crate::Result;
 use tokitai_core::ToolDefinition;
 
@@ -126,23 +126,22 @@ Do not add markdown fences or commentary.";
             t.name, t.description, schema_pretty
         );
 
-        let messages = vec![ChatMessage::User {
-            content: user_message,
-        }];
+        // T-043: build an `InferenceRequest` instead of passing
+        // (system, messages, tools) as separate arguments.
+        let mut req = InferenceRequest::new(user_message, Vec::new());
+        req.system = Some(system.to_string());
+        req.tool_choice = crate::provider::ToolChoice::None;
 
-        let response =
-            match complete_with_cache(provider, cache, false, model, Some(system), &messages, &[])
-                .await
-            {
-                Ok(r) => r,
-                Err(e) => {
-                    eprintln!(
-                        "warning: LLM example generation failed for `{}`: {e}",
-                        t.name
-                    );
-                    continue;
-                }
-            };
+        let response = match complete_with_cache(provider, cache, false, model, &req).await {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!(
+                    "warning: LLM example generation failed for `{}`: {e}",
+                    t.name
+                );
+                continue;
+            }
+        };
 
         let content = response.content.trim();
         let content = content
@@ -250,10 +249,13 @@ mod tests {
         let examples = vec![("add".to_string(), json!({"a": 1, "b": 2}))];
 
         let enriched = apply_examples(vec![t], &examples);
-        let baked = enriched[0]
+        let baked_str = enriched[0]
             .baked_examples
             .as_ref()
             .expect("baked_examples populated");
+        // `baked_examples` is stored as a JSON Value.
+        // It should be an array with at least one entry.
+        let baked: &serde_json::Value = baked_str;
         // The shape is the canonical `[{...}]` array with a single
         // `{"input": {...}}` object inside it.
         assert!(baked.is_array(), "baked_examples must be a JSON array");
