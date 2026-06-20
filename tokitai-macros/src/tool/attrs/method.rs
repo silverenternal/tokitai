@@ -267,6 +267,8 @@ pub struct MethodToolAttrs {
     pub allow_imperative_desc: bool,
     /// T-045: per-method safety scope for the T-022 lint.
     pub desc_safety_scope: Option<String>,
+    /// T-046: per-method usage hint for the model.
+    pub usage_hint: Option<String>,
     /// T-022: per-method extension of the bad-pattern set. Each
     /// entry is a case-insensitive substring; a hit raises the
     /// safety lint for this method only. Useful when an org has
@@ -341,6 +343,7 @@ impl Parse for MethodToolAttrs {
                         allow_insecure_desc: false,
                         allow_imperative_desc: false,
                         desc_safety_scope: None,
+                        usage_hint: None,
                         desc_blocklist: Vec::new(),
                         result_truncate_bytes: None,
                     });
@@ -382,6 +385,7 @@ impl Parse for MethodToolAttrs {
         let mut allow_insecure_desc = false;
         let mut allow_imperative_desc = false;
         let mut desc_safety_scope: Option<String> = None;
+        let mut usage_hint: Option<String> = None;
         let mut desc_blocklist: Vec<String> = Vec::new();
         let mut result_truncate_bytes: Option<usize> = None;
 
@@ -775,6 +779,12 @@ impl Parse for MethodToolAttrs {
                     let value: LitStr = input.parse()?;
                     desc_safety_scope = Some(value.value());
                 }
+                // T-046: per-method usage hint for the model.
+                "usage_hint" => {
+                    input.parse::<token::Eq>()?;
+                    let value: LitStr = input.parse()?;
+                    usage_hint = Some(value.value());
+                }
                 // T-022: per-method extension of the bad-pattern
                 // set. Each entry is a case-insensitive substring;
                 // a hit raises the safety lint for this method
@@ -996,6 +1006,7 @@ impl Parse for MethodToolAttrs {
             allow_insecure_desc,
             allow_imperative_desc,
             desc_safety_scope,
+            usage_hint,
             desc_blocklist,
             result_truncate_bytes,
         })

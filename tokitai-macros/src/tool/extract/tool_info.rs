@@ -224,6 +224,7 @@ pub fn extract_tool_info(fn_item: &ImplItemFn) -> Option<ToolMethodInfo> {
             doc: None,
             alias: Vec::new(),
             allow: Vec::new(),
+            usage_hint: None,
             cache: None,
             rate_limit: None,
             param_validations: Vec::new(),
@@ -272,6 +273,7 @@ pub fn extract_tool_info(fn_item: &ImplItemFn) -> Option<ToolMethodInfo> {
     let mut example_output = None;
     let mut alias = Vec::new();
     let mut allow = Vec::new();
+    let mut usage_hint: Option<String> = None;
     let mut cache: Option<String> = None;
     let mut rate_limit: Option<String> = None;
     let mut param_validations: Vec<(String, ParamToolAttrs)> = Vec::new();
@@ -314,6 +316,7 @@ pub fn extract_tool_info(fn_item: &ImplItemFn) -> Option<ToolMethodInfo> {
                 example_output = args.example_output;
                 alias = args.alias;
                 allow = args.allow;
+                usage_hint = args.usage_hint.clone();
                 cache = args.cache;
                 rate_limit = args.rate_limit;
                 param_validations = args.param_validations;
@@ -394,6 +397,7 @@ pub fn extract_tool_info(fn_item: &ImplItemFn) -> Option<ToolMethodInfo> {
         doc: None,
         alias,
         allow,
+        usage_hint,
         cache,
         rate_limit,
         param_validations,

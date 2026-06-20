@@ -343,6 +343,31 @@ impl ToolDefinition {
         self
     }
 
+    /// T-046: attach a usage hint that the provider layer can
+    /// auto-inject into the system prompt or as a separate message.
+    /// See [`ToolHintPlacement`] for delivery options.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tokitai_core::ToolDefinition;
+    ///
+    /// let tool = ToolDefinition::new("add", "Add two numbers", r#"{"type":"object"}"#)
+    ///     .with_usage_hint("Always pass both `a` and `b` as i64.");
+    /// ```
+    #[cfg(feature = "serde")]
+    pub fn with_usage_hint(mut self, hint: impl Into<alloc::string::String>) -> Self {
+        self.usage_hint = Some(hint.into());
+        self
+    }
+
+    /// T-046: `no_std` variant.
+    #[cfg(not(feature = "serde"))]
+    pub fn with_usage_hint(mut self, hint: &'static str) -> Self {
+        self.usage_hint = Some(hint);
+        self
+    }
+
     /// T-016: attach a `serde_json::Value` carrying the
     /// `examples` array (one `{ "input": ..., "output": ... }`
     /// entry per baked example). The macro emits a call to this

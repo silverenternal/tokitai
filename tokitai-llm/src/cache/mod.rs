@@ -158,14 +158,14 @@ struct CacheKey {
 /// `(model, system, messages, tools)`), `cache_key_v2` includes
 /// every T-043 generation knob that affects the model's reply:
 /// `tool_choice`, `response_format`, `temperature`, `stop`,
-/// `seed`. Two requests that differ in `temperature` MUST hash
-/// to different keys, otherwise the cache would silently serve a
-/// `temperature=0` reply to a `temperature=1` caller.
+/// `seed`, `parallel_tool_calls`. Two requests that differ in
+/// `temperature` MUST hash to different keys, otherwise the cache
+/// would silently serve a `temperature=0` reply to a
+/// `temperature=1` caller.
 ///
-/// `max_tokens`, `stream`, and `parallel_tool_calls` are
-/// deliberately NOT included: they constrain the response
-/// envelope (truncation, streaming, dispatch count) but not the
-/// content the model would otherwise produce.
+/// `max_tokens` and `stream` are deliberately NOT included: they
+/// constrain the response envelope (truncation, streaming) but
+/// not the content the model would otherwise produce.
 pub fn cache_key_v2(model: &str, req: &InferenceRequest) -> String {
     let tools_json: Vec<Value> = req.tools.iter().map(|t| t.to_openai_function()).collect();
     let key = CacheKeyV2 {
@@ -178,6 +178,7 @@ pub fn cache_key_v2(model: &str, req: &InferenceRequest) -> String {
         temperature: req.temperature,
         stop: req.stop.clone(),
         seed: req.seed,
+        parallel_tool_calls: req.parallel_tool_calls,
     };
     let bytes = match serde_json::to_vec(&key) {
         Ok(b) => b,
@@ -202,6 +203,7 @@ struct CacheKeyV2 {
     temperature: Option<f32>,
     stop: Option<Vec<String>>,
     seed: Option<u64>,
+    parallel_tool_calls: Option<bool>,
 }
 
 /// In-memory cache backend. The default for the binary.

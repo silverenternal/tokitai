@@ -141,6 +141,15 @@ pub fn generate_tool_def_consts(tools: &[ToolMethodInfo], dialect: Dialect) -> V
             quote! {}
         };
 
+        // T-046: when a usage hint is present, emit the builder
+        // call so the runtime carries the hint for the provider
+        // layer to auto-inject.
+        let usage_hint_tokens = tool
+            .usage_hint
+            .as_ref()
+            .map(|h| quote! { .with_usage_hint(#h) })
+            .unwrap_or_else(|| quote! {});
+
         // T-016: when baked examples are present, evaluate them
         // at LazyLock initialization and append their JSON shape
         // to the schema's `examples` field. The base schema is
@@ -192,7 +201,7 @@ pub fn generate_tool_def_consts(tools: &[ToolMethodInfo], dialect: Dialect) -> V
                             __base.to_string()
                         }
                     };
-                    ::tokitai::ToolDefinition::new(#tool_name, #description, __schema_json) #version_tokens #deprecated_tokens #explicit_desc_tokens #baked_examples_tokens #since_tokens #until_tokens
+                    ::tokitai::ToolDefinition::new(#tool_name, #description, __schema_json) #version_tokens #usage_hint_tokens #deprecated_tokens #explicit_desc_tokens #baked_examples_tokens #since_tokens #until_tokens
                 });
                 &*DEF
             }

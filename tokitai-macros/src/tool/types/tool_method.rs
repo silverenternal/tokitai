@@ -43,6 +43,11 @@ pub struct ToolMethodInfo {
     pub doc: Option<String>,
     pub alias: Vec<String>,
     pub allow: Vec<String>,
+    /// T-046: optional usage hint shown to the model. Populated
+    /// from `#[tool(usage_hint = "...")]`. The codegen layer
+    /// emits `.with_usage_hint(...)` on the `ToolDefinition`
+    /// builder chain when this is `Some`.
+    pub usage_hint: Option<String>,
     pub cache: Option<String>,
     pub rate_limit: Option<String>,
     pub param_validations: Vec<(String, ParamToolAttrs)>,
