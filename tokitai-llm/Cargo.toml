@@ -7,7 +7,7 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/silverenternal/tokitai"
 homepage = "https://github.com/silverenternal/tokitai"
 description = "Tokitai LLM CLI - OpenAI/Anthropic/Ollama tool-calling harness with response cache"
-keywords = ["llm", "ai", "tool-calling", "cli", "openai", "anthropic", "ollama"]
+keywords = ["llm", "ai", "tool-calling", "cli", "openai"]
 categories = ["command-line-utilities", "development-tools"]
 rust-version = "1.80"
 # T-034: a thin CLI that loads a `#[tool]`-annotated provider, builds
