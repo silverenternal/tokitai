@@ -160,6 +160,23 @@ pub struct InferArgs {
     /// upper bound.
     #[arg(long, default_value_t = 16)]
     pub max_iterations: usize,
+
+    /// TTL in seconds for the tool-result cache. Repeated
+    /// `(tool_name, args)` lookups within this window reuse the
+    /// cached value instead of re-dispatching to the underlying
+    /// tool provider. The cache is keyed on `(tool_name,
+    /// serialised arguments)` — not on the full chat envelope —
+    /// so a self-consistency run that issues the same tool call
+    /// 5 times collapses to a single dispatch.
+    #[arg(long, default_value_t = 60, env = "TOKITAI_LLM_TOOL_CACHE_TTL")]
+    pub tool_cache_ttl: u64,
+
+    /// Maximum number of entries the tool-result cache holds.
+    /// `0` disables the cache entirely (every tool call reaches
+    /// the provider). Defaults to 1000, which covers the
+    /// self-consistency 5-sample path with room to spare.
+    #[arg(long, default_value_t = 1000, env = "TOKITAI_LLM_TOOL_CACHE_SIZE")]
+    pub tool_cache_size: usize,
 }
 
 /// `tokitai-llm examples` arguments.

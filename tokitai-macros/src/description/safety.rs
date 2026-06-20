@@ -76,6 +76,15 @@ pub const CLEAN: u8 = 0;
 /// ...). The full list lives in [`INSTRUCTION_PHRASES`].
 pub const INSTRUCTION: u8 = 1 << 0;
 
+/// T-045: alias for [`INSTRUCTION`] used by the per-category
+/// exemption API (`desc_safety_scope = "relaxed"` and
+/// `#[tool(allow_imperative_desc)]`). This alias exists so
+/// call sites read as "exempt the imperative category" rather
+/// than referencing the bit-level name directly. Both constants
+/// refer to the same bit and are interchangeable; the matcher
+/// still reports hits as `INSTRUCTION` in diagnostics.
+pub const IMPERATIVE: u8 = INSTRUCTION;
+
 /// Bit 2: chat-template role header (`system:`, `assistant:`,
 /// `user:`) used as a substring. Attackers try to inject a fake
 /// chat template inside a `desc = "..."` literal; the substring

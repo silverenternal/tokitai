@@ -54,6 +54,14 @@ pub struct ToolAttributes {
     /// to ship a known-bad literal; production code paths should
     /// leave this off.
     pub allow_insecure_desc: bool,
+    /// T-045: when `true`, the `INSTRUCTION` bit of the T-022
+    /// adversarial-description lint is exempted for this impl
+    /// block. Allows imperative language in mathematical tool
+    /// descriptions while keeping other checks active.
+    pub allow_imperative_desc: bool,
+    /// T-045: per-impl safety scope for the T-022 lint.
+    /// `"relaxed"` exempts INSTRUCTION bit; `"off"` exempts all.
+    pub desc_safety_scope: Option<String>,
     /// T-020: when `Some("semver")`, the macro parses every
     /// `since = "..."` / `until = "..."` literal as SemVer and
     /// refuses to compile when a literal fails to parse or
@@ -71,6 +79,8 @@ impl Parse for ToolAttributes {
         let mut min_desc_score: Option<u8> = None;
         let mut allow_short_desc = false;
         let mut allow_insecure_desc = false;
+        let mut allow_imperative_desc = false;
+        let mut desc_safety_scope: Option<String> = None;
         let mut version_policy: Option<String> = None;
 
         // 支持空输入（impl 块级别的 #[tool] 不需要参数）
@@ -82,6 +92,8 @@ impl Parse for ToolAttributes {
                 min_desc_score,
                 allow_short_desc,
                 allow_insecure_desc,
+                allow_imperative_desc,
+                desc_safety_scope,
                 version_policy,
             });
         }
@@ -89,9 +101,7 @@ impl Parse for ToolAttributes {
         while !input.is_empty() {
             let key: Ident = input.parse()?;
 
-            // T-018 / T-022: `allow_short_desc` and
-            // `allow_insecure_desc` are bare flags (no `= "..."`).
-            // The other keys are key=value pairs.
+            // T-018 / T-022 / T-045: bare flag attributes.
             if key == "allow_short_desc" {
                 allow_short_desc = true;
                 if input.peek(token::Comma) {
@@ -101,6 +111,13 @@ impl Parse for ToolAttributes {
             }
             if key == "allow_insecure_desc" {
                 allow_insecure_desc = true;
+                if input.peek(token::Comma) {
+                    input.parse::<token::Comma>()?;
+                }
+                continue;
+            }
+            if key == "allow_imperative_desc" {
+                allow_imperative_desc = true;
                 if input.peek(token::Comma) {
                     input.parse::<token::Comma>()?;
                 }
@@ -142,6 +159,7 @@ impl Parse for ToolAttributes {
                 // (the only value today); unknown values are
                 // surfaced by `validate_impl` as `E0030`.
                 "version_policy" => version_policy = Some(value.value()),
+                "desc_safety_scope" => desc_safety_scope = Some(value.value()),
                 _ => {}
             }
 
@@ -157,6 +175,8 @@ impl Parse for ToolAttributes {
             min_desc_score,
             allow_short_desc,
             allow_insecure_desc,
+            allow_imperative_desc,
+            desc_safety_scope,
             version_policy,
         })
     }
@@ -241,6 +261,12 @@ pub struct MethodToolAttrs {
     /// known-bad literal; production code paths should leave
     /// this off.
     pub allow_insecure_desc: bool,
+    /// T-045: when `true`, the `INSTRUCTION` bit of the T-022
+    /// safety lint is exempted for this method. A shorthand for
+    /// `desc_safety_scope = "relaxed"`.
+    pub allow_imperative_desc: bool,
+    /// T-045: per-method safety scope for the T-022 lint.
+    pub desc_safety_scope: Option<String>,
     /// T-022: per-method extension of the bad-pattern set. Each
     /// entry is a case-insensitive substring; a hit raises the
     /// safety lint for this method only. Useful when an org has
@@ -313,6 +339,8 @@ impl Parse for MethodToolAttrs {
                         min_desc_score: None,
                         allow_short_desc: false,
                         allow_insecure_desc: false,
+                        allow_imperative_desc: false,
+                        desc_safety_scope: None,
                         desc_blocklist: Vec::new(),
                         result_truncate_bytes: None,
                     });
@@ -352,6 +380,8 @@ impl Parse for MethodToolAttrs {
         let mut min_desc_score: Option<u8> = None;
         let mut allow_short_desc = false;
         let mut allow_insecure_desc = false;
+        let mut allow_imperative_desc = false;
+        let mut desc_safety_scope: Option<String> = None;
         let mut desc_blocklist: Vec<String> = Vec::new();
         let mut result_truncate_bytes: Option<usize> = None;
 
@@ -731,6 +761,20 @@ impl Parse for MethodToolAttrs {
                         let _ = input.parse::<token::Comma>();
                     }
                 }
+                // T-045: per-method opt-out from the INSTRUCTION
+                // bit of the T-022 lint. Bare flag.
+                "allow_imperative_desc" => {
+                    allow_imperative_desc = true;
+                    if input.peek(token::Comma) {
+                        let _ = input.parse::<token::Comma>();
+                    }
+                }
+                // T-045: per-method safety scope.
+                "desc_safety_scope" => {
+                    input.parse::<token::Eq>()?;
+                    let value: LitStr = input.parse()?;
+                    desc_safety_scope = Some(value.value());
+                }
                 // T-022: per-method extension of the bad-pattern
                 // set. Each entry is a case-insensitive substring;
                 // a hit raises the safety lint for this method
@@ -950,6 +994,8 @@ impl Parse for MethodToolAttrs {
             min_desc_score,
             allow_short_desc,
             allow_insecure_desc,
+            allow_imperative_desc,
+            desc_safety_scope,
             desc_blocklist,
             result_truncate_bytes,
         })

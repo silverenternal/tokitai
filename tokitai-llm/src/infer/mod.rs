@@ -13,14 +13,15 @@
 //! `Provider::complete_with_tools`, so adding a new one is one
 //! trait impl.
 
-use crate::cache::{cache_key, CacheBackend, InMemoryCache};
+use crate::cache::{cache_key, CacheBackend, InMemoryCache, ToolCache};
 use crate::cli::{InferArgs, ProviderArgs, ProviderKind};
 use crate::provider::anthropic::AnthropicProvider;
 use crate::provider::ollama::OllamaProvider;
 use crate::provider::openai::OpenAiProvider;
 use crate::provider::{ChatMessage, CompletionResponse, Provider};
 use crate::Result;
-use tokitai_core::ToolDefinition;
+use serde_json::Value;
+use tokitai_core::{ToolCaller, ToolDefinition};
 
 /// One concrete provider. The `Provider` trait is not
 /// dyn-compatible (it carries an `async fn`), so the build helper
@@ -60,7 +61,14 @@ impl Provider for AnyProvider {
 }
 
 /// Run `tokitai-llm infer` with the given args.
-pub async fn run(args: InferArgs) -> Result<()> {
+///
+/// `tool_cache` is optional. When `Some`, every tool dispatch inside
+/// the run is routed through `ToolCache::get_or_compute` so the
+/// self-consistency multi-sample path collapses repeated `(name,
+/// args)` lookups into a single `ToolProvider::call_tool`
+/// invocation. When `None`, every call hits the provider
+/// unconditionally — same behaviour as before T-047.
+pub async fn run(args: InferArgs, tool_cache: Option<ToolCache>) -> Result<()> {
     let provider = build_provider(&args.provider)?;
     // T-034: the provider slice is supplied by the embedding
     // host (a binary that uses `#[tool]` and exposes its
@@ -96,6 +104,10 @@ pub async fn run(args: InferArgs) -> Result<()> {
 
     println!("{}", response.content);
     if !response.tool_calls.is_empty() {
+        // T-047: when a cache is configured and an embedded provider
+        // is wired in (v0.2), the dispatch path will go through
+        // `dispatch_with_cache`. For the v0.1 stub we just warn.
+        let _ = tool_cache; // silence unused-when-no-provider
         eprintln!(
             "warning: model returned {} tool call(s) but no provider was \
              supplied; install a --provider-crate to dispatch them",
@@ -170,6 +182,37 @@ pub async fn complete_with_cache(
         cache.put(key, &cr);
     }
     Ok(response)
+}
+
+/// Dispatch a tool call through `ToolProvider::call_tool`, with an
+/// optional `ToolCache` in front. When `tool_cache` is `Some`,
+/// repeated calls with the same `(name, args)` reuse the cached
+/// result and never reach the provider. When `None`, every call
+/// hits the provider unconditionally — the pre-T-047 behaviour.
+///
+/// The arguments are taken as `&serde_json::Value` because that is
+/// what `ProviderToolCall.arguments` already carries, and the cache
+/// serialises that exact value into the key.
+///
+/// `ToolCaller` is `dyn`-compatible (only `&self` methods), so the
+/// provider is taken as `&dyn ToolCaller`. The cache helper still
+/// accepts `&Value` and forwards errors through `anyhow::Error`.
+pub async fn dispatch_with_cache(
+    provider: &dyn ToolCaller,
+    tool_cache: Option<&ToolCache>,
+    name: &str,
+    args: &Value,
+) -> Result<Value> {
+    match tool_cache {
+        None => Ok(provider.call_tool(name, args)?),
+        Some(cache) => {
+            cache
+                .get_or_compute(name, args, || async {
+                    provider.call_tool(name, args).map_err(anyhow::Error::from)
+                })
+                .await
+        }
+    }
 }
 
 #[cfg(test)]

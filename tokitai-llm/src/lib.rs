@@ -45,6 +45,10 @@ pub mod infer_capabilities;
 pub mod provider;
 pub mod verify;
 
+// T-047: re-export the tool-result cache so callers wiring it into
+// their own dispatch path do not have to chase the module path.
+pub use cache::ToolCache;
+
 /// Returned by every subcommand on the happy path. The `anyhow::Error`
 /// is the only public error type so the CLI can format a one-line
 /// diagnostic with a backtrace when `RUST_BACKTRACE=1` is set.

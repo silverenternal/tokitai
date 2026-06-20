@@ -714,6 +714,27 @@ fn generate_for_impl(mut impl_item: ItemImpl, attrs: ToolAttributes) -> TokenStr
             continue;
         }
         let effective_allow = impl_allow_insecure || tool.allow_insecure_desc;
+        // T-045: compute exempt bits from impl-level and
+        // method-level flags for T-022 per-category exemptions.
+        let mut exempt_bits = 0u8;
+        if let Some(ref scope) = attrs.desc_safety_scope {
+            match scope.as_str() {
+                "relaxed" => exempt_bits |= crate::description::safety::IMPERATIVE,
+                "off" => exempt_bits = 0xFF,
+                _ => {}
+            }
+        } else if attrs.allow_imperative_desc {
+            exempt_bits |= crate::description::safety::IMPERATIVE;
+        }
+        if let Some(ref scope) = tool.desc_safety_scope {
+            match scope.as_str() {
+                "relaxed" => exempt_bits |= crate::description::safety::IMPERATIVE,
+                "off" => exempt_bits = 0xFF,
+                _ => {}
+            }
+        } else if tool.allow_imperative_desc {
+            exempt_bits |= crate::description::safety::IMPERATIVE;
+        }
         // Fold the per-build list and the per-method list into
         // one `Vec<&str>` so the matcher does not need to know
         // about the two sources. Empty blocks (no env var, no
@@ -732,6 +753,7 @@ fn generate_for_impl(mut impl_item: ItemImpl, attrs: ToolAttributes) -> TokenStr
             &tool.description,
             &user_blocklist,
             effective_allow,
+            exempt_bits,
         );
         if let Some(err) = lint.error {
             safety_lint_tokens.extend(err.to_compile_error());

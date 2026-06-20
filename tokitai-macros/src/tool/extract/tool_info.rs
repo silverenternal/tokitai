@@ -233,6 +233,8 @@ pub fn extract_tool_info(fn_item: &ImplItemFn) -> Option<ToolMethodInfo> {
             min_desc_score: None,
             allow_short_desc: false,
             allow_insecure_desc: false,
+            allow_imperative_desc: false,
+            desc_safety_scope: None,
             desc_blocklist: Vec::new(),
             result_truncate_bytes: None,
             since: None,
@@ -258,6 +260,8 @@ pub fn extract_tool_info(fn_item: &ImplItemFn) -> Option<ToolMethodInfo> {
     let mut requires_invalid: bool = false;
     let mut requires_invalid_span: Option<proc_macro2::Span> = None;
     let mut is_visible = true;
+    let mut allow_imperative_desc = false;
+    let mut desc_safety_scope: Option<String> = None;
     let mut tool_tags = Vec::new();
     let mut group = None;
     let mut return_description = None;
@@ -317,6 +321,8 @@ pub fn extract_tool_info(fn_item: &ImplItemFn) -> Option<ToolMethodInfo> {
                 min_desc_score = args.min_desc_score;
                 allow_short_desc = args.allow_short_desc;
                 allow_insecure_desc = args.allow_insecure_desc;
+                allow_imperative_desc = args.allow_imperative_desc;
+                desc_safety_scope = args.desc_safety_scope.clone();
                 desc_blocklist = args.desc_blocklist;
                 result_truncate_bytes = args.result_truncate_bytes;
                 // T-018: capture the desc literal's span from the
@@ -397,6 +403,8 @@ pub fn extract_tool_info(fn_item: &ImplItemFn) -> Option<ToolMethodInfo> {
         min_desc_score,
         allow_short_desc,
         allow_insecure_desc,
+        allow_imperative_desc,
+        desc_safety_scope,
         desc_blocklist,
         result_truncate_bytes,
         since,

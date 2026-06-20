@@ -120,6 +120,14 @@ pub fn lint_description(
 /// * `allow_opt_out` — when `true`, the lint short-circuits and
 ///   the literal is always accepted (with `error = None`). Used to
 ///   honour `#[tool(allow_insecure_desc)]`.
+/// * `exempt_bits` — T-045: bitmask of categories to skip. When a
+///   category bit is set here, the matcher still scans the literal
+///   for it (so the rest of the diagnostic remains correct), but
+///   the bit is cleared from the score before the error check.
+///   Used to honour `#[tool(desc_safety_scope = "relaxed")]` and
+///   `#[tool(allow_imperative_desc)]`, which both exempt the
+///   [`safety::INSTRUCTION`] bit while leaving `ROLE_HEADER`,
+///   `FAKE_PROMPT`, `OVERSIZED`, and `NON_ASCII_DESC` enforced.
 ///
 /// The error code is [`ErrorCode::E0032`] (assigned next to
 /// T-018's `E0031`). The diagnostic body names every matched
@@ -130,8 +138,16 @@ pub fn lint_description_safety(
     literal: &str,
     user_blocklist: &[&str],
     allow_opt_out: bool,
+    exempt_bits: u8,
 ) -> DescriptionLint {
-    let score = safety::desc_safety_score(literal, user_blocklist);
+    let raw_score = safety::desc_safety_score(literal, user_blocklist);
+    // T-045: apply per-category exemptions. We do not skip the
+    // matcher call above because the matcher is cheap and we want
+    // the diagnostic to be honest about what would have fired
+    // before the exemption took effect; we just clear the exempt
+    // bits out of the score so the `error` check sees the
+    // post-exemption state.
+    let score = raw_score & !exempt_bits;
 
     let error = if allow_opt_out || score == safety::CLEAN {
         None

@@ -73,6 +73,10 @@ pub struct ToolMethodInfo {
     /// description safety lint. When `true`, this method's
     /// `desc = "..."` literal bypasses the bad-pattern matcher.
     pub allow_insecure_desc: bool,
+    /// T-045: method-level allow_imperative_desc flag.
+    pub allow_imperative_desc: bool,
+    /// T-045: method-level desc_safety_scope override.
+    pub desc_safety_scope: Option<String>,
     /// T-022: per-method extension of the bad-pattern set.
     /// Each entry is a case-insensitive substring; a hit raises
     /// the safety lint for this method only. The macro folds the
