@@ -99,6 +99,26 @@ impl Provider for OllamaProvider {
         &self,
         req: &InferenceRequest,
     ) -> anyhow::Result<CompletionResponse> {
+        let body = self.build_wire_body(req);
+
+        let resp = self
+            .client
+            .post(&self.api_url)
+            .header("Content-Type", "application/json")
+            .json(&body)
+            .send()
+            .await?;
+        let parsed: OllamaResponse = resp.error_for_status()?.json().await?;
+        Ok(parsed.into_completion())
+    }
+}
+
+impl OllamaProvider {
+    /// Build the JSON body for `/api/chat`. Extracted from
+    /// `complete_with_tools` so the wire shape is testable
+    /// without a mock reqwest. T-043 wires the sampling knobs,
+    /// T-049 wires `response_format` onto the `format` field.
+    fn build_wire_body(&self, req: &InferenceRequest) -> Value {
         // T-043: Ollama's wire format does not have a dedicated
         // `system` field; it accepts a `system`-role message
         // instead. Forward the system prompt as the first message
@@ -142,16 +162,7 @@ impl Provider for OllamaProvider {
         if let Some(rf) = req.response_format.as_ref() {
             body["format"] = json!(ollama_response_format(rf));
         }
-
-        let resp = self
-            .client
-            .post(&self.api_url)
-            .header("Content-Type", "application/json")
-            .json(&body)
-            .send()
-            .await?;
-        let parsed: OllamaResponse = resp.error_for_status()?.json().await?;
-        Ok(parsed.into_completion())
+        body
     }
 }
 
@@ -445,5 +456,78 @@ mod tests {
         let schema = json!({"type": "object", "properties": {"x": {"type": "number"}}});
         let v = ollama_response_format(&ResponseFormat::JsonSchema(schema.clone()));
         assert_eq!(v, schema);
+    }
+
+    // ---- T-049: response_format wiring at the body level ----
+
+    fn test_ollama_provider() -> OllamaProvider {
+        OllamaProvider::new(OllamaConfig::from_args(None, "llama3.1".into()))
+    }
+
+    #[test]
+    fn ollama_body_sets_format_json_when_json_object() {
+        // When the caller asks for JsonObject, the wire body
+        // must set `format: "json"` (the Ollama-native shape).
+        let p = test_ollama_provider();
+        let req =
+            InferenceRequest::new("hi", vec![]).with_response_format(ResponseFormat::JsonObject);
+        let body = p.build_wire_body(&req);
+        assert_eq!(body["format"], json!("json"));
+    }
+
+    #[test]
+    fn ollama_body_sets_format_schema_when_json_schema() {
+        // When the caller asks for JsonSchema, the wire body
+        // must set `format` to the schema value verbatim.
+        let p = test_ollama_provider();
+        let schema = json!({
+            "type": "object",
+            "properties": {"answer": {"type": "string"}},
+            "required": ["answer"],
+        });
+        let req = InferenceRequest::new("hi", vec![])
+            .with_response_format(ResponseFormat::JsonSchema(schema.clone()));
+        let body = p.build_wire_body(&req);
+        assert_eq!(body["format"], schema);
+    }
+
+    #[test]
+    fn ollama_body_omits_format_when_unset() {
+        // When no response_format is supplied the `format`
+        // field must be absent (Ollama defaults to plain text).
+        let p = test_ollama_provider();
+        let req = InferenceRequest::new("hi", vec![]);
+        let body = p.build_wire_body(&req);
+        assert!(
+            body.get("format").is_none(),
+            "format field must be absent when response_format is None: {body}"
+        );
+    }
+
+    #[test]
+    fn ollama_body_json_schema_preserves_nested_structure() {
+        // Complex / nested schemas must round-trip verbatim
+        // (no field dropping, no pretty-printing).
+        let p = test_ollama_provider();
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {"id": {"type": "integer"}, "tags": {"type": "array", "items": {"type": "string"}}}
+                    }
+                }
+            }
+        });
+        let req = InferenceRequest::new("hi", vec![])
+            .with_response_format(ResponseFormat::JsonSchema(schema.clone()));
+        let body = p.build_wire_body(&req);
+        // The schema round-trips verbatim — we compare the
+        // whole structure rather than drilling into nested
+        // fields, which makes the test resilient to (legitimate)
+        // changes in the schema shape.
+        assert_eq!(body["format"], schema);
     }
 }

@@ -204,6 +204,101 @@ pub struct InferArgs {
     /// honour it; Anthropic ignores the field.
     #[arg(long, env = "TOKITAI_LLM_SEED")]
     pub seed: Option<u64>,
+
+    /// T-048: how the dispatcher should execute a batch of tool
+    /// calls the model returned in a single assistant turn.
+    ///
+    /// - `sequential` (default): call each tool in order.
+    /// - `parallel`: fan out concurrently via
+    ///   `futures::future::join_all`, with at most
+    ///   `--max-concurrency` in flight at any moment
+    ///   (`0` = unbounded).
+    /// - `pipelined`: wave N waits for wave N-1, but calls
+    ///   inside a wave run concurrently. The wave plan is read
+    ///   from `--pipelined-waves` as a JSON document of shape
+    ///   `[["id1","id2"],["id3"],...]`.
+    #[arg(
+        long,
+        value_enum,
+        default_value_t = InferExecutionStrategy::Sequential,
+        env = "TOKITAI_LLM_EXECUTION_STRATEGY"
+    )]
+    pub execution_strategy: InferExecutionStrategy,
+
+    /// T-048: cap the number of in-flight tool calls when the
+    /// strategy is `parallel` or `pipelined`. `0` means
+    /// unbounded (every call fires at once).
+    #[arg(long, default_value_t = 0, env = "TOKITAI_LLM_MAX_CONCURRENCY")]
+    pub max_concurrency: usize,
+
+    /// T-048: wave plan for the `pipelined` strategy. A JSON
+    /// document of shape `[["call_id_a","call_id_b"],["call_id_c"]]`.
+    /// Each inner list is a wave. Call IDs not mentioned here
+    /// are dispatched in wave 0 (so a partial plan still
+    /// runs every call).
+    #[arg(long, env = "TOKITAI_LLM_PIPELINED_WAVES")]
+    pub pipelined_waves: Option<String>,
+}
+
+/// T-048: CLI-side enum for the `--execution-strategy`
+/// argument. Maps onto the provider-agnostic
+/// `crate::infer::strategy::ExecutionStrategy` enum.
+#[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq, Default)]
+pub enum InferExecutionStrategy {
+    /// Call each tool in order. The pre-T-048 behaviour.
+    #[default]
+    Sequential,
+    /// Fan out every tool call concurrently (bounded by
+    /// `--max-concurrency`).
+    Parallel,
+    /// Wave N waits for wave N-1. Within a wave calls run
+    /// concurrently.
+    Pipelined,
+}
+
+impl InferExecutionStrategy {
+    /// Convert the CLI-side enum into the dispatcher-side enum.
+    /// `max_concurrency` and `waves` are filled in by the
+    /// caller (they live on `InferArgs`).
+    pub fn to_strategy(
+        self,
+        max_concurrency: usize,
+        waves: Vec<Vec<String>>,
+    ) -> crate::infer::strategy::ExecutionStrategy {
+        match self {
+            InferExecutionStrategy::Sequential => {
+                crate::infer::strategy::ExecutionStrategy::Sequential
+            }
+            InferExecutionStrategy::Parallel => {
+                crate::infer::strategy::ExecutionStrategy::Parallel { max_concurrency }
+            }
+            InferExecutionStrategy::Pipelined => {
+                crate::infer::strategy::ExecutionStrategy::Pipelined {
+                    max_concurrency,
+                    waves,
+                }
+            }
+        }
+    }
+}
+
+/// Parse `--pipelined-waves` (a JSON array of arrays of
+/// strings) into the dispatcher-side `Vec<Vec<String>>`.
+///
+/// Returns `Ok(vec![])` when `raw` is `None` (so the dispatcher
+/// can treat an unset plan as "empty waves" without special
+/// casing). Errors include a one-line diagnostic so the CLI can
+/// print the raw value back to the caller.
+pub fn parse_pipelined_waves(raw: Option<&str>) -> Result<Vec<Vec<String>>, String> {
+    match raw {
+        None => Ok(Vec::new()),
+        Some(s) => serde_json::from_str::<Vec<Vec<String>>>(s).map_err(|e| {
+            format!(
+                "--pipelined-waves: invalid JSON ({e}); expected \
+                 `[[\"id1\",\"id2\"],[\"id3\"],...]`"
+            )
+        }),
+    }
 }
 
 /// T-043: CLI-side enum for the `--tool-choice` argument. Maps

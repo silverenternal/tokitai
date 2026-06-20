@@ -34,12 +34,18 @@ tokitai = { path = "../tokitai", version = "0.5.1", features = ["mcp", "http-ser
 # Async runtime + HTTP client
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "time"] }
 async-trait = "0.1"
+async-stream = "0.3"
 reqwest = { version = "0.11", features = ["json", "stream", "rustls-tls"], default-features = false }
 futures = "0.3"
 
 # Serialisation
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+# T-044: byte buffers shared between `reqwest` and our SSE
+# parser. `bytes` is already a transitive dep of reqwest, but
+# we name it explicitly so the streaming helpers can take
+# `bytes::Bytes` arguments without leaning on a transitive.
+bytes = "1"
 
 # CLI parsing
 clap = { version = "4", features = ["derive", "env"] }

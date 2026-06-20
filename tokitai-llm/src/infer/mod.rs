@@ -20,13 +20,16 @@
 
 use crate::cache::{cache_key_v2, CacheBackend, InMemoryCache, ToolCache};
 use crate::cli::{InferArgs, ProviderArgs, ProviderKind};
+use crate::infer::strategy::{dispatch_tool_calls, DispatchItem, ExecutionStrategy};
 use crate::provider::anthropic::AnthropicProvider;
 use crate::provider::ollama::OllamaProvider;
 use crate::provider::openai::OpenAiProvider;
-use crate::provider::{CompletionResponse, InferenceRequest, Provider};
+use crate::provider::{CompletionResponse, InferenceRequest, Provider, ProviderToolCall};
 use crate::Result;
 use serde_json::Value;
 use tokitai_core::{ToolCaller, ToolDefinition};
+
+pub mod strategy;
 
 /// One concrete provider. The `Provider` trait is not
 /// dyn-compatible (it carries an `async fn`), so the build helper
@@ -71,6 +74,13 @@ impl Provider for AnyProvider {
 /// args)` lookups into a single `ToolProvider::call_tool`
 /// invocation. When `None`, every call hits the provider
 /// unconditionally — same behaviour as before T-047.
+///
+/// T-048: the per-turn tool dispatch goes through
+/// `strategy::dispatch_tool_calls` so the caller can pick
+/// `Sequential`, `Parallel { max_concurrency }`, or
+/// `Pipelined { max_concurrency, waves }`. The strategy is
+/// resolved up-front from `InferArgs` so the warn-and-defer path
+/// below can log which strategy would have been used.
 pub async fn run(args: InferArgs, tool_cache: Option<ToolCache>) -> Result<()> {
     let provider = build_provider(&args.provider)?;
     // T-034: the provider slice is supplied by the embedding
@@ -79,6 +89,15 @@ pub async fn run(args: InferArgs, tool_cache: Option<ToolCache>) -> Result<()> {
     // tools; the v0.2 path will plumb a `--provider-crate`
     // arg that points at a `cdylib` exposing the slice.
     let tools: Vec<ToolDefinition> = Vec::new();
+
+    // T-048: resolve the dispatch strategy from CLI args. Parse
+    // errors surface here so the caller fails fast before any
+    // HTTP round-trip is made.
+    let waves = crate::cli::parse_pipelined_waves(args.pipelined_waves.as_deref())
+        .map_err(anyhow::Error::msg)?;
+    let strategy: ExecutionStrategy = args
+        .execution_strategy
+        .to_strategy(args.max_concurrency, waves);
 
     // T-043: build the request up-front so the CLI args
     // (system, tool_choice, response_format, temperature, seed,
@@ -125,13 +144,68 @@ pub async fn run(args: InferArgs, tool_cache: Option<ToolCache>) -> Result<()> {
         // is wired in (v0.2), the dispatch path will go through
         // `dispatch_with_cache`. For the v0.1 stub we just warn.
         let _ = tool_cache; // silence unused-when-no-provider
+                            // T-048: log which strategy would have been used so the
+                            // v0.1 stub still gives the operator feedback about the
+                            // configured mode.
+        let strategy_label = match &strategy {
+            ExecutionStrategy::Sequential => "sequential".to_string(),
+            ExecutionStrategy::Parallel { max_concurrency } => {
+                format!("parallel (max_concurrency={max_concurrency})")
+            }
+            ExecutionStrategy::Pipelined {
+                max_concurrency,
+                waves,
+            } => format!(
+                "pipelined (max_concurrency={max_concurrency}, waves={})",
+                waves.len()
+            ),
+        };
         eprintln!(
             "warning: model returned {} tool call(s) but no provider was \
-             supplied; install a --provider-crate to dispatch them",
+             supplied; install a --provider-crate to dispatch them (strategy: \
+             {strategy_label})",
             response.tool_calls.len()
         );
     }
     Ok(())
+}
+
+/// T-048: dispatch a batch of tool calls returned by the model
+/// in a single assistant turn, using the configured
+/// `ExecutionStrategy`.
+///
+/// This is the public dispatch entry-point used by the
+/// upcoming v0.2 path that wires an embedded `ToolProvider`
+/// into `infer::run`. Exposed now so downstream tooling can
+/// exercise the strategy without going through the CLI.
+///
+/// `tool_cache` is `None` to bypass the cache, `Some` to route
+/// every dispatch through `ToolCache::get_or_compute`.
+pub async fn dispatch_turn(
+    provider: &dyn ToolCaller,
+    tool_cache: Option<&ToolCache>,
+    strategy: &ExecutionStrategy,
+    calls: Vec<ProviderToolCall>,
+) -> Result<Vec<strategy::DispatchResult>> {
+    let items = provider_calls_to_items(calls);
+    dispatch_tool_calls(provider, tool_cache, strategy, items).await
+}
+
+/// T-048: convert a batch of `ProviderToolCall` values into the
+/// `DispatchItem` shape that `strategy::dispatch_tool_calls`
+/// consumes. Exposed so the dispatch loop in `infer::run` (and
+/// any future test that wants to feed canned responses into the
+/// dispatcher) can build the batch without re-deriving the
+/// `(id, name, arguments)` triplet.
+pub fn provider_calls_to_items(calls: Vec<ProviderToolCall>) -> Vec<DispatchItem> {
+    calls
+        .into_iter()
+        .map(|tc| DispatchItem {
+            id: tc.id,
+            name: tc.name,
+            arguments: tc.arguments,
+        })
+        .collect()
 }
 
 /// Build the concrete `Provider` implementation from CLI args.
@@ -509,5 +583,131 @@ mod tests {
             ),
         ));
         assert_eq!(p.name(), "openai");
+    }
+
+    // -----------------------------------------------------------------
+    // T-048: ExecutionStrategy + CLI plumbing
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn cli_parse_pipelined_waves_none_is_empty() {
+        let v = crate::cli::parse_pipelined_waves(None).expect("None should be empty vec");
+        assert!(v.is_empty());
+    }
+
+    #[test]
+    fn cli_parse_pipelined_waves_parses_nested_arrays() {
+        let raw = r#"[["a","b"],["c"]]"#;
+        let v = crate::cli::parse_pipelined_waves(Some(raw)).expect("parses");
+        assert_eq!(
+            v,
+            vec![
+                vec![String::from("a"), String::from("b")],
+                vec![String::from("c")],
+            ]
+        );
+    }
+
+    #[test]
+    fn cli_parse_pipelined_waves_rejects_malformed_json() {
+        let raw = r#"not json"#;
+        let err = crate::cli::parse_pipelined_waves(Some(raw))
+            .expect_err("malformed JSON should be rejected");
+        assert!(
+            err.contains("invalid JSON"),
+            "diagnostic mentions JSON: {err}"
+        );
+    }
+
+    #[test]
+    fn cli_to_strategy_maps_three_variants() {
+        use crate::cli::InferExecutionStrategy as K;
+        assert_eq!(
+            K::Sequential.to_strategy(99, Vec::new()),
+            ExecutionStrategy::Sequential
+        );
+        assert_eq!(
+            K::Parallel.to_strategy(7, Vec::new()),
+            ExecutionStrategy::Parallel { max_concurrency: 7 }
+        );
+        let waves = vec![vec!["x".into()]];
+        assert_eq!(
+            K::Pipelined.to_strategy(3, waves.clone()),
+            ExecutionStrategy::Pipelined {
+                max_concurrency: 3,
+                waves,
+            }
+        );
+    }
+
+    #[test]
+    fn default_infer_execution_strategy_is_sequential() {
+        use crate::cli::InferExecutionStrategy;
+        assert_eq!(
+            InferExecutionStrategy::default(),
+            InferExecutionStrategy::Sequential
+        );
+    }
+
+    #[test]
+    fn provider_calls_to_items_preserves_fields() {
+        let calls = vec![
+            ProviderToolCall {
+                id: "call_a".into(),
+                name: "echo".into(),
+                arguments: json!({"x": 1}),
+            },
+            ProviderToolCall {
+                id: "call_b".into(),
+                name: "sum".into(),
+                arguments: json!({"a": 1, "b": 2}),
+            },
+        ];
+        let items = provider_calls_to_items(calls);
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].id, "call_a");
+        assert_eq!(items[0].name, "echo");
+        assert_eq!(items[0].arguments, json!({"x": 1}));
+        assert_eq!(items[1].id, "call_b");
+        assert_eq!(items[1].name, "sum");
+    }
+
+    #[tokio::test]
+    async fn dispatch_turn_through_sequential_strategy() {
+        use std::sync::atomic::AtomicUsize;
+        use tokitai_core::ToolError;
+
+        struct CountingProvider(Arc<AtomicUsize>);
+        impl ToolCaller for CountingProvider {
+            fn call_tool(
+                &self,
+                _name: &str,
+                _args: &Value,
+            ) -> std::result::Result<Value, ToolError> {
+                self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Ok(json!({}))
+            }
+        }
+        let counter = Arc::new(AtomicUsize::new(0));
+        let provider = CountingProvider(Arc::clone(&counter));
+        let calls = vec![
+            ProviderToolCall {
+                id: "id_a".into(),
+                name: "a".into(),
+                arguments: json!({}),
+            },
+            ProviderToolCall {
+                id: "id_b".into(),
+                name: "b".into(),
+                arguments: json!({}),
+            },
+        ];
+        let results = dispatch_turn(&provider, None, &ExecutionStrategy::Sequential, calls)
+            .await
+            .expect("dispatch");
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].id, "id_a");
+        assert_eq!(results[1].id, "id_b");
+        assert_eq!(counter.load(std::sync::atomic::Ordering::SeqCst), 2);
     }
 }

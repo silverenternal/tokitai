@@ -49,6 +49,11 @@ pub mod verify;
 // their own dispatch path do not have to chase the module path.
 pub use cache::ToolCache;
 
+// T-050: re-export the provider-middleware types so callers can
+// `use tokitai_llm::{ProviderMiddleware, RetryDecision}` without
+// having to know the `provider::` module path.
+pub use provider::{ProviderMiddleware, RetryDecision, MAX_RETRY_ATTEMPTS};
+
 /// Returned by every subcommand on the happy path. The `anyhow::Error`
 /// is the only public error type so the CLI can format a one-line
 /// diagnostic with a backtrace when `RUST_BACKTRACE=1` is set.
