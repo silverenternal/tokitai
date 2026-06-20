@@ -22,7 +22,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v7.0.0
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -66,7 +66,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v7.0.0
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -104,7 +104,7 @@ jobs:
         crate: ${{ fromJson(env.CRATES_PUBLISH_ORDER) }}
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v7.0.0
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -142,7 +142,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v7.0.0
         with:
           fetch-depth: 0
 
