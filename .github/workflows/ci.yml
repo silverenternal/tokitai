@@ -23,7 +23,13 @@ jobs:
   ci:
     name: ${{ matrix.os }} / ${{ matrix.rust }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    # Bumped from 20 -> 45 after 3aec675's run on `main` was cancelled at the
+    # 20-minute mark while `Test with all features` was still running on
+    # windows-latest (Ubuntu and macOS finish in ~8 min; Windows needs ~12 min
+    # for tests alone, ~20 min total once format/clippy/build are added).
+    # Without this bump the run is killed by GitHub Actions' job timeout and
+    # shields.io renders the workflow as `failing` on the README badge.
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
