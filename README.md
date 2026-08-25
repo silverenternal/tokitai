@@ -1,6 +1,6 @@
 # Tokitai
 
-> **Current version: 0.5.0** (released 2026-06-02). See [CHANGELOG](CHANGELOG.md#050---2026-06-02) and the [v0.4 to v0.5 migration guide](docs/migration/v0.4-to-v0.5.md).
+> **Current version: 0.6.1** (released 2026-08-25). See [CHANGELOG](CHANGELOG.md#061---2026-08-25) and the [v0.4 to v0.5 migration guide](docs/migration/v0.4-to-v0.5.md).
 
 [![Crates.io](https://img.shields.io/crates/v/tokitai.svg)](https://crates.io/crates/tokitai)
 [![Documentation](https://docs.rs/tokitai/badge.svg)](https://docs.rs/tokitai)
@@ -36,8 +36,8 @@ Tokitai is a procedural-macro library. A single `#[tool]` attribute turns your R
 
 ```toml
 [dependencies]
-tokitai = "0.6"
-tokitai-mcp-server = "0.6"  # optional: MCP server scaffolding
+tokitai = "0.6.1"
+tokitai-mcp-server = "0.6.1"  # optional: MCP server scaffolding
 tokio = { version = "1", features = ["full"] }
 serde_json = "1.0"
 ```
@@ -142,7 +142,7 @@ cargo run --example dev_assistant
 
 | Feature | Description |
 |---------|-------------|
-| **Minimal dependency footprint** | Add only `tokitai = "0.6"`; the runtime needs just serde + serde_json |
+| **Minimal dependency footprint** | Add only `tokitai = "0.6.1"`; the runtime needs just serde + serde_json |
 | **Compile-time generation** | Tool definitions are generated during compilation, so type errors surface early |
 | **One attribute** | Just `#[tool]` — no chain of annotations to remember |
 | **Type-safe by construction** | Rust types are mapped to JSON Schema automatically |
@@ -227,7 +227,7 @@ Tokitai is shipped as three crates:
 
 ```toml
 [dependencies]
-tokitai = "0.6"
+tokitai = "0.6.1"
 ```
 
 ## Requirements

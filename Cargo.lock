@@ -3167,7 +3167,7 @@ dependencies = [
 
 [[package]]
 name = "tokitai"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "async-trait",
  "axum",
@@ -3187,7 +3187,7 @@ dependencies = [
 
 [[package]]
 name = "tokitai-core"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "futures",
  "serde",
@@ -3246,7 +3246,7 @@ dependencies = [
 
 [[package]]
 name = "tokitai-macros"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "criterion",
  "phf",
@@ -3267,7 +3267,7 @@ dependencies = [
 
 [[package]]
 name = "tokitai-mcp-server"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "axum",
  "serde",

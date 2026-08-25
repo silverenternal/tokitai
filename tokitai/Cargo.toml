@@ -1,6 +1,6 @@
 [package]
 name = "tokitai"
-version = "0.6.0"
+version = "0.6.1"
 edition = "2021"
 authors = ["silverenternal <3147264070@qq.com>"]
 license = "MIT OR Apache-2.0"
@@ -14,10 +14,10 @@ rust-version = "1.80"
 
 [dependencies]
 # Core types (zero dependencies)
-tokitai-core = { path = "../tokitai-core", version = "0.6.0" }
+tokitai-core = { path = "../tokitai-core", version = "0.6.1" }
 
 # Procedural macros
-tokitai-macros = { path = "../tokitai-macros", version = "0.6.0" }
+tokitai-macros = { path = "../tokitai-macros", version = "0.6.1" }
 
 # Serialisation (optional, enabled by default)
 serde = { version = "1.0", features = ["derive"], optional = true }
@@ -89,15 +89,15 @@ trace = ["tokitai-macros/trace", "tracing"]
 llm-live = []
 
 # Advanced usage:
-# 1. Macro-only (truly zero dependencies): tokitai = { version = "0.6.0", default-features = false }
+# 1. Macro-only (truly zero dependencies): tokitai = { version = "0.6.1", default-features = false }
 #    - Use only the #[tool] macro and provide your own runtime
 # 2. Default configuration (recommended): tokitai = "0.6"
 #    - Includes serde + serde_json, ready to go
-# 3. Full feature set: tokitai = { version = "0.6.0", features = ["http-server"] }
+# 3. Full feature set: tokitai = { version = "0.6.1", features = ["http-server"] }
 #    - Includes the MCP HTTP server
 
 [dev-dependencies]
-tokitai-core = { path = "../tokitai-core", version = "0.6.0", features = ["serde"] }
+tokitai-core = { path = "../tokitai-core", version = "0.6.1", features = ["serde"] }
 trybuild = "1.0"
 # T-015: tests for the `trace` feature need `tracing` and
 # `tracing-subscriber` to attach a span recorder. These are
