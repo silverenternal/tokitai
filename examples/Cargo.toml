@@ -35,7 +35,7 @@ tracing = "0.1"
 # --no-default-features` to opt out.
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.52", features = ["Win32_System_Console"] }
+windows-sys = { version = "0.61", features = ["Win32_System_Console"] }
 
 [[example]]
 name = "basic_usage"
