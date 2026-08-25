@@ -81,6 +81,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **CI: Windows job timeout bumped 20 -> 45 minutes.** The matrix `ci` job in `.github/workflows/ci.yml` was being killed by GitHub Actions' job-timeout cap on `windows-latest` while `cargo test --workspace --all-features` was still running (~12 min on Windows vs. ~3 min on Ubuntu/macOS for the same step; ~20 min total once `fmt` / `clippy` / both `build` invocations are added). Cancelled runs are rendered red by shields.io, which left the README "Build Status" badge stuck on `failing` even though every subsequent scheduled `Nightly` and dependabot PR run succeeded. 45 minutes gives the Windows runner comfortable headroom; Ubuntu/macOS finish in ~8 min so the bump is harmless on the other OSes.
 
+- **Clippy `drain_collect` default-deny lint fixed in `tokitai-llm`.** `clippy::drain_collect` was promoted to a default-deny lint in rustc 1.98; the SSE buffer flush in `tokitai-llm/src/provider/sse.rs::SseBuffer::flush` used `self.buffer.drain(..).collect()` and tripped the new lint on Ubuntu and macOS CI jobs. Replaced with `std::mem::take(&mut self.buffer)` (semantically identical — `Vec<u8>::default()` is `vec![]`, the same value `drain(..).collect()` would leave behind).
+
 ### Changed
 
 - **`desc_blocklist` doc syntax corrected (M-7).** The documentation in `docs/AI_INTEGRATION.md` showed `desc_blocklist(["phrase"])` (function-call style). The macro's parser only accepts the key/value form `desc_blocklist = ["phrase"]`; docs now match the parser.

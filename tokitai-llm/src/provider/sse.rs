@@ -85,7 +85,11 @@ impl ParserState {
         if self.buffer.is_empty() {
             return Ok(Vec::new());
         }
-        let record: Vec<u8> = self.buffer.drain(..).collect();
+        // `clippy::drain_collect` was promoted to a default-deny lint in
+        // rustc 1.98; `mem::take` is the clippy-blessed replacement and is
+        // semantically identical here (Vec<u8>::default() is `vec![]`, the
+        // same value `drain(..).collect()` would leave behind).
+        let record: Vec<u8> = std::mem::take(&mut self.buffer);
         Ok(vec![parse_sse_record(&record)])
     }
 }
