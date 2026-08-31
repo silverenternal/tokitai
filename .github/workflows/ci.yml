@@ -46,7 +46,7 @@ jobs:
           components: clippy, rustfmt
 
       - name: Cache cargo registry and build artifacts
-        uses: Swatinem/rust-cache@v2.7.5
+        uses: Swatinem/rust-cache@v2.9.2
         with:
           cache-on-failure: true
 
@@ -87,7 +87,7 @@ jobs:
           toolchain: stable
 
       - name: Cache cargo registry
-        uses: Swatinem/rust-cache@v2.7.5
+        uses: Swatinem/rust-cache@v2.9.2
         with:
           cache-on-failure: true
 
@@ -97,7 +97,7 @@ jobs:
       # toolchain pinning. If `cargo-audit` is unavailable in the runner image
       # (e.g. on a fork PR), this step is skipped instead of failing the run.
       - name: Install cargo-audit
-        uses: taiki-e/install-action@v2.1.0
+        uses: taiki-e/install-action@v2.87.0
         with:
           tool: cargo-audit
         continue-on-error: true
@@ -153,7 +153,7 @@ jobs:
           components: clippy, rustfmt
 
       - name: Cache cargo registry and build artifacts
-        uses: Swatinem/rust-cache@v2.7.5
+        uses: Swatinem/rust-cache@v2.9.2
         with:
           cache-on-failure: true
 
@@ -211,7 +211,7 @@ jobs:
           components: clippy, rustfmt
 
       - name: Cache cargo registry and build artifacts
-        uses: Swatinem/rust-cache@v2.7.5
+        uses: Swatinem/rust-cache@v2.9.2
         with:
           cache-on-failure: true
 
@@ -294,7 +294,7 @@ jobs:
           components: clippy, rustfmt
 
       - name: Cache cargo registry and build artifacts
-        uses: Swatinem/rust-cache@v2.7.5
+        uses: Swatinem/rust-cache@v2.9.2
         with:
           cache-on-failure: true
 
